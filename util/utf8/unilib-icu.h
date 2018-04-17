@@ -23,7 +23,6 @@
 #include <memory>
 
 #include "util/base/integral_types.h"
-#include "util/strings/stringpiece.h"
 #include "util/utf8/unicodetext.h"
 #include "unicode/brkiter.h"
 #include "unicode/errorcode.h"
@@ -81,9 +80,6 @@ class UniLib {
     // was not called previously.
     int Start(int group_idx, int* status) const;
 
-    // Same as above but uses the group name instead of the index.
-    int Start(StringPiece group_name, int* status) const;
-
     // Gets the end offset of the last match (from  'Find').
     // Sets status to 'kError' if 'Find'
     // was not called previously.
@@ -95,9 +91,6 @@ class UniLib {
     // was not called previously.
     int End(int group_idx, int* status) const;
 
-    // Same as above but uses the group name instead of the index.
-    int End(StringPiece group_name, int* status) const;
-
     // Gets the text of the last match (from 'Find').
     // Sets status to 'kError' if 'Find' was not called previously.
     UnicodeText Group(int* status) const;
@@ -107,19 +100,18 @@ class UniLib {
     // was not called previously.
     UnicodeText Group(int group_idx, int* status) const;
 
-    // Gets the text of the specified group of the last match (from 'Find').
-    // Sets status to 'kError' if an invalid group was specified or if 'Find'
-    // was not called previously.
-    UnicodeText Group(StringPiece group_name, int* status) const;
-
    protected:
     friend class RegexPattern;
     explicit RegexMatcher(icu::RegexPattern* pattern, icu::UnicodeString text);
 
    private:
+    bool UpdateLastFindOffset() const;
+
     std::unique_ptr<icu::RegexMatcher> matcher_;
-    icu::RegexPattern* pattern_;
     icu::UnicodeString text_;
+    mutable int last_find_offset_;
+    mutable int last_find_offset_codepoints_;
+    mutable bool last_find_offset_dirty_;
   };
 
   class RegexPattern {

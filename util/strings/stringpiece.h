@@ -51,6 +51,8 @@ class StringPiece {
   size_t size() const { return size_; }
   size_t length() const { return size_; }
 
+  bool empty() const { return size_ == 0; }
+
   // Returns a std::string containing a copy of the underlying data.
   std::string ToString() const {
     return std::string(data(), size());

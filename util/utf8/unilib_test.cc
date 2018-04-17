@@ -82,9 +82,7 @@ TEST(UniLibTest, RegexInterface) {
   TC_LOG(INFO) << matcher->Matches(&status);
   TC_LOG(INFO) << matcher->Find(&status);
   TC_LOG(INFO) << matcher->Start(0, &status);
-  TC_LOG(INFO) << matcher->Start("group_name", &status);
   TC_LOG(INFO) << matcher->End(0, &status);
-  TC_LOG(INFO) << matcher->End("group_name", &status);
   TC_LOG(INFO) << matcher->Group(0, &status).size_codepoints();
 }
 
@@ -151,21 +149,13 @@ TEST(UniLibTest, RegexGroups) {
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
   EXPECT_EQ(matcher->Start(1, &status), 8);
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
-  EXPECT_EQ(matcher->Start("group1", &status), 8);
-  EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
   EXPECT_EQ(matcher->Start(2, &status), 9);
-  EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
-  EXPECT_EQ(matcher->Start("group2", &status), 9);
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
   EXPECT_EQ(matcher->End(0, &status), 13);
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
   EXPECT_EQ(matcher->End(1, &status), 9);
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
-  EXPECT_EQ(matcher->End("group1", &status), 9);
-  EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
   EXPECT_EQ(matcher->End(2, &status), 12);
-  EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
-  EXPECT_EQ(matcher->End("group2", &status), 12);
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
   EXPECT_EQ(matcher->Group(0, &status).ToUTF8String(), "0123😋");
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);

@@ -22,11 +22,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include "datetime/extractor.h"
 #include "model_generated.h"
 #include "types.h"
 #include "util/base/integral_types.h"
 #include "util/calendar/calendar.h"
 #include "util/utf8/unilib.h"
+#include "zlib-utils.h"
 
 namespace libtextclassifier2 {
 
@@ -34,46 +36,58 @@ namespace libtextclassifier2 {
 // time.
 class DatetimeParser {
  public:
-  static std::unique_ptr<DatetimeParser> Instance(const DatetimeModel* model,
-                                                  const UniLib& unilib);
+  static std::unique_ptr<DatetimeParser> Instance(
+      const DatetimeModel* model, const UniLib& unilib,
+      ZlibDecompressor* decompressor);
 
   // Parses the dates in 'input' and fills result. Makes sure that the results
   // do not overlap.
+  // If 'anchor_start_end' is true the extracted results need to start at the
+  // beginning of 'input' and end at the end of it.
   bool Parse(const std::string& input, int64 reference_time_ms_utc,
              const std::string& reference_timezone, const std::string& locales,
-             ModeFlag mode,
+             ModeFlag mode, bool anchor_start_end,
              std::vector<DatetimeParseResultSpan>* results) const;
 
   // Same as above but takes UnicodeText.
   bool Parse(const UnicodeText& input, int64 reference_time_ms_utc,
              const std::string& reference_timezone, const std::string& locales,
-             ModeFlag mode,
+             ModeFlag mode, bool anchor_start_end,
              std::vector<DatetimeParseResultSpan>* results) const;
 
  protected:
-  DatetimeParser(const DatetimeModel* model, const UniLib& unilib);
+  DatetimeParser(const DatetimeModel* model, const UniLib& unilib,
+                 ZlibDecompressor* decompressor);
 
   // Returns a list of locale ids for given locale spec string (comma-separated
   // locale names).
-  std::vector<int> ParseLocales(const std::string& locales) const;
-  bool ParseWithRule(const UniLib::RegexPattern& regex,
-                     const DatetimeModelPattern* pattern,
-                     const UnicodeText& input, int64 reference_time_ms_utc,
+  std::vector<int> ParseAndExpandLocales(const std::string& locales) const;
+
+  bool ParseWithRule(const CompiledRule& rule, const UnicodeText& input,
+                     int64 reference_time_ms_utc,
                      const std::string& reference_timezone, const int locale_id,
+                     bool anchor_start_end,
                      std::vector<DatetimeParseResultSpan>* result) const;
 
   // Converts the current match in 'matcher' into DatetimeParseResult.
-  bool ExtractDatetime(const UniLib::RegexMatcher& matcher,
+  bool ExtractDatetime(const CompiledRule& rule,
+                       const UniLib::RegexMatcher& matcher,
                        int64 reference_time_ms_utc,
                        const std::string& reference_timezone, int locale_id,
                        DatetimeParseResult* result,
                        CodepointSpan* result_span) const;
 
+  // Parse and extract information from current match in 'matcher'.
+  bool HandleParseMatch(const CompiledRule& rule,
+                        const UniLib::RegexMatcher& matcher,
+                        int64 reference_time_ms_utc,
+                        const std::string& reference_timezone, int locale_id,
+                        std::vector<DatetimeParseResultSpan>* result) const;
+
  private:
   bool initialized_;
   const UniLib& unilib_;
-  std::vector<const DatetimeModelPattern*> rule_id_to_pattern_;
-  std::vector<std::unique_ptr<const UniLib::RegexPattern>> rules_;
+  std::vector<CompiledRule> rules_;
   std::unordered_map<int, std::vector<int>> locale_to_rules_;
   std::vector<std::unique_ptr<const UniLib::RegexPattern>> extractor_rules_;
   std::unordered_map<DatetimeExtractorType, std::unordered_map<int, int>>

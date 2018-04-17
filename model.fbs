@@ -106,6 +106,35 @@ enum DatetimeExtractorType : int {
   THOUSAND = 72,
 }
 
+namespace libtextclassifier2;
+enum DatetimeGroupType : int {
+  GROUP_UNKNOWN = 0,
+  GROUP_UNUSED = 1,
+  GROUP_YEAR = 2,
+  GROUP_MONTH = 3,
+  GROUP_DAY = 4,
+  GROUP_HOUR = 5,
+  GROUP_MINUTE = 6,
+  GROUP_SECOND = 7,
+  GROUP_AMPM = 8,
+  GROUP_RELATIONDISTANCE = 9,
+  GROUP_RELATION = 10,
+  GROUP_RELATIONTYPE = 11,
+
+  // Dummy groups serve just as an inflator of the selection. E.g. we might want
+  // to select more text than was contained in an envelope of all extractor
+  // spans.
+  GROUP_DUMMY1 = 12,
+
+  GROUP_DUMMY2 = 13,
+}
+
+namespace libtextclassifier2;
+table CompressedBuffer {
+  buffer:[ubyte];
+  uncompressed_size:int;
+}
+
 // Options for the model that predicts text selection.
 namespace libtextclassifier2;
 table SelectionModelOptions {
@@ -121,6 +150,9 @@ table SelectionModelOptions {
 
   // Number of examples to bundle in one batch for inference.
   batch_size:int = 1024;
+
+  // Whether to always classify a suggested selection or only on demand.
+  always_classify_suggested_selection:bool = 0;
 }
 
 // Options for the model that classifies a text selection.
@@ -130,6 +162,9 @@ table ClassificationModelOptions {
   phone_min_num_digits:int = 7;
 
   phone_max_num_digits:int = 15;
+
+  // Limits for addresses.
+  address_min_num_tokens:int;
 }
 
 // List of regular expression matchers to check.
@@ -155,6 +190,8 @@ table Pattern {
   // using Find() instead of the true Match(). This approximate matching will
   // use the first Find() result and then check that it spans the whole input.
   use_approximate_matching:bool = 0;
+
+  compressed_pattern:libtextclassifier2.CompressedBuffer;
 }
 
 namespace libtextclassifier2;
@@ -162,10 +199,21 @@ table RegexModel {
   patterns:[libtextclassifier2.RegexModel_.Pattern];
 }
 
+// List of regex patterns.
+namespace libtextclassifier2.DatetimeModelPattern_;
+table Regex {
+  pattern:string;
+
+  // The ith entry specifies the type of the ith capturing group.
+  // This is used to decide how the matched content has to be parsed.
+  groups:[libtextclassifier2.DatetimeGroupType];
+
+  compressed_pattern:libtextclassifier2.CompressedBuffer;
+}
+
 namespace libtextclassifier2;
 table DatetimeModelPattern {
-  // List of regex patterns.
-  regexes:[string];
+  regexes:[libtextclassifier2.DatetimeModelPattern_.Regex];
 
   // List of locale indices in DatetimeModel that represent the locales that
   // these patterns should be used for. If empty, can be used for all locales.
@@ -186,6 +234,7 @@ table DatetimeModelExtractor {
   extractor:libtextclassifier2.DatetimeExtractorType;
   pattern:string;
   locales:[int];
+  compressed_pattern:libtextclassifier2.CompressedBuffer;
 }
 
 namespace libtextclassifier2;
@@ -210,6 +259,20 @@ table ModelTriggeringOptions {
 
   // The modes for which to enable the models.
   enabled_modes:libtextclassifier2.ModeFlag = ALL;
+}
+
+// Options controlling the output of the classifier.
+namespace libtextclassifier2;
+table OutputOptions {
+  // Lists of collection names that will be filtered out at the output:
+  // - For annotation, the spans of given collection are simply dropped.
+  // - For classification, the result is mapped to the class "other".
+  // - For selection, the spans of given class are returned as
+  // single-selection.
+  filtered_collections_annotation:[string];
+
+  filtered_collections_classification:[string];
+  filtered_collections_selection:[string];
 }
 
 namespace libtextclassifier2;
@@ -244,6 +307,15 @@ table Model {
   // Global switch that controls if SuggestSelection(), ClassifyText() and
   // Annotate() will run. If a mode is disabled it returns empty/no-op results.
   enabled_modes:libtextclassifier2.ModeFlag = ALL;
+
+  // If true, will snap the selections that consist only of whitespaces to the
+  // containing suggested span. Otherwise, no suggestion is proposed, since the
+  // selections are not part of any token.
+  snap_whitespace_selections:bool = 1;
+
+  // Global configuration for the output of SuggestSelection(), ClassifyText()
+  // and Annotate().
+  output_options:libtextclassifier2.OutputOptions;
 }
 
 // Role of the codepoints in the range.
@@ -409,7 +481,7 @@ table FeatureProcessorOptions {
   // If true, the selection classifier output will contain only the selections
   // that are feasible (e.g., those that are shorter than max_selection_span),
   // if false, the output will be a complete cross-product of possible
-  // selections to the left and posible selections to the right, including the
+  // selections to the left and possible selections to the right, including the
   // infeasible ones.
   // NOTE: Exists mainly for compatibility with older models that were trained
   // with the non-reduced output space.

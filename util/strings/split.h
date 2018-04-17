@@ -20,10 +20,12 @@
 #include <string>
 #include <vector>
 
+#include "util/strings/stringpiece.h"
+
 namespace libtextclassifier2 {
 namespace strings {
 
-std::vector<std::string> Split(const std::string &text, char delim);
+std::vector<StringPiece> Split(const StringPiece &text, char delim);
 
 }  // namespace strings
 }  // namespace libtextclassifier2

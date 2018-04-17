@@ -191,6 +191,10 @@ int UnicodeText::size_codepoints() const {
 
 bool UnicodeText::empty() const { return size_bytes() == 0; }
 
+bool UnicodeText::is_valid() const {
+  return IsValidUTF8(repr_.data_, repr_.size_);
+}
+
 bool UnicodeText::operator==(const UnicodeText& other) const {
   if (repr_.size_ != other.repr_.size_) {
     return false;

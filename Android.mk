@@ -37,7 +37,8 @@ MY_LIBTEXTCLASSIFIER_WARNING_CFLAGS := \
 MY_LIBTEXTCLASSIFIER_CFLAGS := \
     $(MY_LIBTEXTCLASSIFIER_WARNING_CFLAGS) \
     -fvisibility=hidden \
-    -DLIBTEXTCLASSIFIER_UNILIB_ICU
+    -DLIBTEXTCLASSIFIER_UNILIB_ICU \
+    -DZLIB_CONST
 
 # Only enable debug logging in userdebug/eng builds.
 ifneq (,$(filter userdebug eng, $(TARGET_BUILD_VARIANT)))
@@ -70,17 +71,23 @@ LOCAL_CFLAGS += $(MY_LIBTEXTCLASSIFIER_CFLAGS)
 LOCAL_STRIP_MODULE := $(LIBTEXTCLASSIFIER_STRIP_OPTS)
 
 LOCAL_SRC_FILES := $(filter-out tests/% %_test.cc test-util.%,$(call all-subdir-cpp-files))
-LOCAL_C_INCLUDES := $(TOP)/external/tensorflow $(TOP)/external/flatbuffers/include
+
+LOCAL_C_INCLUDES := $(TOP)/external/zlib
+LOCAL_C_INCLUDES += $(TOP)/external/tensorflow
+LOCAL_C_INCLUDES += $(TOP)/external/flatbuffers/include
 
 LOCAL_SHARED_LIBRARIES += liblog
-LOCAL_SHARED_LIBRARIES += libicuuc libicui18n
+LOCAL_SHARED_LIBRARIES += libicuuc
+LOCAL_SHARED_LIBRARIES += libicui18n
 LOCAL_SHARED_LIBRARIES += libtflite
+LOCAL_SHARED_LIBRARIES += libz
+
 LOCAL_STATIC_LIBRARIES += flatbuffers
+
 LOCAL_REQUIRED_MODULES := textclassifier.en.model
 
 LOCAL_ADDITIONAL_DEPENDENCIES += $(LOCAL_PATH)/jni.lds
 LOCAL_LDFLAGS += -Wl,-version-script=$(LOCAL_PATH)/jni.lds
-
 LOCAL_CPPFLAGS_32 += -DLIBTEXTCLASSIFIER_TEST_DATA_DIR="\"/data/nativetest/libtextclassifier_tests/test_data/\""
 LOCAL_CPPFLAGS_64 += -DLIBTEXTCLASSIFIER_TEST_DATA_DIR="\"/data/nativetest64/libtextclassifier_tests/test_data/\""
 
@@ -106,12 +113,19 @@ LOCAL_CPPFLAGS_32 += -DLIBTEXTCLASSIFIER_TEST_DATA_DIR="\"/data/nativetest/libte
 LOCAL_CPPFLAGS_64 += -DLIBTEXTCLASSIFIER_TEST_DATA_DIR="\"/data/nativetest64/libtextclassifier_tests/test_data/\""
 
 LOCAL_SRC_FILES := $(call all-subdir-cpp-files)
-LOCAL_C_INCLUDES := $(TOP)/external/tensorflow $(TOP)/external/flatbuffers/include
+
+LOCAL_C_INCLUDES := $(TOP)/external/zlib
+LOCAL_C_INCLUDES += $(TOP)/external/tensorflow
+LOCAL_C_INCLUDES += $(TOP)/external/flatbuffers/include
 
 LOCAL_STATIC_LIBRARIES += libgmock
 LOCAL_SHARED_LIBRARIES += liblog
-LOCAL_SHARED_LIBRARIES += libicuuc libicui18n
+LOCAL_SHARED_LIBRARIES += libicuuc
+LOCAL_SHARED_LIBRARIES += libicui18n
 LOCAL_SHARED_LIBRARIES += libtflite
+LOCAL_SHARED_LIBRARIES += libz
+
+LOCAL_STATIC_LIBRARIES += flatbuffers
 
 include $(BUILD_NATIVE_TEST)
 

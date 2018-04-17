@@ -38,44 +38,70 @@ std::unique_ptr<tflite::Interpreter> ModelExecutor::CreateInterpreter() const {
   return interpreter;
 }
 
-TFLiteEmbeddingExecutor::TFLiteEmbeddingExecutor(
-    const tflite::Model* model_spec, const int embedding_size,
-    const int quantization_bits)
-    : quantization_bits_(quantization_bits),
-      output_embedding_size_(embedding_size) {
-  internal::FromModelSpec(model_spec, &model_);
-  tflite::InterpreterBuilder(*model_, builtins_)(&interpreter_);
-  if (!interpreter_) {
+std::unique_ptr<TFLiteEmbeddingExecutor> TFLiteEmbeddingExecutor::Instance(
+    const flatbuffers::Vector<uint8_t>* model_spec_buffer, int embedding_size,
+    int quantization_bits) {
+  const tflite::Model* model_spec =
+      flatbuffers::GetRoot<tflite::Model>(model_spec_buffer->data());
+  flatbuffers::Verifier verifier(model_spec_buffer->data(),
+                                 model_spec_buffer->Length());
+  std::unique_ptr<const tflite::FlatBufferModel> model;
+  if (!model_spec->Verify(verifier) ||
+      !internal::FromModelSpec(model_spec, &model)) {
+    TC_LOG(ERROR) << "Could not load TFLite model.";
+    return nullptr;
+  }
+
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolver builtins;
+  tflite::InterpreterBuilder(*model, builtins)(&interpreter);
+  if (!interpreter) {
     TC_LOG(ERROR) << "Could not build TFLite interpreter for embeddings.";
-    return;
+    return nullptr;
   }
 
-  if (interpreter_->tensors_size() != 2) {
-    return;
+  if (interpreter->tensors_size() != 2) {
+    return nullptr;
   }
-  embeddings_ = interpreter_->tensor(0);
-  if (embeddings_->dims->size != 2) {
-    return;
+  const TfLiteTensor* embeddings = interpreter->tensor(0);
+  if (embeddings->dims->size != 2) {
+    return nullptr;
   }
-  num_buckets_ = embeddings_->dims->data[0];
-  scales_ = interpreter_->tensor(1);
-  if (scales_->dims->size != 2 || scales_->dims->data[0] != num_buckets_ ||
-      scales_->dims->data[1] != 1) {
-    return;
+  int num_buckets = embeddings->dims->data[0];
+  const TfLiteTensor* scales = interpreter->tensor(1);
+  if (scales->dims->size != 2 || scales->dims->data[0] != num_buckets ||
+      scales->dims->data[1] != 1) {
+    return nullptr;
   }
-  bytes_per_embedding_ = embeddings_->dims->data[1];
-  if (!CheckQuantizationParams(bytes_per_embedding_, quantization_bits_,
-                               output_embedding_size_)) {
+  int bytes_per_embedding = embeddings->dims->data[1];
+  if (!CheckQuantizationParams(bytes_per_embedding, quantization_bits,
+                               embedding_size)) {
     TC_LOG(ERROR) << "Mismatch in quantization parameters.";
-    return;
+    return nullptr;
   }
 
-  initialized_ = true;
+  return std::unique_ptr<TFLiteEmbeddingExecutor>(new TFLiteEmbeddingExecutor(
+      std::move(model), quantization_bits, num_buckets, bytes_per_embedding,
+      embedding_size, scales, embeddings, std::move(interpreter)));
 }
+
+TFLiteEmbeddingExecutor::TFLiteEmbeddingExecutor(
+    std::unique_ptr<const tflite::FlatBufferModel> model, int quantization_bits,
+    int num_buckets, int bytes_per_embedding, int output_embedding_size,
+    const TfLiteTensor* scales, const TfLiteTensor* embeddings,
+    std::unique_ptr<tflite::Interpreter> interpreter)
+    : model_(std::move(model)),
+      quantization_bits_(quantization_bits),
+      num_buckets_(num_buckets),
+      bytes_per_embedding_(bytes_per_embedding),
+      output_embedding_size_(output_embedding_size),
+      scales_(scales),
+      embeddings_(embeddings),
+      interpreter_(std::move(interpreter)) {}
 
 bool TFLiteEmbeddingExecutor::AddEmbedding(
     const TensorView<int>& sparse_features, float* dest, int dest_size) const {
-  if (!initialized_ || dest_size != output_embedding_size_) {
+  if (dest_size != output_embedding_size_) {
     TC_LOG(ERROR) << "Mismatching dest_size and output_embedding_size: "
                   << dest_size << " " << output_embedding_size_;
     return false;

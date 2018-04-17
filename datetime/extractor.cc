@@ -20,156 +20,119 @@
 
 namespace libtextclassifier2 {
 
-constexpr char const* kGroupYear = "YEAR";
-constexpr char const* kGroupMonth = "MONTH";
-constexpr char const* kGroupDay = "DAY";
-constexpr char const* kGroupHour = "HOUR";
-constexpr char const* kGroupMinute = "MINUTE";
-constexpr char const* kGroupSecond = "SECOND";
-constexpr char const* kGroupAmpm = "AMPM";
-constexpr char const* kGroupRelationDistance = "RELATIONDISTANCE";
-constexpr char const* kGroupRelation = "RELATION";
-constexpr char const* kGroupRelationType = "RELATIONTYPE";
-// Dummy groups serve just as an inflator of the selection. E.g. we might want
-// to select more text than was contained in an envelope of all extractor spans.
-constexpr char const* kGroupDummy1 = "DUMMY1";
-constexpr char const* kGroupDummy2 = "DUMMY2";
-
 bool DatetimeExtractor::Extract(DateParseData* result,
                                 CodepointSpan* result_span) const {
   result->field_set_mask = 0;
   *result_span = {kInvalidIndex, kInvalidIndex};
 
-  UnicodeText group_text;
-  if (GroupNotEmpty(kGroupYear, &group_text)) {
-    result->field_set_mask |= DateParseData::YEAR_FIELD;
-    if (!ParseYear(group_text, &(result->year))) {
-      TC_LOG(ERROR) << "Couldn't extract YEAR.";
-      return false;
-    }
-    if (!UpdateMatchSpan(kGroupYear, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
+  if (rule_.regex->groups() == nullptr) {
+    return false;
   }
 
-  if (GroupNotEmpty(kGroupMonth, &group_text)) {
-    result->field_set_mask |= DateParseData::MONTH_FIELD;
-    if (!ParseMonth(group_text, &(result->month))) {
-      TC_LOG(ERROR) << "Couldn't extract MONTH.";
+  for (int group_id = 0; group_id < rule_.regex->groups()->size(); group_id++) {
+    UnicodeText group_text;
+    const int group_type = rule_.regex->groups()->Get(group_id);
+    if (group_type == DatetimeGroupType_GROUP_UNUSED) {
+      continue;
+    }
+    if (!GroupTextFromMatch(group_id, &group_text)) {
+      TC_LOG(ERROR) << "Couldn't retrieve group.";
       return false;
     }
-    if (!UpdateMatchSpan(kGroupMonth, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
+    // The pattern can have a group defined in a part that was not matched,
+    // e.g. an optional part. In this case we'll get an empty content here.
+    if (group_text.empty()) {
+      continue;
     }
-  }
-
-  if (GroupNotEmpty(kGroupDay, &group_text)) {
-    result->field_set_mask |= DateParseData::DAY_FIELD;
-    if (!ParseDigits(group_text, &(result->day_of_month))) {
-      TC_LOG(ERROR) << "Couldn't extract DAY.";
-      return false;
+    switch (group_type) {
+      case DatetimeGroupType_GROUP_YEAR: {
+        if (!ParseYear(group_text, &(result->year))) {
+          TC_LOG(ERROR) << "Couldn't extract YEAR.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::YEAR_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_MONTH: {
+        if (!ParseMonth(group_text, &(result->month))) {
+          TC_LOG(ERROR) << "Couldn't extract MONTH.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::MONTH_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_DAY: {
+        if (!ParseDigits(group_text, &(result->day_of_month))) {
+          TC_LOG(ERROR) << "Couldn't extract DAY.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::DAY_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_HOUR: {
+        if (!ParseDigits(group_text, &(result->hour))) {
+          TC_LOG(ERROR) << "Couldn't extract HOUR.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::HOUR_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_MINUTE: {
+        if (!ParseDigits(group_text, &(result->minute))) {
+          TC_LOG(ERROR) << "Couldn't extract MINUTE.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::MINUTE_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_SECOND: {
+        if (!ParseDigits(group_text, &(result->second))) {
+          TC_LOG(ERROR) << "Couldn't extract SECOND.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::SECOND_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_AMPM: {
+        if (!ParseAMPM(group_text, &(result->ampm))) {
+          TC_LOG(ERROR) << "Couldn't extract AMPM.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::AMPM_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_RELATIONDISTANCE: {
+        if (!ParseRelationDistance(group_text, &(result->relation_distance))) {
+          TC_LOG(ERROR) << "Couldn't extract RELATION_DISTANCE_FIELD.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::RELATION_DISTANCE_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_RELATION: {
+        if (!ParseRelation(group_text, &(result->relation))) {
+          TC_LOG(ERROR) << "Couldn't extract RELATION_FIELD.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::RELATION_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_RELATIONTYPE: {
+        if (!ParseRelationType(group_text, &(result->relation_type))) {
+          TC_LOG(ERROR) << "Couldn't extract RELATION_TYPE_FIELD.";
+          return false;
+        }
+        result->field_set_mask |= DateParseData::RELATION_TYPE_FIELD;
+        break;
+      }
+      case DatetimeGroupType_GROUP_DUMMY1:
+      case DatetimeGroupType_GROUP_DUMMY2:
+        break;
+      default:
+        TC_LOG(INFO) << "Unknown group type.";
+        continue;
     }
-    if (!UpdateMatchSpan(kGroupDay, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupHour, &group_text)) {
-    result->field_set_mask |= DateParseData::HOUR_FIELD;
-    if (!ParseDigits(group_text, &(result->hour))) {
-      TC_LOG(ERROR) << "Couldn't extract HOUR.";
-      return false;
-    }
-    if (!UpdateMatchSpan(kGroupHour, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupMinute, &group_text)) {
-    result->field_set_mask |= DateParseData::MINUTE_FIELD;
-    if (!ParseDigits(group_text, &(result->minute))) {
-      TC_LOG(ERROR) << "Couldn't extract MINUTE.";
-      return false;
-    }
-    if (!UpdateMatchSpan(kGroupMinute, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupSecond, &group_text)) {
-    result->field_set_mask |= DateParseData::SECOND_FIELD;
-    if (!ParseDigits(group_text, &(result->second))) {
-      TC_LOG(ERROR) << "Couldn't extract SECOND.";
-      return false;
-    }
-    if (!UpdateMatchSpan(kGroupSecond, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupAmpm, &group_text)) {
-    result->field_set_mask |= DateParseData::AMPM_FIELD;
-    if (!ParseAMPM(group_text, &(result->ampm))) {
-      TC_LOG(ERROR) << "Couldn't extract AMPM.";
-      return false;
-    }
-    if (!UpdateMatchSpan(kGroupAmpm, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupRelationDistance, &group_text)) {
-    result->field_set_mask |= DateParseData::RELATION_DISTANCE_FIELD;
-    if (!ParseRelationDistance(group_text, &(result->relation_distance))) {
-      TC_LOG(ERROR) << "Couldn't extract RELATION_DISTANCE_FIELD.";
-      return false;
-    }
-    if (!UpdateMatchSpan(kGroupRelationDistance, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupRelation, &group_text)) {
-    result->field_set_mask |= DateParseData::RELATION_FIELD;
-    if (!ParseRelation(group_text, &(result->relation))) {
-      TC_LOG(ERROR) << "Couldn't extract RELATION_FIELD.";
-      return false;
-    }
-    if (!UpdateMatchSpan(kGroupRelation, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupRelationType, &group_text)) {
-    result->field_set_mask |= DateParseData::RELATION_TYPE_FIELD;
-    if (!ParseRelationType(group_text, &(result->relation_type))) {
-      TC_LOG(ERROR) << "Couldn't extract RELATION_TYPE_FIELD.";
-      return false;
-    }
-    if (!UpdateMatchSpan(kGroupRelationType, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupDummy1, &group_text)) {
-    if (!UpdateMatchSpan(kGroupDummy1, result_span)) {
-      TC_LOG(ERROR) << "Couldn't update span.";
-      return false;
-    }
-  }
-
-  if (GroupNotEmpty(kGroupDummy2, &group_text)) {
-    if (!UpdateMatchSpan(kGroupDummy2, result_span)) {
+    if (!UpdateMatchSpan(group_id, result_span)) {
       TC_LOG(ERROR) << "Couldn't update span.";
       return false;
     }
@@ -226,24 +189,24 @@ bool DatetimeExtractor::ExtractType(const UnicodeText& input,
   return true;
 }
 
-bool DatetimeExtractor::GroupNotEmpty(StringPiece name,
-                                      UnicodeText* result) const {
+bool DatetimeExtractor::GroupTextFromMatch(int group_id,
+                                           UnicodeText* result) const {
   int status;
-  *result = matcher_.Group(name, &status);
+  *result = matcher_.Group(group_id, &status);
   if (status != UniLib::RegexMatcher::kNoError) {
     return false;
   }
-  return !result->empty();
+  return true;
 }
 
-bool DatetimeExtractor::UpdateMatchSpan(StringPiece name,
+bool DatetimeExtractor::UpdateMatchSpan(int group_id,
                                         CodepointSpan* span) const {
   int status;
-  const int match_start = matcher_.Start(name, &status);
+  const int match_start = matcher_.Start(group_id, &status);
   if (status != UniLib::RegexMatcher::kNoError) {
     return false;
   }
-  const int match_end = matcher_.End(name, &status);
+  const int match_end = matcher_.End(group_id, &status);
   if (status != UniLib::RegexMatcher::kNoError) {
     return false;
   }

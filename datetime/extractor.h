@@ -29,18 +29,31 @@
 
 namespace libtextclassifier2 {
 
+struct CompiledRule {
+  // The compiled regular expression.
+  std::unique_ptr<const UniLib::RegexPattern> compiled_regex;
+
+  // The uncompiled pattern and information about the pattern groups.
+  const DatetimeModelPattern_::Regex* regex;
+
+  // DatetimeModelPattern which 'regex' is part of and comes from.
+  const DatetimeModelPattern* pattern;
+};
+
 // A helper class for DatetimeParser that extracts structured data
 // (DateParseDate) from the current match of the passed RegexMatcher.
 class DatetimeExtractor {
  public:
   DatetimeExtractor(
-      const UniLib::RegexMatcher& matcher, int locale_id, const UniLib& unilib,
+      const CompiledRule& rule, const UniLib::RegexMatcher& matcher,
+      int locale_id, const UniLib& unilib,
       const std::vector<std::unique_ptr<const UniLib::RegexPattern>>&
           extractor_rules,
       const std::unordered_map<DatetimeExtractorType,
                                std::unordered_map<int, int>>&
           type_and_locale_to_extractor_rule)
-      : matcher_(matcher),
+      : rule_(rule),
+        matcher_(matcher),
         locale_id_(locale_id),
         unilib_(unilib),
         rules_(extractor_rules),
@@ -57,10 +70,10 @@ class DatetimeExtractor {
                    DatetimeExtractorType extractor_type,
                    UnicodeText* match_result = nullptr) const;
 
-  bool GroupNotEmpty(StringPiece name, UnicodeText* result) const;
+  bool GroupTextFromMatch(int group_id, UnicodeText* result) const;
 
   // Updates the span to include the current match for the given group.
-  bool UpdateMatchSpan(StringPiece group_name, CodepointSpan* span) const;
+  bool UpdateMatchSpan(int group_id, CodepointSpan* span) const;
 
   // Returns true if any of the extractors from 'mapping' matched. If it did,
   // will fill 'result' with the associated value from 'mapping'.
@@ -84,6 +97,7 @@ class DatetimeExtractor {
       DateParseData::RelationType* parsed_relation_type) const;
   bool ParseWeekday(const UnicodeText& input, int* parsed_weekday) const;
 
+  const CompiledRule& rule_;
   const UniLib::RegexMatcher& matcher_;
   int locale_id_;
   const UniLib& unilib_;

@@ -14,25 +14,29 @@
  * limitations under the License.
  */
 
-#include "util/strings/split.h"
+#include "util/strings/utf8.h"
 
 namespace libtextclassifier2 {
-namespace strings {
+bool IsValidUTF8(const char *src, int size) {
+  for (int i = 0; i < size;) {
+    // Unexpected trail byte.
+    if (IsTrailByte(src[i])) {
+      return false;
+    }
 
-std::vector<StringPiece> Split(const StringPiece &text, char delim) {
-  std::vector<StringPiece> result;
-  int token_start = 0;
-  if (!text.empty()) {
-    for (size_t i = 0; i < text.size() + 1; i++) {
-      if ((i == text.size()) || (text[i] == delim)) {
-        result.push_back(
-            StringPiece(text.data() + token_start, i - token_start));
-        token_start = i + 1;
+    const int num_codepoint_bytes = GetNumBytesForUTF8Char(&src[i]);
+    if (num_codepoint_bytes <= 0 || i + num_codepoint_bytes > size) {
+      return false;
+    }
+
+    // Check that remaining bytes in the codepoint are trailing bytes.
+    i++;
+    for (int k = 1; k < num_codepoint_bytes; k++, i++) {
+      if (!IsTrailByte(src[i])) {
+        return false;
       }
     }
   }
-  return result;
+  return true;
 }
-
-}  // namespace strings
 }  // namespace libtextclassifier2

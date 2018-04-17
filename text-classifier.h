@@ -32,6 +32,7 @@
 #include "types.h"
 #include "util/memory/mmap.h"
 #include "util/utf8/unilib.h"
+#include "zlib-utils.h"
 
 namespace libtextclassifier2 {
 
@@ -150,9 +151,13 @@ class TextClassifier {
   // Exposes the selection feature processor for tests and evaluations.
   const FeatureProcessor& SelectionFeatureProcessorForTests() const;
 
+  // Exposes the date time parser for tests and evaluations.
+  const DatetimeParser* DatetimeParserForTests() const;
+
   // String collection names for various classes.
   static const std::string& kOtherCollection;
   static const std::string& kPhoneCollection;
+  static const std::string& kAddressCollection;
   static const std::string& kDateCollection;
 
  protected:
@@ -186,7 +191,7 @@ class TextClassifier {
   void ValidateAndInitialize();
 
   // Initializes regular expressions for the regex model.
-  bool InitializeRegexModel();
+  bool InitializeRegexModel(ZlibDecompressor* decompressor);
 
   // Resolves conflicts in the list of candidates by removing some overlapping
   // ones. Returns indices of the surviving ones.
@@ -194,6 +199,7 @@ class TextClassifier {
   // the span.
   bool ResolveConflicts(const std::vector<AnnotatedSpan>& candidates,
                         const std::string& context,
+                        const std::vector<Token>& cached_tokens,
                         InterpreterManager* interpreter_manager,
                         std::vector<int>* result) const;
 
@@ -201,15 +207,19 @@ class TextClassifier {
   // (inclusive) and 'end_index' (exclusive). Assigns the winning candidate
   // indices to 'chosen_indices'. Returns false if a problem arises.
   bool ResolveConflict(const std::string& context,
+                       const std::vector<Token>& cached_tokens,
                        const std::vector<AnnotatedSpan>& candidates,
                        int start_index, int end_index,
                        InterpreterManager* interpreter_manager,
                        std::vector<int>* chosen_indices) const;
 
   // Gets selection candidates from the ML model.
+  // Provides the tokens produced during tokenization of the context string for
+  // reuse.
   bool ModelSuggestSelection(const UnicodeText& context_unicode,
                              CodepointSpan click_indices,
                              InterpreterManager* interpreter_manager,
+                             std::vector<Token>* tokens,
                              std::vector<AnnotatedSpan>* result) const;
 
   // Classifies the selected text given the context string with the
@@ -249,8 +259,11 @@ class TextClassifier {
   // with the classification model.
   // The annotations are sorted by their position in the context string and
   // exclude spans classified as 'other'.
+  // Provides the tokens produced during tokenization of the context string for
+  // reuse.
   bool ModelAnnotate(const std::string& context,
                      InterpreterManager* interpreter_manager,
+                     std::vector<Token>* tokens,
                      std::vector<AnnotatedSpan>* result) const;
 
   // Groups the tokens into chunks. A chunk is a token span that should be the
@@ -297,6 +310,12 @@ class TextClassifier {
                      const std::string& locales, ModeFlag mode,
                      std::vector<AnnotatedSpan>* result) const;
 
+  // Returns whether a classification should be filtered.
+  bool FilteredForAnnotation(const AnnotatedSpan& span) const;
+  bool FilteredForClassification(
+      const ClassificationResult& classification) const;
+  bool FilteredForSelection(const AnnotatedSpan& span) const;
+
   const Model* model_;
 
   std::unique_ptr<const ModelExecutor> selection_executor_;
@@ -321,6 +340,9 @@ class TextClassifier {
   bool enabled_for_annotation_ = false;
   bool enabled_for_classification_ = false;
   bool enabled_for_selection_ = false;
+  std::unordered_set<std::string> filtered_collections_annotation_;
+  std::unordered_set<std::string> filtered_collections_classification_;
+  std::unordered_set<std::string> filtered_collections_selection_;
 
   std::vector<CompiledRegexPattern> regex_patterns_;
   std::unordered_set<int> regex_approximate_match_pattern_ids_;
@@ -334,6 +356,14 @@ class TextClassifier {
 };
 
 namespace internal {
+
+// Helper function, which if the initial 'span' contains only white-spaces,
+// moves the selection to a single-codepoint selection on the left side
+// of this block of white-space.
+CodepointSpan SnapLeftIfWhitespaceSelection(CodepointSpan span,
+                                            const UnicodeText& context_unicode,
+                                            const UniLib& unilib);
+
 // Copies tokens from 'cached_tokens' that are
 // 'tokens_around_selection_to_copy' (on the left, and right) tokens distant
 // from the tokens that correspond to 'selection_indices'.

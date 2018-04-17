@@ -44,6 +44,9 @@ static inline bool IsTrailByte(char x) {
   return static_cast<signed char>(x) < -0x40;
 }
 
+// Returns true iff src points to a well-formed UTF-8 string.
+bool IsValidUTF8(const char *src, int size);
+
 }  // namespace libtextclassifier2
 
 #endif  // LIBTEXTCLASSIFIER_UTIL_STRINGS_UTF8_H_

@@ -66,7 +66,10 @@ char32 UniLib::GetPairedBracket(char32 codepoint) const {
 
 UniLib::RegexMatcher::RegexMatcher(icu::RegexPattern* pattern,
                                    icu::UnicodeString text)
-    : pattern_(pattern), text_(std::move(text)) {
+    : text_(std::move(text)),
+      last_find_offset_(0),
+      last_find_offset_codepoints_(0),
+      last_find_offset_dirty_(true) {
   UErrorCode status = U_ZERO_ERROR;
   matcher_.reset(pattern->matcher(text_, status));
   if (U_FAILURE(status)) {
@@ -125,6 +128,25 @@ bool UniLib::RegexMatcher::ApproximatelyMatches(int* status) {
   return true;
 }
 
+bool UniLib::RegexMatcher::UpdateLastFindOffset() const {
+  if (!last_find_offset_dirty_) {
+    return true;
+  }
+
+  // Update the position of the match.
+  UErrorCode icu_status = U_ZERO_ERROR;
+  const int find_offset = matcher_->start(0, icu_status);
+  if (U_FAILURE(icu_status)) {
+    return false;
+  }
+  last_find_offset_codepoints_ +=
+      text_.countChar32(last_find_offset_, find_offset - last_find_offset_);
+  last_find_offset_ = find_offset;
+  last_find_offset_dirty_ = false;
+
+  return true;
+}
+
 bool UniLib::RegexMatcher::Find(int* status) {
   if (!matcher_) {
     *status = kError;
@@ -136,6 +158,8 @@ bool UniLib::RegexMatcher::Find(int* status) {
     *status = kError;
     return false;
   }
+
+  last_find_offset_dirty_ = true;
   *status = kNoError;
   return result;
 }
@@ -145,10 +169,11 @@ int UniLib::RegexMatcher::Start(int* status) const {
 }
 
 int UniLib::RegexMatcher::Start(int group_idx, int* status) const {
-  if (!matcher_) {
+  if (!matcher_ || !UpdateLastFindOffset()) {
     *status = kError;
     return kError;
   }
+
   UErrorCode icu_status = U_ZERO_ERROR;
   const int result = matcher_->start(group_idx, icu_status);
   if (U_FAILURE(icu_status)) {
@@ -156,20 +181,16 @@ int UniLib::RegexMatcher::Start(int group_idx, int* status) const {
     return kError;
   }
   *status = kNoError;
-  return text_.countChar32(/*start=*/0, /*length=*/result);
-}
 
-int UniLib::RegexMatcher::Start(StringPiece group_name, int* status) const {
-  UErrorCode icu_status = U_ZERO_ERROR;
-  const int group_idx = pattern_->groupNumberFromName(
-      icu::UnicodeString::fromUTF8(
-          icu::StringPiece(group_name.data(), group_name.size())),
-      icu_status);
-  if (U_FAILURE(icu_status)) {
-    *status = kError;
-    return kError;
+  // If the group didn't participate in the match the result is -1 and is
+  // incompatible with the caching logic bellow.
+  if (result == -1) {
+    return -1;
   }
-  return Start(group_idx, status);
+
+  return last_find_offset_codepoints_ +
+         text_.countChar32(/*start=*/last_find_offset_,
+                           /*length=*/result - last_find_offset_);
 }
 
 int UniLib::RegexMatcher::End(int* status) const {
@@ -177,7 +198,7 @@ int UniLib::RegexMatcher::End(int* status) const {
 }
 
 int UniLib::RegexMatcher::End(int group_idx, int* status) const {
-  if (!matcher_) {
+  if (!matcher_ || !UpdateLastFindOffset()) {
     *status = kError;
     return kError;
   }
@@ -188,20 +209,16 @@ int UniLib::RegexMatcher::End(int group_idx, int* status) const {
     return kError;
   }
   *status = kNoError;
-  return text_.countChar32(/*start=*/0, /*length=*/result);
-}
 
-int UniLib::RegexMatcher::End(StringPiece group_name, int* status) const {
-  UErrorCode icu_status = U_ZERO_ERROR;
-  const int group_idx = pattern_->groupNumberFromName(
-      icu::UnicodeString::fromUTF8(
-          icu::StringPiece(group_name.data(), group_name.size())),
-      icu_status);
-  if (U_FAILURE(icu_status)) {
-    *status = kError;
-    return kError;
+  // If the group didn't participate in the match the result is -1 and is
+  // incompatible with the caching logic bellow.
+  if (result == -1) {
+    return -1;
   }
-  return End(group_idx, status);
+
+  return last_find_offset_codepoints_ +
+         text_.countChar32(/*start=*/last_find_offset_,
+                           /*length=*/result - last_find_offset_);
 }
 
 UnicodeText UniLib::RegexMatcher::Group(int* status) const {
@@ -223,20 +240,6 @@ UnicodeText UniLib::RegexMatcher::Group(int group_idx, int* status) const {
   result_icu.toUTF8String(result);
   *status = kNoError;
   return UTF8ToUnicodeText(result, /*do_copy=*/true);
-}
-
-UnicodeText UniLib::RegexMatcher::Group(StringPiece group_name,
-                                        int* status) const {
-  UErrorCode icu_status = U_ZERO_ERROR;
-  const int group_idx = pattern_->groupNumberFromName(
-      icu::UnicodeString::fromUTF8(
-          icu::StringPiece(group_name.data(), group_name.size())),
-      icu_status);
-  if (U_FAILURE(icu_status)) {
-    *status = kError;
-    return UTF8ToUnicodeText("", /*do_copy=*/false);
-  }
-  return Group(group_idx, status);
 }
 
 constexpr int UniLib::BreakIterator::kDone;

@@ -31,6 +31,8 @@ const std::string& TextClassifier::kOtherCollection =
     *[]() { return new std::string("other"); }();
 const std::string& TextClassifier::kPhoneCollection =
     *[]() { return new std::string("phone"); }();
+const std::string& TextClassifier::kAddressCollection =
+    *[]() { return new std::string("address"); }();
 const std::string& TextClassifier::kDateCollection =
     *[]() { return new std::string("date"); }();
 
@@ -163,9 +165,7 @@ void TextClassifier::ValidateAndInitialize() {
       TC_LOG(ERROR) << "No selection model.";
       return;
     }
-    selection_executor_.reset(
-        new ModelExecutor(flatbuffers::GetRoot<tflite::Model>(
-            model_->selection_model()->data())));
+    selection_executor_ = ModelExecutor::Instance(model_->selection_model());
     if (!selection_executor_) {
       TC_LOG(ERROR) << "Could not initialize selection executor.";
       return;
@@ -199,9 +199,8 @@ void TextClassifier::ValidateAndInitialize() {
       return;
     }
 
-    classification_executor_.reset(
-        new ModelExecutor(flatbuffers::GetRoot<tflite::Model>(
-            model_->classification_model()->data())));
+    classification_executor_ =
+        ModelExecutor::Instance(model_->classification_model());
     if (!classification_executor_) {
       TC_LOG(ERROR) << "Could not initialize classification executor.";
       return;
@@ -232,54 +231,73 @@ void TextClassifier::ValidateAndInitialize() {
       return;
     }
 
-    embedding_executor_.reset(new TFLiteEmbeddingExecutor(
-        flatbuffers::GetRoot<tflite::Model>(model_->embedding_model()->data()),
+    embedding_executor_ = TFLiteEmbeddingExecutor::Instance(
+        model_->embedding_model(),
         model_->classification_feature_options()->embedding_size(),
         model_->classification_feature_options()
-            ->embedding_quantization_bits()));
-    if (!embedding_executor_ || !embedding_executor_->IsReady()) {
+            ->embedding_quantization_bits());
+    if (!embedding_executor_) {
       TC_LOG(ERROR) << "Could not initialize embedding executor.";
       return;
     }
   }
 
+  std::unique_ptr<ZlibDecompressor> decompressor = ZlibDecompressor::Instance();
   if (model_->regex_model()) {
-    if (!InitializeRegexModel()) {
+    if (!InitializeRegexModel(decompressor.get())) {
       TC_LOG(ERROR) << "Could not initialize regex model.";
     }
   }
 
   if (model_->datetime_model()) {
-    datetime_parser_ =
-        DatetimeParser::Instance(model_->datetime_model(), *unilib_);
+    datetime_parser_ = DatetimeParser::Instance(model_->datetime_model(),
+                                                *unilib_, decompressor.get());
     if (!datetime_parser_) {
       TC_LOG(ERROR) << "Could not initialize datetime parser.";
       return;
     }
   }
 
+  if (model_->output_options()) {
+    if (model_->output_options()->filtered_collections_annotation()) {
+      for (const auto collection :
+           *model_->output_options()->filtered_collections_annotation()) {
+        filtered_collections_annotation_.insert(collection->str());
+      }
+    }
+    if (model_->output_options()->filtered_collections_classification()) {
+      for (const auto collection :
+           *model_->output_options()->filtered_collections_classification()) {
+        filtered_collections_classification_.insert(collection->str());
+      }
+    }
+    if (model_->output_options()->filtered_collections_selection()) {
+      for (const auto collection :
+           *model_->output_options()->filtered_collections_selection()) {
+        filtered_collections_selection_.insert(collection->str());
+      }
+    }
+  }
+
   initialized_ = true;
 }
 
-bool TextClassifier::InitializeRegexModel() {
+bool TextClassifier::InitializeRegexModel(ZlibDecompressor* decompressor) {
   if (!model_->regex_model()->patterns()) {
     initialized_ = false;
-    TC_LOG(ERROR) << "No patterns in the regex config.";
     return false;
   }
 
   // Initialize pattern recognizers.
   int regex_pattern_id = 0;
   for (const auto& regex_pattern : *model_->regex_model()->patterns()) {
-    std::unique_ptr<UniLib::RegexPattern> compiled_pattern(
-        unilib_->CreateRegexPattern(UTF8ToUnicodeText(
-            regex_pattern->pattern()->c_str(),
-            regex_pattern->pattern()->Length(), /*do_copy=*/false)));
-
+    std::unique_ptr<UniLib::RegexPattern> compiled_pattern =
+        UncompressMakeRegexPattern(*unilib_, regex_pattern->pattern(),
+                                   regex_pattern->compressed_pattern(),
+                                   decompressor);
     if (!compiled_pattern) {
-      TC_LOG(INFO) << "Failed to load pattern"
-                   << regex_pattern->pattern()->str();
-      continue;
+      TC_LOG(INFO) << "Failed to load regex pattern";
+      return false;
     }
 
     if (regex_pattern->enabled_modes() & ModeFlag_ANNOTATION) {
@@ -331,19 +349,86 @@ std::string ExtractSelection(const std::string& context,
 }
 }  // namespace
 
+namespace internal {
+// Helper function, which if the initial 'span' contains only white-spaces,
+// moves the selection to a single-codepoint selection on a left or right side
+// of this space.
+CodepointSpan SnapLeftIfWhitespaceSelection(CodepointSpan span,
+                                            const UnicodeText& context_unicode,
+                                            const UniLib& unilib) {
+  TC_CHECK(ValidNonEmptySpan(span));
+
+  UnicodeText::const_iterator it;
+
+  // Check that the current selection is all whitespaces.
+  it = context_unicode.begin();
+  std::advance(it, span.first);
+  for (int i = 0; i < (span.second - span.first); ++i, ++it) {
+    if (!unilib.IsWhitespace(*it)) {
+      return span;
+    }
+  }
+
+  CodepointSpan result;
+
+  // Try moving left.
+  result = span;
+  it = context_unicode.begin();
+  std::advance(it, span.first);
+  while (it != context_unicode.begin() && unilib.IsWhitespace(*it)) {
+    --result.first;
+    --it;
+  }
+  result.second = result.first + 1;
+  if (!unilib.IsWhitespace(*it)) {
+    return result;
+  }
+
+  // If moving left didn't find a non-whitespace character, just return the
+  // original span.
+  return span;
+}
+}  // namespace internal
+
+bool TextClassifier::FilteredForAnnotation(const AnnotatedSpan& span) const {
+  return !span.classification.empty() &&
+         filtered_collections_annotation_.find(
+             span.classification[0].collection) !=
+             filtered_collections_annotation_.end();
+}
+
+bool TextClassifier::FilteredForClassification(
+    const ClassificationResult& classification) const {
+  return filtered_collections_classification_.find(classification.collection) !=
+         filtered_collections_classification_.end();
+}
+
+bool TextClassifier::FilteredForSelection(const AnnotatedSpan& span) const {
+  return !span.classification.empty() &&
+         filtered_collections_selection_.find(
+             span.classification[0].collection) !=
+             filtered_collections_selection_.end();
+}
+
 CodepointSpan TextClassifier::SuggestSelection(
     const std::string& context, CodepointSpan click_indices,
     const SelectionOptions& options) const {
+  CodepointSpan original_click_indices = click_indices;
   if (!initialized_) {
     TC_LOG(ERROR) << "Not initialized";
-    return click_indices;
+    return original_click_indices;
   }
   if (!(model_->enabled_modes() & ModeFlag_SELECTION)) {
-    return click_indices;
+    return original_click_indices;
   }
 
   const UnicodeText context_unicode = UTF8ToUnicodeText(context,
                                                         /*do_copy=*/false);
+
+  if (!context_unicode.is_valid()) {
+    return original_click_indices;
+  }
+
   const int context_codepoint_size = context_unicode.size_codepoints();
 
   if (click_indices.first < 0 || click_indices.second < 0 ||
@@ -352,26 +437,44 @@ CodepointSpan TextClassifier::SuggestSelection(
       click_indices.first >= click_indices.second) {
     TC_VLOG(1) << "Trying to run SuggestSelection with invalid indices: "
                << click_indices.first << " " << click_indices.second;
-    return click_indices;
+    return original_click_indices;
+  }
+
+  if (model_->snap_whitespace_selections()) {
+    // We want to expand a purely white-space selection to a multi-selection it
+    // would've been part of. But with this feature disabled we would do a no-
+    // op, because no token is found. Therefore, we need to modify the
+    // 'click_indices' a bit to include a part of the token, so that the click-
+    // finding logic finds the clicked token correctly. This modification is
+    // done by the following function. Note, that it's enough to check the left
+    // side of the current selection, because if the white-space is a part of a
+    // multi-selection, neccessarily both tokens - on the left and the right
+    // sides need to be selected. Thus snapping only to the left is sufficient
+    // (there's a check at the bottom that makes sure that if we snap to the
+    // left token but the result does not contain the initial white-space,
+    // returns the original indices).
+    click_indices = internal::SnapLeftIfWhitespaceSelection(
+        click_indices, context_unicode, *unilib_);
   }
 
   std::vector<AnnotatedSpan> candidates;
   InterpreterManager interpreter_manager(selection_executor_.get(),
                                          classification_executor_.get());
+  std::vector<Token> tokens;
   if (!ModelSuggestSelection(context_unicode, click_indices,
-                             &interpreter_manager, &candidates)) {
+                             &interpreter_manager, &tokens, &candidates)) {
     TC_LOG(ERROR) << "Model suggest selection failed.";
-    return click_indices;
+    return original_click_indices;
   }
   if (!RegexChunk(context_unicode, selection_regex_patterns_, &candidates)) {
     TC_LOG(ERROR) << "Regex suggest selection failed.";
-    return click_indices;
+    return original_click_indices;
   }
   if (!DatetimeChunk(UTF8ToUnicodeText(context, /*do_copy=*/false),
                      /*reference_time_ms_utc=*/0, /*reference_timezone=*/"",
                      options.locales, ModeFlag_SELECTION, &candidates)) {
     TC_LOG(ERROR) << "Datetime suggest selection failed.";
-    return click_indices;
+    return original_click_indices;
   }
 
   // Sort candidates according to their position in the input, so that the next
@@ -383,19 +486,37 @@ CodepointSpan TextClassifier::SuggestSelection(
             });
 
   std::vector<int> candidate_indices;
-  if (!ResolveConflicts(candidates, context, &interpreter_manager,
+  if (!ResolveConflicts(candidates, context, tokens, &interpreter_manager,
                         &candidate_indices)) {
     TC_LOG(ERROR) << "Couldn't resolve conflicts.";
-    return click_indices;
+    return original_click_indices;
   }
 
   for (const int i : candidate_indices) {
-    if (SpansOverlap(candidates[i].span, click_indices)) {
+    if (SpansOverlap(candidates[i].span, click_indices) &&
+        SpansOverlap(candidates[i].span, original_click_indices)) {
+      // Run model classification if not present but requested and there's a
+      // classification collection filter specified.
+      if (candidates[i].classification.empty() &&
+          model_->selection_options()->always_classify_suggested_selection() &&
+          !filtered_collections_selection_.empty()) {
+        if (!ModelClassifyText(
+                context, candidates[i].span, &interpreter_manager,
+                /*embedding_cache=*/nullptr, &candidates[i].classification)) {
+          return original_click_indices;
+        }
+      }
+
+      // Ignore if span classification is filtered.
+      if (FilteredForSelection(candidates[i])) {
+        return original_click_indices;
+      }
+
       return candidates[i].span;
     }
   }
 
-  return click_indices;
+  return original_click_indices;
 }
 
 namespace {
@@ -422,6 +543,7 @@ int FirstNonOverlappingSpanIndex(const std::vector<AnnotatedSpan>& candidates,
 
 bool TextClassifier::ResolveConflicts(
     const std::vector<AnnotatedSpan>& candidates, const std::string& context,
+    const std::vector<Token>& cached_tokens,
     InterpreterManager* interpreter_manager, std::vector<int>* result) const {
   result->clear();
   result->reserve(candidates.size());
@@ -432,8 +554,9 @@ bool TextClassifier::ResolveConflicts(
     const bool conflict_found = first_non_overlapping != (i + 1);
     if (conflict_found) {
       std::vector<int> candidate_indices;
-      if (!ResolveConflict(context, candidates, i, first_non_overlapping,
-                           interpreter_manager, &candidate_indices)) {
+      if (!ResolveConflict(context, cached_tokens, candidates, i,
+                           first_non_overlapping, interpreter_manager,
+                           &candidate_indices)) {
         return false;
       }
       result->insert(result->end(), candidate_indices.begin(),
@@ -466,8 +589,9 @@ float GetPriorityScore(
 }  // namespace
 
 bool TextClassifier::ResolveConflict(
-    const std::string& context, const std::vector<AnnotatedSpan>& candidates,
-    int start_index, int end_index, InterpreterManager* interpreter_manager,
+    const std::string& context, const std::vector<Token>& cached_tokens,
+    const std::vector<AnnotatedSpan>& candidates, int start_index,
+    int end_index, InterpreterManager* interpreter_manager,
     std::vector<int>* chosen_indices) const {
   std::vector<int> conflicting_indices;
   std::unordered_map<int, float> scores;
@@ -484,7 +608,8 @@ bool TextClassifier::ResolveConflict(
     // candidate conflicts and comes from the model, we need to run a
     // classification to determine its priority:
     std::vector<ClassificationResult> classification;
-    if (!ModelClassifyText(context, candidates[i].span, interpreter_manager,
+    if (!ModelClassifyText(context, cached_tokens, candidates[i].span,
+                           interpreter_manager,
                            /*embedding_cache=*/nullptr, &classification)) {
       return false;
     }
@@ -522,7 +647,7 @@ bool TextClassifier::ResolveConflict(
 
 bool TextClassifier::ModelSuggestSelection(
     const UnicodeText& context_unicode, CodepointSpan click_indices,
-    InterpreterManager* interpreter_manager,
+    InterpreterManager* interpreter_manager, std::vector<Token>* tokens,
     std::vector<AnnotatedSpan>* result) const {
   if (model_->triggering_options() == nullptr ||
       !(model_->triggering_options()->enabled_modes() & ModeFlag_SELECTION)) {
@@ -530,12 +655,11 @@ bool TextClassifier::ModelSuggestSelection(
   }
 
   int click_pos;
-  std::vector<Token> tokens =
-      selection_feature_processor_->Tokenize(context_unicode);
+  *tokens = selection_feature_processor_->Tokenize(context_unicode);
   selection_feature_processor_->RetokenizeAndFindClick(
       context_unicode, click_indices,
       selection_feature_processor_->GetOptions()->only_use_line_with_click(),
-      &tokens, &click_pos);
+      tokens, &click_pos);
   if (click_pos == kInvalidIndex) {
     TC_VLOG(1) << "Could not calculate the click position.";
     return false;
@@ -553,7 +677,7 @@ bool TextClassifier::ModelSuggestSelection(
       ExpandTokenSpan(SingleTokenSpan(click_pos),
                       /*num_tokens_left=*/symmetry_context_size,
                       /*num_tokens_right=*/symmetry_context_size),
-      {0, tokens.size()});
+      {0, tokens->size()});
 
   // Compute the extraction span based on the model type.
   TokenSpan extraction_span;
@@ -579,11 +703,11 @@ bool TextClassifier::ModelSuggestSelection(
                                       /*num_tokens_left=*/context_size,
                                       /*num_tokens_right=*/context_size);
   }
-  extraction_span = IntersectTokenSpans(extraction_span, {0, tokens.size()});
+  extraction_span = IntersectTokenSpans(extraction_span, {0, tokens->size()});
 
   std::unique_ptr<CachedFeatures> cached_features;
   if (!selection_feature_processor_->ExtractFeatures(
-          tokens, extraction_span,
+          *tokens, extraction_span,
           /*selection_span_for_feature=*/{kInvalidIndex, kInvalidIndex},
           embedding_executor_.get(),
           /*embedding_cache=*/nullptr,
@@ -596,7 +720,7 @@ bool TextClassifier::ModelSuggestSelection(
 
   // Produce selection model candidates.
   std::vector<TokenSpan> chunks;
-  if (!ModelChunk(tokens.size(), /*span_of_interest=*/symmetry_context_span,
+  if (!ModelChunk(tokens->size(), /*span_of_interest=*/symmetry_context_span,
                   interpreter_manager->SelectionInterpreter(), *cached_features,
                   &chunks)) {
     TC_LOG(ERROR) << "Could not chunk.";
@@ -606,7 +730,7 @@ bool TextClassifier::ModelSuggestSelection(
   for (const TokenSpan& chunk : chunks) {
     AnnotatedSpan candidate;
     candidate.span = selection_feature_processor_->StripBoundaryCodepoints(
-        context_unicode, TokenSpanToCodepointSpan(tokens, chunk));
+        context_unicode, TokenSpanToCodepointSpan(*tokens, chunk));
     if (model_->selection_options()->strip_unpaired_brackets()) {
       candidate.span =
           StripUnpairedBrackets(context_unicode, candidate.span, *unilib_);
@@ -801,6 +925,15 @@ bool TextClassifier::ModelClassifyText(
     }
   }
 
+  // Address class sanity check.
+  if (!classification_results->empty() &&
+      classification_results->begin()->collection == kAddressCollection) {
+    if (TokenSpanSize(selection_token_span) <
+        model_->classification_options()->address_min_num_tokens()) {
+      *classification_results = {{kOtherCollection, 1.0}};
+    }
+  }
+
   return true;
 }
 
@@ -856,7 +989,8 @@ bool TextClassifier::DatetimeClassifyText(
   std::vector<DatetimeParseResultSpan> datetime_spans;
   if (!datetime_parser_->Parse(selection_text, options.reference_time_ms_utc,
                                options.reference_timezone, options.locales,
-                               ModeFlag_CLASSIFICATION, &datetime_spans)) {
+                               ModeFlag_CLASSIFICATION,
+                               /*anchor_start_end=*/true, &datetime_spans)) {
     TC_LOG(ERROR) << "Error during parsing datetime.";
     return false;
   }
@@ -887,6 +1021,10 @@ std::vector<ClassificationResult> TextClassifier::ClassifyText(
     return {};
   }
 
+  if (!UTF8ToUnicodeText(context, /*do_copy=*/false).is_valid()) {
+    return {};
+  }
+
   if (std::get<0>(selection_indices) >= std::get<1>(selection_indices)) {
     TC_VLOG(1) << "Trying to run ClassifyText with invalid indices: "
                << std::get<0>(selection_indices) << " "
@@ -897,14 +1035,22 @@ std::vector<ClassificationResult> TextClassifier::ClassifyText(
   // Try the regular expression models.
   ClassificationResult regex_result;
   if (RegexClassifyText(context, selection_indices, &regex_result)) {
-    return {regex_result};
+    if (!FilteredForClassification(regex_result)) {
+      return {regex_result};
+    } else {
+      return {{kOtherCollection, 1.0}};
+    }
   }
 
   // Try the date model.
   ClassificationResult datetime_result;
   if (DatetimeClassifyText(context, selection_indices, options,
                            &datetime_result)) {
-    return {datetime_result};
+    if (!FilteredForClassification(datetime_result)) {
+      return {datetime_result};
+    } else {
+      return {{kOtherCollection, 1.0}};
+    }
   }
 
   // Fallback to the model.
@@ -913,8 +1059,13 @@ std::vector<ClassificationResult> TextClassifier::ClassifyText(
   InterpreterManager interpreter_manager(selection_executor_.get(),
                                          classification_executor_.get());
   if (ModelClassifyText(context, selection_indices, &interpreter_manager,
-                        /*embedding_cache=*/nullptr, &model_result)) {
-    return model_result;
+                        /*embedding_cache=*/nullptr, &model_result) &&
+      !model_result.empty()) {
+    if (!FilteredForClassification(model_result[0])) {
+      return model_result;
+    } else {
+      return {{kOtherCollection, 1.0}};
+    }
   }
 
   // No classifications.
@@ -923,6 +1074,7 @@ std::vector<ClassificationResult> TextClassifier::ClassifyText(
 
 bool TextClassifier::ModelAnnotate(const std::string& context,
                                    InterpreterManager* interpreter_manager,
+                                   std::vector<Token>* tokens,
                                    std::vector<AnnotatedSpan>* result) const {
   if (model_->triggering_options() == nullptr ||
       !(model_->triggering_options()->enabled_modes() & ModeFlag_ANNOTATION)) {
@@ -948,18 +1100,17 @@ bool TextClassifier::ModelAnnotate(const std::string& context,
     const std::string line_str =
         UnicodeText::UTF8Substring(line.first, line.second);
 
-    std::vector<Token> tokens =
-        selection_feature_processor_->Tokenize(line_str);
+    *tokens = selection_feature_processor_->Tokenize(line_str);
     selection_feature_processor_->RetokenizeAndFindClick(
         line_str, {0, std::distance(line.first, line.second)},
         selection_feature_processor_->GetOptions()->only_use_line_with_click(),
-        &tokens,
+        tokens,
         /*click_pos=*/nullptr);
-    const TokenSpan full_line_span = {0, tokens.size()};
+    const TokenSpan full_line_span = {0, tokens->size()};
 
     std::unique_ptr<CachedFeatures> cached_features;
     if (!selection_feature_processor_->ExtractFeatures(
-            tokens, full_line_span,
+            *tokens, full_line_span,
             /*selection_span_for_feature=*/{kInvalidIndex, kInvalidIndex},
             embedding_executor_.get(),
             /*embedding_cache=*/nullptr,
@@ -971,7 +1122,7 @@ bool TextClassifier::ModelAnnotate(const std::string& context,
     }
 
     std::vector<TokenSpan> local_chunks;
-    if (!ModelChunk(tokens.size(), /*span_of_interest=*/full_line_span,
+    if (!ModelChunk(tokens->size(), /*span_of_interest=*/full_line_span,
                     interpreter_manager->SelectionInterpreter(),
                     *cached_features, &local_chunks)) {
       TC_LOG(ERROR) << "Could not chunk.";
@@ -982,12 +1133,12 @@ bool TextClassifier::ModelAnnotate(const std::string& context,
     for (const TokenSpan& chunk : local_chunks) {
       const CodepointSpan codepoint_span =
           selection_feature_processor_->StripBoundaryCodepoints(
-              line_str, TokenSpanToCodepointSpan(tokens, chunk));
+              line_str, TokenSpanToCodepointSpan(*tokens, chunk));
 
       // Skip empty spans.
       if (codepoint_span.first != codepoint_span.second) {
         std::vector<ClassificationResult> classification;
-        if (!ModelClassifyText(line_str, tokens, codepoint_span,
+        if (!ModelClassifyText(line_str, *tokens, codepoint_span,
                                interpreter_manager, &embedding_cache,
                                &classification)) {
           TC_LOG(ERROR) << "Could not classify text: "
@@ -1016,6 +1167,10 @@ const FeatureProcessor& TextClassifier::SelectionFeatureProcessorForTests()
   return *selection_feature_processor_;
 }
 
+const DatetimeParser* TextClassifier::DatetimeParserForTests() const {
+  return datetime_parser_.get();
+}
+
 std::vector<AnnotatedSpan> TextClassifier::Annotate(
     const std::string& context, const AnnotationOptions& options) const {
   std::vector<AnnotatedSpan> candidates;
@@ -1024,10 +1179,15 @@ std::vector<AnnotatedSpan> TextClassifier::Annotate(
     return {};
   }
 
+  if (!UTF8ToUnicodeText(context, /*do_copy=*/false).is_valid()) {
+    return {};
+  }
+
   InterpreterManager interpreter_manager(selection_executor_.get(),
                                          classification_executor_.get());
   // Annotate with the selection model.
-  if (!ModelAnnotate(context, &interpreter_manager, &candidates)) {
+  std::vector<Token> tokens;
+  if (!ModelAnnotate(context, &interpreter_manager, &tokens, &candidates)) {
     TC_LOG(ERROR) << "Couldn't run ModelAnnotate.";
     return {};
   }
@@ -1056,7 +1216,7 @@ std::vector<AnnotatedSpan> TextClassifier::Annotate(
             });
 
   std::vector<int> candidate_indices;
-  if (!ResolveConflicts(candidates, context, &interpreter_manager,
+  if (!ResolveConflicts(candidates, context, tokens, &interpreter_manager,
                         &candidate_indices)) {
     TC_LOG(ERROR) << "Couldn't resolve conflicts.";
     return {};
@@ -1066,7 +1226,8 @@ std::vector<AnnotatedSpan> TextClassifier::Annotate(
   result.reserve(candidate_indices.size());
   for (const int i : candidate_indices) {
     if (!candidates[i].classification.empty() &&
-        !ClassifiedAsOther(candidates[i].classification)) {
+        !ClassifiedAsOther(candidates[i].classification) &&
+        !FilteredForAnnotation(candidates[i])) {
       result.push_back(std::move(candidates[i]));
     }
   }
@@ -1351,10 +1512,14 @@ bool TextClassifier::DatetimeChunk(const UnicodeText& context_unicode,
                                    const std::string& reference_timezone,
                                    const std::string& locales, ModeFlag mode,
                                    std::vector<AnnotatedSpan>* result) const {
+  if (!datetime_parser_) {
+    return false;
+  }
+
   std::vector<DatetimeParseResultSpan> datetime_spans;
   if (!datetime_parser_->Parse(context_unicode, reference_time_ms_utc,
                                reference_timezone, locales, mode,
-                               &datetime_spans)) {
+                               /*anchor_start_end=*/false, &datetime_spans)) {
     return false;
   }
   for (const DatetimeParseResultSpan& datetime_span : datetime_spans) {

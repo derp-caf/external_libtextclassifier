@@ -45,8 +45,25 @@ TensorView<float> ComputeLogitsHelper(const int input_index_features,
 // Executor for the text selection prediction and classification models.
 class ModelExecutor {
  public:
-  explicit ModelExecutor(const tflite::Model* model_spec) {
-    internal::FromModelSpec(model_spec, &model_);
+  static std::unique_ptr<const ModelExecutor> Instance(
+      const flatbuffers::Vector<uint8_t>* model_spec_buffer) {
+    const tflite::Model* model =
+        flatbuffers::GetRoot<tflite::Model>(model_spec_buffer->data());
+    flatbuffers::Verifier verifier(model_spec_buffer->data(),
+                                   model_spec_buffer->Length());
+    if (!model->Verify(verifier)) {
+      return nullptr;
+    }
+    return Instance(model);
+  }
+
+  static std::unique_ptr<const ModelExecutor> Instance(
+      const tflite::Model* model_spec) {
+    std::unique_ptr<const tflite::FlatBufferModel> model;
+    if (!internal::FromModelSpec(model_spec, &model)) {
+      return nullptr;
+    }
+    return std::unique_ptr<ModelExecutor>(new ModelExecutor(std::move(model)));
   }
 
   // Creates an Interpreter for the model that serves as a scratch-pad for the
@@ -60,10 +77,13 @@ class ModelExecutor {
   }
 
  protected:
+  explicit ModelExecutor(std::unique_ptr<const tflite::FlatBufferModel> model)
+      : model_(std::move(model)) {}
+
   static const int kInputIndexFeatures = 0;
   static const int kOutputIndexLogits = 0;
 
-  std::unique_ptr<const tflite::FlatBufferModel> model_ = nullptr;
+  std::unique_ptr<const tflite::FlatBufferModel> model_;
   tflite::ops::builtin::BuiltinOpResolver builtins_;
 };
 
@@ -83,27 +103,33 @@ class EmbeddingExecutor {
 
 class TFLiteEmbeddingExecutor : public EmbeddingExecutor {
  public:
-  explicit TFLiteEmbeddingExecutor(const tflite::Model* model_spec,
-                                   int embedding_size, int quantization_bits);
+  static std::unique_ptr<TFLiteEmbeddingExecutor> Instance(
+      const flatbuffers::Vector<uint8_t>* model_spec_buffer, int embedding_size,
+      int quantization_bits);
+
   bool AddEmbedding(const TensorView<int>& sparse_features, float* dest,
                     int dest_size) const override;
 
-  bool IsReady() const override { return initialized_; }
-
  protected:
+  explicit TFLiteEmbeddingExecutor(
+      std::unique_ptr<const tflite::FlatBufferModel> model,
+      int quantization_bits, int num_buckets, int bytes_per_embedding,
+      int output_embedding_size, const TfLiteTensor* scales,
+      const TfLiteTensor* embeddings,
+      std::unique_ptr<tflite::Interpreter> interpreter);
+
+  std::unique_ptr<const tflite::FlatBufferModel> model_;
+
   int quantization_bits_;
-  bool initialized_ = false;
   int num_buckets_ = -1;
   int bytes_per_embedding_ = -1;
   int output_embedding_size_ = -1;
   const TfLiteTensor* scales_ = nullptr;
   const TfLiteTensor* embeddings_ = nullptr;
 
-  std::unique_ptr<const tflite::FlatBufferModel> model_ = nullptr;
   // NOTE: This interpreter is used in a read-only way (as a storage for the
   // model params), thus is still thread-safe.
-  std::unique_ptr<tflite::Interpreter> interpreter_ = nullptr;
-  tflite::ops::builtin::BuiltinOpResolver builtins_;
+  std::unique_ptr<tflite::Interpreter> interpreter_;
 };
 
 }  // namespace libtextclassifier2

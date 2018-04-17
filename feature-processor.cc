@@ -166,6 +166,7 @@ void FeatureProcessor::StripTokensFromOtherLines(
 
 std::string FeatureProcessor::GetDefaultCollection() const {
   if (options_->default_collection() < 0 ||
+      options_->collections() == nullptr ||
       options_->default_collection() >= options_->collections()->size()) {
     TC_LOG(ERROR)
         << "Invalid or missing default collection. Returning empty string.";

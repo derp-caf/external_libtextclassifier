@@ -65,6 +65,28 @@ TEST(UnicodeTextTest, Ownership) {
   EXPECT_NE(t.data(), alias.data());
 }
 
+TEST(UnicodeTextTest, Validation) {
+  EXPECT_TRUE(UTF8ToUnicodeText("1234😋hello", /*do_copy=*/false).is_valid());
+  EXPECT_TRUE(
+      UTF8ToUnicodeText("\u304A\u00B0\u106B", /*do_copy=*/false).is_valid());
+  EXPECT_TRUE(
+      UTF8ToUnicodeText("this is a test😋😋😋", /*do_copy=*/false).is_valid());
+  EXPECT_TRUE(
+      UTF8ToUnicodeText("\xf0\x9f\x98\x8b", /*do_copy=*/false).is_valid());
+  // Too short (string is too short).
+  EXPECT_FALSE(UTF8ToUnicodeText("\xf0\x9f", /*do_copy=*/false).is_valid());
+  // Too long (too many trailing bytes).
+  EXPECT_FALSE(
+      UTF8ToUnicodeText("\xf0\x9f\x98\x8b\x8b", /*do_copy=*/false).is_valid());
+  // Too short (too few trailing bytes).
+  EXPECT_FALSE(
+      UTF8ToUnicodeText("\xf0\x9f\x98\x61\x61", /*do_copy=*/false).is_valid());
+  // Invalid with context.
+  EXPECT_FALSE(
+      UTF8ToUnicodeText("hello \xf0\x9f\x98\x61\x61 world1", /*do_copy=*/false)
+          .is_valid());
+}
+
 class IteratorTest : public UnicodeTextTest {};
 
 TEST_F(IteratorTest, Iterates) {

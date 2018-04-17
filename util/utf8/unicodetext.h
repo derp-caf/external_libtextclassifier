@@ -154,6 +154,9 @@ class UnicodeText {
 
   bool empty() const;
 
+  // Checks whether the underlying data is valid utf8 data.
+  bool is_valid() const;
+
   bool operator==(const UnicodeText& other) const;
 
   // x.PointToUTF8(buf,len) changes x so that it points to buf

@@ -217,6 +217,7 @@ typedef std::pair<UnicodeText::const_iterator, UnicodeText::const_iterator>
 UnicodeText UTF8ToUnicodeText(const char* utf8_buf, int len, bool do_copy);
 UnicodeText UTF8ToUnicodeText(const char* utf8_buf, bool do_copy);
 UnicodeText UTF8ToUnicodeText(const std::string& str, bool do_copy);
+UnicodeText UTF8ToUnicodeText(const std::string& str);
 
 }  // namespace libtextclassifier2
 

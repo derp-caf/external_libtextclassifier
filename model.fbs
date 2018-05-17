@@ -165,6 +165,9 @@ table ClassificationModelOptions {
 
   // Limits for addresses.
   address_min_num_tokens:int;
+
+  // Maximum number of tokens to attempt a classification (-1 is unlimited).
+  max_num_tokens:int = -1;
 }
 
 // List of regular expression matchers to check.
@@ -249,6 +252,22 @@ table DatetimeModel {
   // If true, will use the extractors for determining the match location as
   // opposed to using the location where the global pattern matched.
   use_extractors_for_locating:bool = 1;
+
+  // List of locale ids, rules of whose are always run, after the requested
+  // ones.
+  default_locales:[int];
+}
+
+namespace libtextclassifier2.DatetimeModelLibrary_;
+table Item {
+  key:string;
+  value:libtextclassifier2.DatetimeModel;
+}
+
+// A set of named DateTime models.
+namespace libtextclassifier2;
+table DatetimeModelLibrary {
+  models:[libtextclassifier2.DatetimeModelLibrary_.Item];
 }
 
 // Options controlling the output of the Tensorflow Lite models.

@@ -771,12 +771,8 @@ void StripOrPadTokens(TokenSpan relative_click_span, int context_size,
 
 }  // namespace internal
 
-bool FeatureProcessor::ExtractFeatures(
-    const std::vector<Token>& tokens, TokenSpan token_span,
-    CodepointSpan selection_span_for_feature,
-    const EmbeddingExecutor* embedding_executor,
-    EmbeddingCache* embedding_cache, int feature_vector_size,
-    std::unique_ptr<CachedFeatures>* cached_features) const {
+bool FeatureProcessor::HasEnoughSupportedCodepoints(
+    const std::vector<Token>& tokens, TokenSpan token_span) const {
   if (options_->min_supported_codepoint_ratio() > 0) {
     const float supported_codepoint_ratio =
         SupportedCodepointsRatio(token_span, tokens);
@@ -786,7 +782,15 @@ bool FeatureProcessor::ExtractFeatures(
       return false;
     }
   }
+  return true;
+}
 
+bool FeatureProcessor::ExtractFeatures(
+    const std::vector<Token>& tokens, TokenSpan token_span,
+    CodepointSpan selection_span_for_feature,
+    const EmbeddingExecutor* embedding_executor,
+    EmbeddingCache* embedding_cache, int feature_vector_size,
+    std::unique_ptr<CachedFeatures>* cached_features) const {
   std::unique_ptr<std::vector<float>> features(new std::vector<float>());
   features->reserve(feature_vector_size * TokenSpanSize(token_span));
   for (int i = token_span.first; i < token_span.second; ++i) {

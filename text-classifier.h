@@ -148,8 +148,9 @@ class TextClassifier {
       const std::string& context,
       const AnnotationOptions& options = AnnotationOptions::Default()) const;
 
-  // Exposes the selection feature processor for tests and evaluations.
-  const FeatureProcessor& SelectionFeatureProcessorForTests() const;
+  // Exposes the feature processor for tests and evaluations.
+  const FeatureProcessor* SelectionFeatureProcessorForTests() const;
+  const FeatureProcessor* ClassificationFeatureProcessorForTests() const;
 
   // Exposes the date time parser for tests and evaluations.
   const DatetimeParser* DatetimeParserForTests() const;

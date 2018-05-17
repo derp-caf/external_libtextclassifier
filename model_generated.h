@@ -59,6 +59,16 @@ struct DatetimeModelExtractorT;
 struct DatetimeModel;
 struct DatetimeModelT;
 
+namespace DatetimeModelLibrary_ {
+
+struct Item;
+struct ItemT;
+
+}  // namespace DatetimeModelLibrary_
+
+struct DatetimeModelLibrary;
+struct DatetimeModelLibraryT;
+
 struct ModelTriggeringOptions;
 struct ModelTriggeringOptionsT;
 
@@ -730,10 +740,12 @@ struct ClassificationModelOptionsT : public flatbuffers::NativeTable {
   int32_t phone_min_num_digits;
   int32_t phone_max_num_digits;
   int32_t address_min_num_tokens;
+  int32_t max_num_tokens;
   ClassificationModelOptionsT()
       : phone_min_num_digits(7),
         phone_max_num_digits(15),
-        address_min_num_tokens(0) {
+        address_min_num_tokens(0),
+        max_num_tokens(-1) {
   }
 };
 
@@ -742,7 +754,8 @@ struct ClassificationModelOptions FLATBUFFERS_FINAL_CLASS : private flatbuffers:
   enum {
     VT_PHONE_MIN_NUM_DIGITS = 4,
     VT_PHONE_MAX_NUM_DIGITS = 6,
-    VT_ADDRESS_MIN_NUM_TOKENS = 8
+    VT_ADDRESS_MIN_NUM_TOKENS = 8,
+    VT_MAX_NUM_TOKENS = 10
   };
   int32_t phone_min_num_digits() const {
     return GetField<int32_t>(VT_PHONE_MIN_NUM_DIGITS, 7);
@@ -753,11 +766,15 @@ struct ClassificationModelOptions FLATBUFFERS_FINAL_CLASS : private flatbuffers:
   int32_t address_min_num_tokens() const {
     return GetField<int32_t>(VT_ADDRESS_MIN_NUM_TOKENS, 0);
   }
+  int32_t max_num_tokens() const {
+    return GetField<int32_t>(VT_MAX_NUM_TOKENS, -1);
+  }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int32_t>(verifier, VT_PHONE_MIN_NUM_DIGITS) &&
            VerifyField<int32_t>(verifier, VT_PHONE_MAX_NUM_DIGITS) &&
            VerifyField<int32_t>(verifier, VT_ADDRESS_MIN_NUM_TOKENS) &&
+           VerifyField<int32_t>(verifier, VT_MAX_NUM_TOKENS) &&
            verifier.EndTable();
   }
   ClassificationModelOptionsT *UnPack(const flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -777,6 +794,9 @@ struct ClassificationModelOptionsBuilder {
   void add_address_min_num_tokens(int32_t address_min_num_tokens) {
     fbb_.AddElement<int32_t>(ClassificationModelOptions::VT_ADDRESS_MIN_NUM_TOKENS, address_min_num_tokens, 0);
   }
+  void add_max_num_tokens(int32_t max_num_tokens) {
+    fbb_.AddElement<int32_t>(ClassificationModelOptions::VT_MAX_NUM_TOKENS, max_num_tokens, -1);
+  }
   explicit ClassificationModelOptionsBuilder(flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -793,8 +813,10 @@ inline flatbuffers::Offset<ClassificationModelOptions> CreateClassificationModel
     flatbuffers::FlatBufferBuilder &_fbb,
     int32_t phone_min_num_digits = 7,
     int32_t phone_max_num_digits = 15,
-    int32_t address_min_num_tokens = 0) {
+    int32_t address_min_num_tokens = 0,
+    int32_t max_num_tokens = -1) {
   ClassificationModelOptionsBuilder builder_(_fbb);
+  builder_.add_max_num_tokens(max_num_tokens);
   builder_.add_address_min_num_tokens(address_min_num_tokens);
   builder_.add_phone_max_num_digits(phone_max_num_digits);
   builder_.add_phone_min_num_digits(phone_min_num_digits);
@@ -1339,6 +1361,7 @@ struct DatetimeModelT : public flatbuffers::NativeTable {
   std::vector<std::unique_ptr<DatetimeModelPatternT>> patterns;
   std::vector<std::unique_ptr<DatetimeModelExtractorT>> extractors;
   bool use_extractors_for_locating;
+  std::vector<int32_t> default_locales;
   DatetimeModelT()
       : use_extractors_for_locating(true) {
   }
@@ -1350,7 +1373,8 @@ struct DatetimeModel FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
     VT_LOCALES = 4,
     VT_PATTERNS = 6,
     VT_EXTRACTORS = 8,
-    VT_USE_EXTRACTORS_FOR_LOCATING = 10
+    VT_USE_EXTRACTORS_FOR_LOCATING = 10,
+    VT_DEFAULT_LOCALES = 12
   };
   const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *locales() const {
     return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *>(VT_LOCALES);
@@ -1364,6 +1388,9 @@ struct DatetimeModel FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   bool use_extractors_for_locating() const {
     return GetField<uint8_t>(VT_USE_EXTRACTORS_FOR_LOCATING, 1) != 0;
   }
+  const flatbuffers::Vector<int32_t> *default_locales() const {
+    return GetPointer<const flatbuffers::Vector<int32_t> *>(VT_DEFAULT_LOCALES);
+  }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyOffset(verifier, VT_LOCALES) &&
@@ -1376,6 +1403,8 @@ struct DatetimeModel FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            verifier.Verify(extractors()) &&
            verifier.VerifyVectorOfTables(extractors()) &&
            VerifyField<uint8_t>(verifier, VT_USE_EXTRACTORS_FOR_LOCATING) &&
+           VerifyOffset(verifier, VT_DEFAULT_LOCALES) &&
+           verifier.Verify(default_locales()) &&
            verifier.EndTable();
   }
   DatetimeModelT *UnPack(const flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -1398,6 +1427,9 @@ struct DatetimeModelBuilder {
   void add_use_extractors_for_locating(bool use_extractors_for_locating) {
     fbb_.AddElement<uint8_t>(DatetimeModel::VT_USE_EXTRACTORS_FOR_LOCATING, static_cast<uint8_t>(use_extractors_for_locating), 1);
   }
+  void add_default_locales(flatbuffers::Offset<flatbuffers::Vector<int32_t>> default_locales) {
+    fbb_.AddOffset(DatetimeModel::VT_DEFAULT_LOCALES, default_locales);
+  }
   explicit DatetimeModelBuilder(flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1415,8 +1447,10 @@ inline flatbuffers::Offset<DatetimeModel> CreateDatetimeModel(
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> locales = 0,
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<DatetimeModelPattern>>> patterns = 0,
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<DatetimeModelExtractor>>> extractors = 0,
-    bool use_extractors_for_locating = true) {
+    bool use_extractors_for_locating = true,
+    flatbuffers::Offset<flatbuffers::Vector<int32_t>> default_locales = 0) {
   DatetimeModelBuilder builder_(_fbb);
+  builder_.add_default_locales(default_locales);
   builder_.add_extractors(extractors);
   builder_.add_patterns(patterns);
   builder_.add_locales(locales);
@@ -1429,16 +1463,161 @@ inline flatbuffers::Offset<DatetimeModel> CreateDatetimeModelDirect(
     const std::vector<flatbuffers::Offset<flatbuffers::String>> *locales = nullptr,
     const std::vector<flatbuffers::Offset<DatetimeModelPattern>> *patterns = nullptr,
     const std::vector<flatbuffers::Offset<DatetimeModelExtractor>> *extractors = nullptr,
-    bool use_extractors_for_locating = true) {
+    bool use_extractors_for_locating = true,
+    const std::vector<int32_t> *default_locales = nullptr) {
   return libtextclassifier2::CreateDatetimeModel(
       _fbb,
       locales ? _fbb.CreateVector<flatbuffers::Offset<flatbuffers::String>>(*locales) : 0,
       patterns ? _fbb.CreateVector<flatbuffers::Offset<DatetimeModelPattern>>(*patterns) : 0,
       extractors ? _fbb.CreateVector<flatbuffers::Offset<DatetimeModelExtractor>>(*extractors) : 0,
-      use_extractors_for_locating);
+      use_extractors_for_locating,
+      default_locales ? _fbb.CreateVector<int32_t>(*default_locales) : 0);
 }
 
 flatbuffers::Offset<DatetimeModel> CreateDatetimeModel(flatbuffers::FlatBufferBuilder &_fbb, const DatetimeModelT *_o, const flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+namespace DatetimeModelLibrary_ {
+
+struct ItemT : public flatbuffers::NativeTable {
+  typedef Item TableType;
+  std::string key;
+  std::unique_ptr<libtextclassifier2::DatetimeModelT> value;
+  ItemT() {
+  }
+};
+
+struct Item FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+  typedef ItemT NativeTableType;
+  enum {
+    VT_KEY = 4,
+    VT_VALUE = 6
+  };
+  const flatbuffers::String *key() const {
+    return GetPointer<const flatbuffers::String *>(VT_KEY);
+  }
+  const libtextclassifier2::DatetimeModel *value() const {
+    return GetPointer<const libtextclassifier2::DatetimeModel *>(VT_VALUE);
+  }
+  bool Verify(flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_KEY) &&
+           verifier.Verify(key()) &&
+           VerifyOffset(verifier, VT_VALUE) &&
+           verifier.VerifyTable(value()) &&
+           verifier.EndTable();
+  }
+  ItemT *UnPack(const flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ItemT *_o, const flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static flatbuffers::Offset<Item> Pack(flatbuffers::FlatBufferBuilder &_fbb, const ItemT* _o, const flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ItemBuilder {
+  flatbuffers::FlatBufferBuilder &fbb_;
+  flatbuffers::uoffset_t start_;
+  void add_key(flatbuffers::Offset<flatbuffers::String> key) {
+    fbb_.AddOffset(Item::VT_KEY, key);
+  }
+  void add_value(flatbuffers::Offset<libtextclassifier2::DatetimeModel> value) {
+    fbb_.AddOffset(Item::VT_VALUE, value);
+  }
+  explicit ItemBuilder(flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ItemBuilder &operator=(const ItemBuilder &);
+  flatbuffers::Offset<Item> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = flatbuffers::Offset<Item>(end);
+    return o;
+  }
+};
+
+inline flatbuffers::Offset<Item> CreateItem(
+    flatbuffers::FlatBufferBuilder &_fbb,
+    flatbuffers::Offset<flatbuffers::String> key = 0,
+    flatbuffers::Offset<libtextclassifier2::DatetimeModel> value = 0) {
+  ItemBuilder builder_(_fbb);
+  builder_.add_value(value);
+  builder_.add_key(key);
+  return builder_.Finish();
+}
+
+inline flatbuffers::Offset<Item> CreateItemDirect(
+    flatbuffers::FlatBufferBuilder &_fbb,
+    const char *key = nullptr,
+    flatbuffers::Offset<libtextclassifier2::DatetimeModel> value = 0) {
+  return libtextclassifier2::DatetimeModelLibrary_::CreateItem(
+      _fbb,
+      key ? _fbb.CreateString(key) : 0,
+      value);
+}
+
+flatbuffers::Offset<Item> CreateItem(flatbuffers::FlatBufferBuilder &_fbb, const ItemT *_o, const flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+}  // namespace DatetimeModelLibrary_
+
+struct DatetimeModelLibraryT : public flatbuffers::NativeTable {
+  typedef DatetimeModelLibrary TableType;
+  std::vector<std::unique_ptr<libtextclassifier2::DatetimeModelLibrary_::ItemT>> models;
+  DatetimeModelLibraryT() {
+  }
+};
+
+struct DatetimeModelLibrary FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+  typedef DatetimeModelLibraryT NativeTableType;
+  enum {
+    VT_MODELS = 4
+  };
+  const flatbuffers::Vector<flatbuffers::Offset<libtextclassifier2::DatetimeModelLibrary_::Item>> *models() const {
+    return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<libtextclassifier2::DatetimeModelLibrary_::Item>> *>(VT_MODELS);
+  }
+  bool Verify(flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_MODELS) &&
+           verifier.Verify(models()) &&
+           verifier.VerifyVectorOfTables(models()) &&
+           verifier.EndTable();
+  }
+  DatetimeModelLibraryT *UnPack(const flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(DatetimeModelLibraryT *_o, const flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static flatbuffers::Offset<DatetimeModelLibrary> Pack(flatbuffers::FlatBufferBuilder &_fbb, const DatetimeModelLibraryT* _o, const flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct DatetimeModelLibraryBuilder {
+  flatbuffers::FlatBufferBuilder &fbb_;
+  flatbuffers::uoffset_t start_;
+  void add_models(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<libtextclassifier2::DatetimeModelLibrary_::Item>>> models) {
+    fbb_.AddOffset(DatetimeModelLibrary::VT_MODELS, models);
+  }
+  explicit DatetimeModelLibraryBuilder(flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  DatetimeModelLibraryBuilder &operator=(const DatetimeModelLibraryBuilder &);
+  flatbuffers::Offset<DatetimeModelLibrary> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = flatbuffers::Offset<DatetimeModelLibrary>(end);
+    return o;
+  }
+};
+
+inline flatbuffers::Offset<DatetimeModelLibrary> CreateDatetimeModelLibrary(
+    flatbuffers::FlatBufferBuilder &_fbb,
+    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<libtextclassifier2::DatetimeModelLibrary_::Item>>> models = 0) {
+  DatetimeModelLibraryBuilder builder_(_fbb);
+  builder_.add_models(models);
+  return builder_.Finish();
+}
+
+inline flatbuffers::Offset<DatetimeModelLibrary> CreateDatetimeModelLibraryDirect(
+    flatbuffers::FlatBufferBuilder &_fbb,
+    const std::vector<flatbuffers::Offset<libtextclassifier2::DatetimeModelLibrary_::Item>> *models = nullptr) {
+  return libtextclassifier2::CreateDatetimeModelLibrary(
+      _fbb,
+      models ? _fbb.CreateVector<flatbuffers::Offset<libtextclassifier2::DatetimeModelLibrary_::Item>>(*models) : 0);
+}
+
+flatbuffers::Offset<DatetimeModelLibrary> CreateDatetimeModelLibrary(flatbuffers::FlatBufferBuilder &_fbb, const DatetimeModelLibraryT *_o, const flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
 struct ModelTriggeringOptionsT : public flatbuffers::NativeTable {
   typedef ModelTriggeringOptions TableType;
@@ -2809,6 +2988,7 @@ inline void ClassificationModelOptions::UnPackTo(ClassificationModelOptionsT *_o
   { auto _e = phone_min_num_digits(); _o->phone_min_num_digits = _e; };
   { auto _e = phone_max_num_digits(); _o->phone_max_num_digits = _e; };
   { auto _e = address_min_num_tokens(); _o->address_min_num_tokens = _e; };
+  { auto _e = max_num_tokens(); _o->max_num_tokens = _e; };
 }
 
 inline flatbuffers::Offset<ClassificationModelOptions> ClassificationModelOptions::Pack(flatbuffers::FlatBufferBuilder &_fbb, const ClassificationModelOptionsT* _o, const flatbuffers::rehasher_function_t *_rehasher) {
@@ -2822,11 +3002,13 @@ inline flatbuffers::Offset<ClassificationModelOptions> CreateClassificationModel
   auto _phone_min_num_digits = _o->phone_min_num_digits;
   auto _phone_max_num_digits = _o->phone_max_num_digits;
   auto _address_min_num_tokens = _o->address_min_num_tokens;
+  auto _max_num_tokens = _o->max_num_tokens;
   return libtextclassifier2::CreateClassificationModelOptions(
       _fbb,
       _phone_min_num_digits,
       _phone_max_num_digits,
-      _address_min_num_tokens);
+      _address_min_num_tokens,
+      _max_num_tokens);
 }
 
 namespace RegexModel_ {
@@ -3025,6 +3207,7 @@ inline void DatetimeModel::UnPackTo(DatetimeModelT *_o, const flatbuffers::resol
   { auto _e = patterns(); if (_e) { _o->patterns.resize(_e->size()); for (flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->patterns[_i] = std::unique_ptr<DatetimeModelPatternT>(_e->Get(_i)->UnPack(_resolver)); } } };
   { auto _e = extractors(); if (_e) { _o->extractors.resize(_e->size()); for (flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->extractors[_i] = std::unique_ptr<DatetimeModelExtractorT>(_e->Get(_i)->UnPack(_resolver)); } } };
   { auto _e = use_extractors_for_locating(); _o->use_extractors_for_locating = _e; };
+  { auto _e = default_locales(); if (_e) { _o->default_locales.resize(_e->size()); for (flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->default_locales[_i] = _e->Get(_i); } } };
 }
 
 inline flatbuffers::Offset<DatetimeModel> DatetimeModel::Pack(flatbuffers::FlatBufferBuilder &_fbb, const DatetimeModelT* _o, const flatbuffers::rehasher_function_t *_rehasher) {
@@ -3039,12 +3222,73 @@ inline flatbuffers::Offset<DatetimeModel> CreateDatetimeModel(flatbuffers::FlatB
   auto _patterns = _o->patterns.size() ? _fbb.CreateVector<flatbuffers::Offset<DatetimeModelPattern>> (_o->patterns.size(), [](size_t i, _VectorArgs *__va) { return CreateDatetimeModelPattern(*__va->__fbb, __va->__o->patterns[i].get(), __va->__rehasher); }, &_va ) : 0;
   auto _extractors = _o->extractors.size() ? _fbb.CreateVector<flatbuffers::Offset<DatetimeModelExtractor>> (_o->extractors.size(), [](size_t i, _VectorArgs *__va) { return CreateDatetimeModelExtractor(*__va->__fbb, __va->__o->extractors[i].get(), __va->__rehasher); }, &_va ) : 0;
   auto _use_extractors_for_locating = _o->use_extractors_for_locating;
+  auto _default_locales = _o->default_locales.size() ? _fbb.CreateVector(_o->default_locales) : 0;
   return libtextclassifier2::CreateDatetimeModel(
       _fbb,
       _locales,
       _patterns,
       _extractors,
-      _use_extractors_for_locating);
+      _use_extractors_for_locating,
+      _default_locales);
+}
+
+namespace DatetimeModelLibrary_ {
+
+inline ItemT *Item::UnPack(const flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = new ItemT();
+  UnPackTo(_o, _resolver);
+  return _o;
+}
+
+inline void Item::UnPackTo(ItemT *_o, const flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = key(); if (_e) _o->key = _e->str(); };
+  { auto _e = value(); if (_e) _o->value = std::unique_ptr<libtextclassifier2::DatetimeModelT>(_e->UnPack(_resolver)); };
+}
+
+inline flatbuffers::Offset<Item> Item::Pack(flatbuffers::FlatBufferBuilder &_fbb, const ItemT* _o, const flatbuffers::rehasher_function_t *_rehasher) {
+  return CreateItem(_fbb, _o, _rehasher);
+}
+
+inline flatbuffers::Offset<Item> CreateItem(flatbuffers::FlatBufferBuilder &_fbb, const ItemT *_o, const flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { flatbuffers::FlatBufferBuilder *__fbb; const ItemT* __o; const flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _key = _o->key.empty() ? 0 : _fbb.CreateString(_o->key);
+  auto _value = _o->value ? CreateDatetimeModel(_fbb, _o->value.get(), _rehasher) : 0;
+  return libtextclassifier2::DatetimeModelLibrary_::CreateItem(
+      _fbb,
+      _key,
+      _value);
+}
+
+}  // namespace DatetimeModelLibrary_
+
+inline DatetimeModelLibraryT *DatetimeModelLibrary::UnPack(const flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = new DatetimeModelLibraryT();
+  UnPackTo(_o, _resolver);
+  return _o;
+}
+
+inline void DatetimeModelLibrary::UnPackTo(DatetimeModelLibraryT *_o, const flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = models(); if (_e) { _o->models.resize(_e->size()); for (flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->models[_i] = std::unique_ptr<libtextclassifier2::DatetimeModelLibrary_::ItemT>(_e->Get(_i)->UnPack(_resolver)); } } };
+}
+
+inline flatbuffers::Offset<DatetimeModelLibrary> DatetimeModelLibrary::Pack(flatbuffers::FlatBufferBuilder &_fbb, const DatetimeModelLibraryT* _o, const flatbuffers::rehasher_function_t *_rehasher) {
+  return CreateDatetimeModelLibrary(_fbb, _o, _rehasher);
+}
+
+inline flatbuffers::Offset<DatetimeModelLibrary> CreateDatetimeModelLibrary(flatbuffers::FlatBufferBuilder &_fbb, const DatetimeModelLibraryT *_o, const flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { flatbuffers::FlatBufferBuilder *__fbb; const DatetimeModelLibraryT* __o; const flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _models = _o->models.size() ? _fbb.CreateVector<flatbuffers::Offset<libtextclassifier2::DatetimeModelLibrary_::Item>> (_o->models.size(), [](size_t i, _VectorArgs *__va) { return CreateItem(*__va->__fbb, __va->__o->models[i].get(), __va->__rehasher); }, &_va ) : 0;
+  return libtextclassifier2::CreateDatetimeModelLibrary(
+      _fbb,
+      _models);
 }
 
 inline ModelTriggeringOptionsT *ModelTriggeringOptions::UnPack(const flatbuffers::resolver_function_t *_resolver) const {

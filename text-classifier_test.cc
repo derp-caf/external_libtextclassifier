@@ -1010,7 +1010,7 @@ TEST_P(TextClassifierTest, ClassifyTextDatePriorities) {
   result.clear();
   options.reference_timezone = "Europe/Zurich";
   options.locales = "en-US";
-  result = classifier->ClassifyText("03/05", {0, 5}, options);
+  result = classifier->ClassifyText("03.05.1970", {0, 10}, options);
 
   ASSERT_EQ(result.size(), 1);
   EXPECT_THAT(result[0].collection, "date");
@@ -1020,8 +1020,8 @@ TEST_P(TextClassifierTest, ClassifyTextDatePriorities) {
 
   result.clear();
   options.reference_timezone = "Europe/Zurich";
-  options.locales = "en-GB,en-US";
-  result = classifier->ClassifyText("03/05", {0, 5}, options);
+  options.locales = "de";
+  result = classifier->ClassifyText("03.05.1970", {0, 10}, options);
 
   ASSERT_EQ(result.size(), 1);
   EXPECT_THAT(result[0].collection, "date");
@@ -1208,6 +1208,44 @@ TEST_P(TextClassifierTest, LongInputNoResultCheck) {
     classifier->SuggestSelection(input_100k, {50000, 50001});
     classifier->ClassifyText(input_100k, {50000, 50000 + value_length});
   }
+}
+#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+
+#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+TEST_P(TextClassifierTest, MaxTokenLength) {
+  CREATE_UNILIB_FOR_TESTING;
+  const std::string test_model = ReadFile(GetModelPath() + GetParam());
+  std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
+
+  std::unique_ptr<TextClassifier> classifier;
+
+  // With unrestricted number of tokens should behave normally.
+  unpacked_model->classification_options->max_num_tokens = -1;
+
+  flatbuffers::FlatBufferBuilder builder;
+  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  classifier = TextClassifier::FromUnownedBuffer(
+      reinterpret_cast<const char*>(builder.GetBufferPointer()),
+      builder.GetSize(), &unilib);
+  ASSERT_TRUE(classifier);
+
+  EXPECT_EQ(FirstResult(classifier->ClassifyText(
+                "I live at 350 Third Street, Cambridge.", {10, 37})),
+            "address");
+
+  // Raise the maximum number of tokens to suppress the classification.
+  unpacked_model->classification_options->max_num_tokens = 3;
+
+  flatbuffers::FlatBufferBuilder builder2;
+  builder2.Finish(Model::Pack(builder2, unpacked_model.get()));
+  classifier = TextClassifier::FromUnownedBuffer(
+      reinterpret_cast<const char*>(builder2.GetBufferPointer()),
+      builder2.GetSize(), &unilib);
+  ASSERT_TRUE(classifier);
+
+  EXPECT_EQ(FirstResult(classifier->ClassifyText(
+                "I live at 350 Third Street, Cambridge.", {10, 37})),
+            "other");
 }
 #endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
 

@@ -18,6 +18,7 @@
 
 #include <memory>
 
+#include "util/base/macros.h"
 #include "unicode/gregocal.h"
 #include "unicode/timezone.h"
 #include "unicode/ucal.h"
@@ -62,7 +63,7 @@ bool DispatchToRecedeOrToLastDayOfWeek(icu::Calendar* date, int relation_type,
             TC_LOG(ERROR) << "error day of week";
             return false;
           }
-          date->add(UCalendarDateFields::UCAL_DATE, 1, status);
+          date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1, status);
           if (U_FAILURE(status)) {
             TC_LOG(ERROR) << "error adding a day";
             return false;
@@ -72,7 +73,7 @@ bool DispatchToRecedeOrToLastDayOfWeek(icu::Calendar* date, int relation_type,
       }
       return true;
     case DateParseData::DAY:
-      date->add(UCalendarDateFields::UCAL_DATE, -1 * distance, status);
+      date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, -1 * distance, status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a day";
         return false;
@@ -81,7 +82,8 @@ bool DispatchToRecedeOrToLastDayOfWeek(icu::Calendar* date, int relation_type,
       return true;
     case DateParseData::WEEK:
       date->set(UCalendarDateFields::UCAL_DAY_OF_WEEK, 1);
-      date->add(UCalendarDateFields::UCAL_DATE, -7 * (distance - 1), status);
+      date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, -7 * (distance - 1),
+                status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a week";
         return false;
@@ -89,7 +91,7 @@ bool DispatchToRecedeOrToLastDayOfWeek(icu::Calendar* date, int relation_type,
 
       return true;
     case DateParseData::MONTH:
-      date->set(UCalendarDateFields::UCAL_DATE, 1);
+      date->set(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1);
       date->add(UCalendarDateFields::UCAL_MONTH, -1 * (distance - 1), status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a month";
@@ -127,7 +129,7 @@ bool DispatchToAdvancerOrToNextOrSameDayOfWeek(icu::Calendar* date,
           TC_LOG(ERROR) << "error day of week";
           return false;
         }
-        date->add(UCalendarDateFields::UCAL_DATE, 1, status);
+        date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1, status);
         if (U_FAILURE(status)) {
           TC_LOG(ERROR) << "error adding a day";
           return false;
@@ -135,7 +137,7 @@ bool DispatchToAdvancerOrToNextOrSameDayOfWeek(icu::Calendar* date,
       }
       return true;
     case DateParseData::DAY:
-      date->add(UCalendarDateFields::UCAL_DATE, 1, status);
+      date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1, status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a day";
         return false;
@@ -144,7 +146,7 @@ bool DispatchToAdvancerOrToNextOrSameDayOfWeek(icu::Calendar* date,
       return true;
     case DateParseData::WEEK:
       date->set(UCalendarDateFields::UCAL_DAY_OF_WEEK, 1);
-      date->add(UCalendarDateFields::UCAL_DATE, 7, status);
+      date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, 7, status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a week";
         return false;
@@ -152,7 +154,7 @@ bool DispatchToAdvancerOrToNextOrSameDayOfWeek(icu::Calendar* date,
 
       return true;
     case DateParseData::MONTH:
-      date->set(UCalendarDateFields::UCAL_DATE, 1);
+      date->set(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1);
       date->add(UCalendarDateFields::UCAL_MONTH, 1, status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a month";
@@ -190,7 +192,7 @@ bool DispatchToAdvancerOrToNextDayOfWeek(icu::Calendar* date, int relation_type,
             TC_LOG(ERROR) << "error day of week";
             return false;
           }
-          date->add(UCalendarDateFields::UCAL_DATE, 1, status);
+          date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1, status);
           if (U_FAILURE(status)) {
             TC_LOG(ERROR) << "error adding a day";
             return false;
@@ -200,7 +202,7 @@ bool DispatchToAdvancerOrToNextDayOfWeek(icu::Calendar* date, int relation_type,
       }
       return true;
     case DateParseData::DAY:
-      date->add(UCalendarDateFields::UCAL_DATE, distance, status);
+      date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, distance, status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a day";
         return false;
@@ -209,7 +211,7 @@ bool DispatchToAdvancerOrToNextDayOfWeek(icu::Calendar* date, int relation_type,
       return true;
     case DateParseData::WEEK:
       date->set(UCalendarDateFields::UCAL_DAY_OF_WEEK, 1);
-      date->add(UCalendarDateFields::UCAL_DATE, 7 * distance, status);
+      date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, 7 * distance, status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a week";
         return false;
@@ -217,7 +219,7 @@ bool DispatchToAdvancerOrToNextDayOfWeek(icu::Calendar* date, int relation_type,
 
       return true;
     case DateParseData::MONTH:
-      date->set(UCalendarDateFields::UCAL_DATE, 1);
+      date->set(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1);
       date->add(UCalendarDateFields::UCAL_MONTH, 1 * distance, status);
       if (U_FAILURE(status)) {
         TC_LOG(ERROR) << "error adding a month";
@@ -238,15 +240,61 @@ bool DispatchToAdvancerOrToNextDayOfWeek(icu::Calendar* date, int relation_type,
   }
 }
 
+bool RoundToGranularity(DatetimeGranularity granularity,
+                        icu::Calendar* calendar) {
+  // Force recomputation before doing the rounding.
+  UErrorCode status = U_ZERO_ERROR;
+  calendar->get(UCalendarDateFields::UCAL_DAY_OF_WEEK, status);
+  if (U_FAILURE(status)) {
+    TC_LOG(ERROR) << "Can't interpret date.";
+    return false;
+  }
+
+  switch (granularity) {
+    case GRANULARITY_YEAR:
+      calendar->set(UCalendarDateFields::UCAL_MONTH, 0);
+      TC_FALLTHROUGH_INTENDED;
+    case GRANULARITY_MONTH:
+      calendar->set(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1);
+      TC_FALLTHROUGH_INTENDED;
+    case GRANULARITY_DAY:
+      calendar->set(UCalendarDateFields::UCAL_HOUR, 0);
+      TC_FALLTHROUGH_INTENDED;
+    case GRANULARITY_HOUR:
+      calendar->set(UCalendarDateFields::UCAL_MINUTE, 0);
+      TC_FALLTHROUGH_INTENDED;
+    case GRANULARITY_MINUTE:
+      calendar->set(UCalendarDateFields::UCAL_SECOND, 0);
+      break;
+
+    case GRANULARITY_WEEK:
+      calendar->set(UCalendarDateFields::UCAL_DAY_OF_WEEK,
+                    calendar->getFirstDayOfWeek());
+      calendar->set(UCalendarDateFields::UCAL_HOUR, 0);
+      calendar->set(UCalendarDateFields::UCAL_MINUTE, 0);
+      calendar->set(UCalendarDateFields::UCAL_SECOND, 0);
+      break;
+
+    case GRANULARITY_UNKNOWN:
+    case GRANULARITY_SECOND:
+      break;
+  }
+
+  return true;
+}
+
 }  // namespace
 
 bool CalendarLib::InterpretParseData(const DateParseData& parse_data,
                                      int64 reference_time_ms_utc,
                                      const std::string& reference_timezone,
+                                     const std::string& reference_locale,
+                                     DatetimeGranularity granularity,
                                      int64* interpreted_time_ms_utc) const {
   UErrorCode status = U_ZERO_ERROR;
 
-  std::unique_ptr<icu::Calendar> date(icu::Calendar::createInstance(status));
+  std::unique_ptr<icu::Calendar> date(icu::Calendar::createInstance(
+      icu::Locale::createFromName(reference_locale.c_str()), status));
   if (U_FAILURE(status)) {
     TC_LOG(ERROR) << "error getting calendar instance";
     return false;
@@ -307,14 +355,14 @@ bool CalendarLib::InterpretParseData(const DateParseData& parse_data,
         // NOOP
         break;
       case DateParseData::Relation::TOMORROW:
-        date->add(UCalendarDateFields::UCAL_DATE, 1, status);
+        date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, 1, status);
         if (U_FAILURE(status)) {
           TC_LOG(ERROR) << "error adding a day";
           return false;
         }
         break;
       case DateParseData::Relation::YESTERDAY:
-        date->add(UCalendarDateFields::UCAL_DATE, -1, status);
+        date->add(UCalendarDateFields::UCAL_DAY_OF_MONTH, -1, status);
         if (U_FAILURE(status)) {
           TC_LOG(ERROR) << "error subtracting a day";
           return false;
@@ -356,7 +404,7 @@ bool CalendarLib::InterpretParseData(const DateParseData& parse_data,
     date->set(UCalendarDateFields::UCAL_MONTH, parse_data.month - 1);
   }
   if (parse_data.field_set_mask & DateParseData::Fields::DAY_FIELD) {
-    date->set(UCalendarDateFields::UCAL_DATE, parse_data.day_of_month);
+    date->set(UCalendarDateFields::UCAL_DAY_OF_MONTH, parse_data.day_of_month);
   }
   if (parse_data.field_set_mask & DateParseData::Fields::HOUR_FIELD) {
     if (parse_data.field_set_mask & DateParseData::Fields::AMPM_FIELD &&
@@ -372,11 +420,17 @@ bool CalendarLib::InterpretParseData(const DateParseData& parse_data,
   if (parse_data.field_set_mask & DateParseData::Fields::SECOND_FIELD) {
     date->set(UCalendarDateFields::UCAL_SECOND, parse_data.second);
   }
+
+  if (!RoundToGranularity(granularity, date.get())) {
+    return false;
+  }
+
   *interpreted_time_ms_utc = date->getTime(status);
   if (U_FAILURE(status)) {
     TC_LOG(ERROR) << "error getting time from instance";
     return false;
   }
+
   return true;
 }
 }  // namespace libtextclassifier2

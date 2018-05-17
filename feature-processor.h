@@ -159,6 +159,11 @@ class FeatureProcessor {
                               bool only_use_line_with_click,
                               std::vector<Token>* tokens, int* click_pos) const;
 
+  // Returns true if the token span has enough supported codepoints (as defined
+  // in the model config) or not and model should not run.
+  bool HasEnoughSupportedCodepoints(const std::vector<Token>& tokens,
+                                    TokenSpan token_span) const;
+
   // Extracts features as a CachedFeatures object that can be used for repeated
   // inference over token spans in the given context.
   bool ExtractFeatures(const std::vector<Token>& tokens, TokenSpan token_span,

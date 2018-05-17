@@ -62,13 +62,17 @@ class ZlibCompressor {
 // Compresses regex and datetime rules in the model in place.
 bool CompressModel(ModelT* model);
 
+// Decompresses regex and datetime rules in the model in place.
+bool DecompressModel(ModelT* model);
+
 // Compresses regex and datetime rules in the model.
 std::string CompressSerializedModel(const std::string& model);
 
 // Create and compile a regex pattern from optionally compressed pattern.
 std::unique_ptr<UniLib::RegexPattern> UncompressMakeRegexPattern(
     const UniLib& unilib, const flatbuffers::String* uncompressed_pattern,
-    const CompressedBuffer* compressed_pattern, ZlibDecompressor* decompressor);
+    const CompressedBuffer* compressed_pattern, ZlibDecompressor* decompressor,
+    std::string* result_pattern_text = nullptr);
 
 }  // namespace libtextclassifier2
 

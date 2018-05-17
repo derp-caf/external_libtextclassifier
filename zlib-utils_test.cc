@@ -84,6 +84,15 @@ TEST(ZlibUtilsTest, CompressModel) {
                                            ->compressed_pattern(),
                                        &uncompressed_pattern));
   EXPECT_EQ(uncompressed_pattern, "an example datetime extractor");
+
+  EXPECT_TRUE(DecompressModel(&model));
+  EXPECT_EQ(model.regex_model->patterns[0]->pattern, "this is a test pattern");
+  EXPECT_EQ(model.regex_model->patterns[1]->pattern,
+            "this is a second test pattern");
+  EXPECT_EQ(model.datetime_model->patterns[0]->regexes[0]->pattern,
+            "an example datetime pattern");
+  EXPECT_EQ(model.datetime_model->extractors[0]->pattern,
+            "an example datetime extractor");
 }
 
 }  // namespace libtextclassifier2

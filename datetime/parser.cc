@@ -95,6 +95,12 @@ DatetimeParser::DatetimeParser(const DatetimeModel* model, const UniLib& unilib,
     }
   }
 
+  if (model->default_locales() != nullptr) {
+    for (const int locale : *model->default_locales()) {
+      default_locale_ids_.push_back(locale);
+    }
+  }
+
   use_extractors_for_locating_ = model->use_extractors_for_locating();
 
   initialized_ = true;
@@ -110,14 +116,13 @@ bool DatetimeParser::Parse(
                anchor_start_end, results);
 }
 
-bool DatetimeParser::Parse(
-    const UnicodeText& input, const int64 reference_time_ms_utc,
-    const std::string& reference_timezone, const std::string& locales,
-    ModeFlag mode, bool anchor_start_end,
-    std::vector<DatetimeParseResultSpan>* results) const {
-  std::vector<DatetimeParseResultSpan> found_spans;
-  std::unordered_set<int> executed_rules;
-  for (const int locale_id : ParseAndExpandLocales(locales)) {
+bool DatetimeParser::FindSpansUsingLocales(
+    const std::vector<int>& locale_ids, const UnicodeText& input,
+    const int64 reference_time_ms_utc, const std::string& reference_timezone,
+    ModeFlag mode, bool anchor_start_end, const std::string& reference_locale,
+    std::unordered_set<int>* executed_rules,
+    std::vector<DatetimeParseResultSpan>* found_spans) const {
+  for (const int locale_id : locale_ids) {
     auto rules_it = locale_to_rules_.find(locale_id);
     if (rules_it == locale_to_rules_.end()) {
       continue;
@@ -125,7 +130,7 @@ bool DatetimeParser::Parse(
 
     for (const int rule_id : rules_it->second) {
       // Skip rules that were already executed in previous locales.
-      if (executed_rules.find(rule_id) != executed_rules.end()) {
+      if (executed_rules->find(rule_id) != executed_rules->end()) {
         continue;
       }
 
@@ -133,14 +138,32 @@ bool DatetimeParser::Parse(
         continue;
       }
 
-      executed_rules.insert(rule_id);
+      executed_rules->insert(rule_id);
 
       if (!ParseWithRule(rules_[rule_id], input, reference_time_ms_utc,
-                         reference_timezone, locale_id, anchor_start_end,
-                         &found_spans)) {
+                         reference_timezone, reference_locale, locale_id,
+                         anchor_start_end, found_spans)) {
         return false;
       }
     }
+  }
+  return true;
+}
+
+bool DatetimeParser::Parse(
+    const UnicodeText& input, const int64 reference_time_ms_utc,
+    const std::string& reference_timezone, const std::string& locales,
+    ModeFlag mode, bool anchor_start_end,
+    std::vector<DatetimeParseResultSpan>* results) const {
+  std::vector<DatetimeParseResultSpan> found_spans;
+  std::unordered_set<int> executed_rules;
+  std::string reference_locale;
+  const std::vector<int> requested_locales =
+      ParseAndExpandLocales(locales, &reference_locale);
+  if (!FindSpansUsingLocales(requested_locales, input, reference_time_ms_utc,
+                             reference_timezone, mode, anchor_start_end,
+                             reference_locale, &executed_rules, &found_spans)) {
+    return false;
   }
 
   std::vector<std::pair<DatetimeParseResultSpan, int>> indexed_found_spans;
@@ -186,7 +209,8 @@ bool DatetimeParser::Parse(
 bool DatetimeParser::HandleParseMatch(
     const CompiledRule& rule, const UniLib::RegexMatcher& matcher,
     int64 reference_time_ms_utc, const std::string& reference_timezone,
-    int locale_id, std::vector<DatetimeParseResultSpan>* result) const {
+    const std::string& reference_locale, int locale_id,
+    std::vector<DatetimeParseResultSpan>* result) const {
   int status = UniLib::RegexMatcher::kNoError;
   const int start = matcher.Start(&status);
   if (status != UniLib::RegexMatcher::kNoError) {
@@ -200,7 +224,8 @@ bool DatetimeParser::HandleParseMatch(
 
   DatetimeParseResultSpan parse_result;
   if (!ExtractDatetime(rule, matcher, reference_time_ms_utc, reference_timezone,
-                       locale_id, &(parse_result.data), &parse_result.span)) {
+                       reference_locale, locale_id, &(parse_result.data),
+                       &parse_result.span)) {
     return false;
   }
   if (!use_extractors_for_locating_) {
@@ -219,22 +244,24 @@ bool DatetimeParser::HandleParseMatch(
 bool DatetimeParser::ParseWithRule(
     const CompiledRule& rule, const UnicodeText& input,
     const int64 reference_time_ms_utc, const std::string& reference_timezone,
-    const int locale_id, bool anchor_start_end,
-    std::vector<DatetimeParseResultSpan>* result) const {
+    const std::string& reference_locale, const int locale_id,
+    bool anchor_start_end, std::vector<DatetimeParseResultSpan>* result) const {
   std::unique_ptr<UniLib::RegexMatcher> matcher =
       rule.compiled_regex->Matcher(input);
   int status = UniLib::RegexMatcher::kNoError;
   if (anchor_start_end) {
     if (matcher->Matches(&status) && status == UniLib::RegexMatcher::kNoError) {
       if (!HandleParseMatch(rule, *matcher, reference_time_ms_utc,
-                            reference_timezone, locale_id, result)) {
+                            reference_timezone, reference_locale, locale_id,
+                            result)) {
         return false;
       }
     }
   } else {
     while (matcher->Find(&status) && status == UniLib::RegexMatcher::kNoError) {
       if (!HandleParseMatch(rule, *matcher, reference_time_ms_utc,
-                            reference_timezone, locale_id, result)) {
+                            reference_timezone, reference_locale, locale_id,
+                            result)) {
         return false;
       }
     }
@@ -242,11 +269,14 @@ bool DatetimeParser::ParseWithRule(
   return true;
 }
 
-constexpr char const* kDefaultLocale = "";
-
 std::vector<int> DatetimeParser::ParseAndExpandLocales(
-    const std::string& locales) const {
+    const std::string& locales, std::string* reference_locale) const {
   std::vector<StringPiece> split_locales = strings::Split(locales, ',');
+  if (!split_locales.empty()) {
+    *reference_locale = split_locales[0].ToString();
+  } else {
+    *reference_locale = "";
+  }
 
   std::vector<int> result;
   for (const StringPiece& locale_str : split_locales) {
@@ -264,36 +294,35 @@ std::vector<int> DatetimeParser::ParseAndExpandLocales(
     const std::string script = locale.Script();
     const std::string region = locale.Region();
 
-    // First, try adding language-script-* locale.
-    if (!script.empty()) {
-      locale_it = locale_string_to_id_.find(language + "-" + script + "-*");
-      if (locale_it != locale_string_to_id_.end()) {
-        result.push_back(locale_it->second);
-      }
-    }
-    // Second, try adding language-* locale.
-    if (!language.empty()) {
-      locale_it = locale_string_to_id_.find(language + "-*");
-      if (locale_it != locale_string_to_id_.end()) {
-        result.push_back(locale_it->second);
-      }
-    }
-
-    // Second, try adding *-region locale.
+    // First, try adding *-region locale.
     if (!region.empty()) {
       locale_it = locale_string_to_id_.find("*-" + region);
       if (locale_it != locale_string_to_id_.end()) {
         result.push_back(locale_it->second);
       }
     }
+    // Second, try adding language-script-* locale.
+    if (!script.empty()) {
+      locale_it = locale_string_to_id_.find(language + "-" + script + "-*");
+      if (locale_it != locale_string_to_id_.end()) {
+        result.push_back(locale_it->second);
+      }
+    }
+    // Third, try adding language-* locale.
+    if (!language.empty()) {
+      locale_it = locale_string_to_id_.find(language + "-*");
+      if (locale_it != locale_string_to_id_.end()) {
+        result.push_back(locale_it->second);
+      }
+    }
   }
 
-  // Add a default fallback locale to the end of the list.
-  auto locale_it = locale_string_to_id_.find(kDefaultLocale);
-  if (locale_it != locale_string_to_id_.end()) {
-    result.push_back(locale_it->second);
-  } else {
-    TC_VLOG(1) << "Could not add default locale.";
+  // Add the default locales if they haven't been added already.
+  const std::unordered_set<int> result_set(result.begin(), result.end());
+  for (const int default_locale_id : default_locale_ids_) {
+    if (result_set.find(default_locale_id) == result_set.end()) {
+      result.push_back(default_locale_id);
+    }
   }
 
   return result;
@@ -351,6 +380,7 @@ bool DatetimeParser::ExtractDatetime(const CompiledRule& rule,
                                      const UniLib::RegexMatcher& matcher,
                                      const int64 reference_time_ms_utc,
                                      const std::string& reference_timezone,
+                                     const std::string& reference_locale,
                                      int locale_id, DatetimeParseResult* result,
                                      CodepointSpan* result_span) const {
   DateParseData parse;
@@ -361,12 +391,13 @@ bool DatetimeParser::ExtractDatetime(const CompiledRule& rule,
     return false;
   }
 
-  if (!calendar_lib_.InterpretParseData(parse, reference_time_ms_utc,
-                                        reference_timezone,
-                                        &(result->time_ms_utc))) {
+  result->granularity = GetGranularity(parse);
+
+  if (!calendar_lib_.InterpretParseData(
+          parse, reference_time_ms_utc, reference_timezone, reference_locale,
+          result->granularity, &(result->time_ms_utc))) {
     return false;
   }
-  result->granularity = GetGranularity(parse);
 
   return true;
 }

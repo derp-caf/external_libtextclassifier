@@ -292,5 +292,8 @@ UnicodeText UTF8ToUnicodeText(const std::string& str, bool do_copy) {
   return UTF8ToUnicodeText(str.data(), str.size(), do_copy);
 }
 
+UnicodeText UTF8ToUnicodeText(const std::string& str) {
+  return UTF8ToUnicodeText(str, /*do_copy=*/true);
+}
 
 }  // namespace libtextclassifier2

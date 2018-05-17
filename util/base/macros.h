@@ -68,10 +68,12 @@ namespace libtextclassifier2 {
 //
 //  In either case this macro has no effect on runtime behavior and performance
 //  of code.
-#if defined(__clang__) && defined(LANG_CXX11) && defined(__has_warning)
+#if defined(__clang__) && defined(__has_warning)
 #if __has_feature(cxx_attributes) && __has_warning("-Wimplicit-fallthrough")
-#define TC_FALLTHROUGH_INTENDED [[clang::fallthrough]]  // NOLINT
+#define TC_FALLTHROUGH_INTENDED [[clang::fallthrough]]
 #endif
+#elif defined(__GNUC__) && __GNUC__ >= 7
+#define TC_FALLTHROUGH_INTENDED [[gnu::fallthrough]]
 #endif
 
 #ifndef TC_FALLTHROUGH_INTENDED

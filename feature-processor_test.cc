@@ -588,10 +588,6 @@ TEST(FeatureProcessorTest, SupportedCodepointsRatio) {
   EXPECT_TRUE(feature_processor.IsCodepointInRanges(
       25000, feature_processor.supported_codepoint_ranges_));
 
-  std::unique_ptr<CachedFeatures> cached_features;
-
-  FakeEmbeddingExecutor embedding_executor;
-
   const std::vector<Token> tokens = {Token("ěěě", 0, 3), Token("řřř", 4, 7),
                                      Token("eee", 8, 11)};
 
@@ -601,11 +597,8 @@ TEST(FeatureProcessorTest, SupportedCodepointsRatio) {
   TestingFeatureProcessor feature_processor2(
       flatbuffers::GetRoot<FeatureProcessorOptions>(options2_fb.data()),
       &unilib);
-  EXPECT_TRUE(feature_processor2.ExtractFeatures(
-      tokens, /*token_span=*/{0, 3},
-      /*selection_span_for_feature=*/{kInvalidIndex, kInvalidIndex},
-      &embedding_executor, /*embedding_cache=*/nullptr,
-      /*feature_vector_size=*/4, &cached_features));
+  EXPECT_TRUE(feature_processor2.HasEnoughSupportedCodepoints(
+      tokens, /*token_span=*/{0, 3}));
 
   options.min_supported_codepoint_ratio = 0.2;
   flatbuffers::DetachedBuffer options3_fb =
@@ -613,11 +606,8 @@ TEST(FeatureProcessorTest, SupportedCodepointsRatio) {
   TestingFeatureProcessor feature_processor3(
       flatbuffers::GetRoot<FeatureProcessorOptions>(options3_fb.data()),
       &unilib);
-  EXPECT_TRUE(feature_processor3.ExtractFeatures(
-      tokens, /*token_span=*/{0, 3},
-      /*selection_span_for_feature=*/{kInvalidIndex, kInvalidIndex},
-      &embedding_executor, /*embedding_cache=*/nullptr,
-      /*feature_vector_size=*/4, &cached_features));
+  EXPECT_TRUE(feature_processor3.HasEnoughSupportedCodepoints(
+      tokens, /*token_span=*/{0, 3}));
 
   options.min_supported_codepoint_ratio = 0.5;
   flatbuffers::DetachedBuffer options4_fb =
@@ -625,11 +615,8 @@ TEST(FeatureProcessorTest, SupportedCodepointsRatio) {
   TestingFeatureProcessor feature_processor4(
       flatbuffers::GetRoot<FeatureProcessorOptions>(options4_fb.data()),
       &unilib);
-  EXPECT_FALSE(feature_processor4.ExtractFeatures(
-      tokens, /*token_span=*/{0, 3},
-      /*selection_span_for_feature=*/{kInvalidIndex, kInvalidIndex},
-      &embedding_executor, /*embedding_cache=*/nullptr,
-      /*feature_vector_size=*/4, &cached_features));
+  EXPECT_FALSE(feature_processor4.HasEnoughSupportedCodepoints(
+      tokens, /*token_span=*/{0, 3}));
 }
 
 TEST(FeatureProcessorTest, InSpanFeature) {

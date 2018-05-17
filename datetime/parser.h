@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "datetime/extractor.h"
@@ -60,12 +61,23 @@ class DatetimeParser {
                  ZlibDecompressor* decompressor);
 
   // Returns a list of locale ids for given locale spec string (comma-separated
-  // locale names).
-  std::vector<int> ParseAndExpandLocales(const std::string& locales) const;
+  // locale names). Assigns the first parsed locale to reference_locale.
+  std::vector<int> ParseAndExpandLocales(const std::string& locales,
+                                         std::string* reference_locale) const;
+
+  // Helper function that finds datetime spans, only using the rules associated
+  // with the given locales.
+  bool FindSpansUsingLocales(
+      const std::vector<int>& locale_ids, const UnicodeText& input,
+      const int64 reference_time_ms_utc, const std::string& reference_timezone,
+      ModeFlag mode, bool anchor_start_end, const std::string& reference_locale,
+      std::unordered_set<int>* executed_rules,
+      std::vector<DatetimeParseResultSpan>* found_spans) const;
 
   bool ParseWithRule(const CompiledRule& rule, const UnicodeText& input,
                      int64 reference_time_ms_utc,
-                     const std::string& reference_timezone, const int locale_id,
+                     const std::string& reference_timezone,
+                     const std::string& reference_locale, const int locale_id,
                      bool anchor_start_end,
                      std::vector<DatetimeParseResultSpan>* result) const;
 
@@ -73,7 +85,8 @@ class DatetimeParser {
   bool ExtractDatetime(const CompiledRule& rule,
                        const UniLib::RegexMatcher& matcher,
                        int64 reference_time_ms_utc,
-                       const std::string& reference_timezone, int locale_id,
+                       const std::string& reference_timezone,
+                       const std::string& reference_locale, int locale_id,
                        DatetimeParseResult* result,
                        CodepointSpan* result_span) const;
 
@@ -81,7 +94,8 @@ class DatetimeParser {
   bool HandleParseMatch(const CompiledRule& rule,
                         const UniLib::RegexMatcher& matcher,
                         int64 reference_time_ms_utc,
-                        const std::string& reference_timezone, int locale_id,
+                        const std::string& reference_timezone,
+                        const std::string& reference_locale, int locale_id,
                         std::vector<DatetimeParseResultSpan>* result) const;
 
  private:
@@ -93,6 +107,7 @@ class DatetimeParser {
   std::unordered_map<DatetimeExtractorType, std::unordered_map<int, int>>
       type_and_locale_to_extractor_rule_;
   std::unordered_map<std::string, int> locale_string_to_id_;
+  std::vector<int> default_locale_ids_;
   CalendarLib calendar_lib_;
   bool use_extractors_for_locating_;
 };

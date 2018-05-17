@@ -33,6 +33,8 @@ class CalendarLib {
   bool InterpretParseData(const DateParseData& parse_data,
                           int64 reference_time_ms_utc,
                           const std::string& reference_timezone,
+                          const std::string& reference_locale,
+                          DatetimeGranularity granularity,
                           int64* interpreted_time_ms_utc) const;
 };
 }  // namespace libtextclassifier2

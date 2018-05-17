@@ -246,6 +246,7 @@ void TextClassifier::ValidateAndInitialize() {
   if (model_->regex_model()) {
     if (!InitializeRegexModel(decompressor.get())) {
       TC_LOG(ERROR) << "Could not initialize regex model.";
+      return;
     }
   }
 
@@ -284,8 +285,7 @@ void TextClassifier::ValidateAndInitialize() {
 
 bool TextClassifier::InitializeRegexModel(ZlibDecompressor* decompressor) {
   if (!model_->regex_model()->patterns()) {
-    initialized_ = false;
-    return false;
+    return true;
   }
 
   // Initialize pattern recognizers.
@@ -705,6 +705,11 @@ bool TextClassifier::ModelSuggestSelection(
   }
   extraction_span = IntersectTokenSpans(extraction_span, {0, tokens->size()});
 
+  if (!selection_feature_processor_->HasEnoughSupportedCodepoints(
+          *tokens, extraction_span)) {
+    return true;
+  }
+
   std::unique_ptr<CachedFeatures> cached_features;
   if (!selection_feature_processor_->ExtractFeatures(
           *tokens, extraction_span,
@@ -831,6 +836,14 @@ bool TextClassifier::ModelClassifyText(
       &tokens, &click_pos);
   const TokenSpan selection_token_span =
       CodepointSpanToTokenSpan(tokens, selection_indices);
+  const int selection_num_tokens = TokenSpanSize(selection_token_span);
+  if (model_->classification_options()->max_num_tokens() > 0 &&
+      model_->classification_options()->max_num_tokens() <
+          selection_num_tokens) {
+    *classification_results = {{kOtherCollection, 1.0}};
+    return true;
+  }
+
   const FeatureProcessorOptions_::BoundsSensitiveFeatures*
       bounds_sensitive_features =
           classification_feature_processor_->GetOptions()
@@ -864,6 +877,12 @@ bool TextClassifier::ModelClassifyText(
                                       /*num_tokens_right=*/context_size);
   }
   extraction_span = IntersectTokenSpans(extraction_span, {0, tokens.size()});
+
+  if (!classification_feature_processor_->HasEnoughSupportedCodepoints(
+          tokens, extraction_span)) {
+    *classification_results = {{kOtherCollection, 1.0}};
+    return true;
+  }
 
   std::unique_ptr<CachedFeatures> cached_features;
   if (!classification_feature_processor_->ExtractFeatures(
@@ -928,7 +947,7 @@ bool TextClassifier::ModelClassifyText(
   // Address class sanity check.
   if (!classification_results->empty() &&
       classification_results->begin()->collection == kAddressCollection) {
-    if (TokenSpanSize(selection_token_span) <
+    if (selection_num_tokens <
         model_->classification_options()->address_min_num_tokens()) {
       *classification_results = {{kOtherCollection, 1.0}};
     }
@@ -1108,6 +1127,12 @@ bool TextClassifier::ModelAnnotate(const std::string& context,
         /*click_pos=*/nullptr);
     const TokenSpan full_line_span = {0, tokens->size()};
 
+    // TODO(zilka): Add support for greater granularity of this check.
+    if (!selection_feature_processor_->HasEnoughSupportedCodepoints(
+            *tokens, full_line_span)) {
+      continue;
+    }
+
     std::unique_ptr<CachedFeatures> cached_features;
     if (!selection_feature_processor_->ExtractFeatures(
             *tokens, full_line_span,
@@ -1162,9 +1187,14 @@ bool TextClassifier::ModelAnnotate(const std::string& context,
   return true;
 }
 
-const FeatureProcessor& TextClassifier::SelectionFeatureProcessorForTests()
+const FeatureProcessor* TextClassifier::SelectionFeatureProcessorForTests()
     const {
-  return *selection_feature_processor_;
+  return selection_feature_processor_.get();
+}
+
+const FeatureProcessor* TextClassifier::ClassificationFeatureProcessorForTests()
+    const {
+  return classification_feature_processor_.get();
 }
 
 const DatetimeParser* TextClassifier::DatetimeParserForTests() const {
@@ -1513,7 +1543,7 @@ bool TextClassifier::DatetimeChunk(const UnicodeText& context_unicode,
                                    const std::string& locales, ModeFlag mode,
                                    std::vector<AnnotatedSpan>* result) const {
   if (!datetime_parser_) {
-    return false;
+    return true;
   }
 
   std::vector<DatetimeParseResultSpan> datetime_spans;

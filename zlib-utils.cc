@@ -19,6 +19,7 @@
 #include <memory>
 
 #include "util/base/logging.h"
+#include "util/flatbuffers.h"
 
 namespace libtextclassifier2 {
 
@@ -150,6 +151,72 @@ bool CompressModel(ModelT* model) {
   return true;
 }
 
+namespace {
+
+bool DecompressBuffer(const CompressedBufferT* compressed_pattern,
+                      ZlibDecompressor* zlib_decompressor,
+                      std::string* uncompressed_pattern) {
+  std::string packed_pattern =
+      PackFlatbuffer<CompressedBuffer>(compressed_pattern);
+  if (!zlib_decompressor->Decompress(
+          LoadAndVerifyFlatbuffer<CompressedBuffer>(packed_pattern),
+          uncompressed_pattern)) {
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
+
+bool DecompressModel(ModelT* model) {
+  std::unique_ptr<ZlibDecompressor> zlib_decompressor =
+      ZlibDecompressor::Instance();
+  if (!zlib_decompressor) {
+    TC_LOG(ERROR) << "Cannot initialize decompressor.";
+    return false;
+  }
+
+  // Decompress regex rules.
+  if (model->regex_model != nullptr) {
+    for (int i = 0; i < model->regex_model->patterns.size(); i++) {
+      RegexModel_::PatternT* pattern = model->regex_model->patterns[i].get();
+      if (!DecompressBuffer(pattern->compressed_pattern.get(),
+                            zlib_decompressor.get(), &pattern->pattern)) {
+        TC_LOG(ERROR) << "Cannot decompress pattern: " << i;
+        return false;
+      }
+      pattern->compressed_pattern.reset(nullptr);
+    }
+  }
+
+  // Decompress date-time rules.
+  if (model->datetime_model != nullptr) {
+    for (int i = 0; i < model->datetime_model->patterns.size(); i++) {
+      DatetimeModelPatternT* pattern = model->datetime_model->patterns[i].get();
+      for (int j = 0; j < pattern->regexes.size(); j++) {
+        DatetimeModelPattern_::RegexT* regex = pattern->regexes[j].get();
+        if (!DecompressBuffer(regex->compressed_pattern.get(),
+                              zlib_decompressor.get(), &regex->pattern)) {
+          TC_LOG(ERROR) << "Cannot decompress pattern: " << i << " " << j;
+          return false;
+        }
+        regex->compressed_pattern.reset(nullptr);
+      }
+    }
+    for (int i = 0; i < model->datetime_model->extractors.size(); i++) {
+      DatetimeModelExtractorT* extractor =
+          model->datetime_model->extractors[i].get();
+      if (!DecompressBuffer(extractor->compressed_pattern.get(),
+                            zlib_decompressor.get(), &extractor->pattern)) {
+        TC_LOG(ERROR) << "Cannot decompress pattern: " << i;
+        return false;
+      }
+      extractor->compressed_pattern.reset(nullptr);
+    }
+  }
+  return true;
+}
+
 std::string CompressSerializedModel(const std::string& model) {
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(model.c_str());
   TC_CHECK(unpacked_model != nullptr);
@@ -162,8 +229,8 @@ std::string CompressSerializedModel(const std::string& model) {
 
 std::unique_ptr<UniLib::RegexPattern> UncompressMakeRegexPattern(
     const UniLib& unilib, const flatbuffers::String* uncompressed_pattern,
-    const CompressedBuffer* compressed_pattern,
-    ZlibDecompressor* decompressor) {
+    const CompressedBuffer* compressed_pattern, ZlibDecompressor* decompressor,
+    std::string* result_pattern_text) {
   UnicodeText unicode_regex_pattern;
   std::string decompressed_pattern;
   if (compressed_pattern != nullptr &&
@@ -184,6 +251,10 @@ std::unique_ptr<UniLib::RegexPattern> UncompressMakeRegexPattern(
     unicode_regex_pattern =
         UTF8ToUnicodeText(uncompressed_pattern->c_str(),
                           uncompressed_pattern->Length(), /*do_copy=*/false);
+  }
+
+  if (result_pattern_text != nullptr) {
+    *result_pattern_text = unicode_regex_pattern.ToUTF8String();
   }
 
   std::unique_ptr<UniLib::RegexPattern> regex_pattern =

@@ -85,6 +85,7 @@ LOCAL_SHARED_LIBRARIES += libz
 LOCAL_STATIC_LIBRARIES += flatbuffers
 
 LOCAL_REQUIRED_MODULES := textclassifier.en.model
+LOCAL_REQUIRED_MODULES += textclassifier.universal.model
 
 LOCAL_ADDITIONAL_DEPENDENCIES += $(LOCAL_PATH)/jni.lds
 LOCAL_LDFLAGS += -Wl,-version-script=$(LOCAL_PATH)/jni.lds
@@ -138,6 +139,14 @@ LOCAL_MODULE        := textclassifier.en.model
 LOCAL_MODULE_CLASS  := ETC
 LOCAL_MODULE_OWNER  := google
 LOCAL_SRC_FILES     := ./models/textclassifier.en.model
+LOCAL_MODULE_PATH   := $(TARGET_OUT_ETC)/textclassifier
+include $(BUILD_PREBUILT)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE        := textclassifier.universal.model
+LOCAL_MODULE_CLASS  := ETC
+LOCAL_MODULE_OWNER  := google
+LOCAL_SRC_FILES     := ./models/textclassifier.universal.model
 LOCAL_MODULE_PATH   := $(TARGET_OUT_ETC)/textclassifier
 include $(BUILD_PREBUILT)
 

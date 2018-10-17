@@ -21,7 +21,7 @@ cc_library_headers {
 cc_defaults {
     name: "libtextclassifier_hash_defaults",
     srcs: [
-        "util/hash/farmhash.cc",
+        "utils/hash/farmhash.cc",
         "util/hash/hash.cc"
     ],
     cflags: [
@@ -43,4 +43,11 @@ cc_library_static {
     defaults: ["libtextclassifier_hash_defaults"],
     sdk_version: "current",
     stl: "libc++_static",
+}
+
+java_library_static {
+    name: "libtextclassifier-java",
+    sdk_version: "core_current",
+    no_framework_libs: true,
+    srcs: ["java/**/*.java"],
 }

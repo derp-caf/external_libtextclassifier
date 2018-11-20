@@ -42,11 +42,14 @@ namespace mobile {
 // Read() or updated via UpdateMapsForExample.
 class GenericEmbeddingFeatureExtractor {
  public:
-  virtual ~GenericEmbeddingFeatureExtractor() {}
+  // Constructs this GenericEmbeddingFeatureExtractor.
+  //
+  // |arg_prefix| is a string prefix for the relevant TaskContext parameters, to
+  // avoid name clashes.  See GetParamName().
+  explicit GenericEmbeddingFeatureExtractor(const string &arg_prefix)
+      : arg_prefix_(arg_prefix) {}
 
-  // Get the prefix string to put in front of all arguments, so they don't
-  // conflict with other embedding models.
-  virtual const string ArgPrefix() const = 0;
+  virtual ~GenericEmbeddingFeatureExtractor() {}
 
   // Sets/inits up predicate maps and embedding space names that are common for
   // all embedding based feature extractors.
@@ -59,43 +62,23 @@ class GenericEmbeddingFeatureExtractor {
   // implemented in the typed class.
   virtual void RequestWorkspaces(WorkspaceRegistry *registry) = 0;
 
-  // Number of predicates for the embedding at a given index (vocabulary size.)
-  int EmbeddingSize(int index) const {
-    return generic_feature_extractor(index).GetDomainSize();
-  }
-
   // Returns number of embedding spaces.
   int NumEmbeddings() const { return embedding_dims_.size(); }
-
-  // Returns the number of features in the embedding space.
-  const int FeatureSize(int idx) const {
-    return generic_feature_extractor(idx).feature_types();
-  }
-
-  // Returns the dimensionality of the embedding space.
-  int EmbeddingDims(int index) const { return embedding_dims_[index]; }
-
-  // Accessor for embedding dims (dimensions of the embedding spaces).
-  const std::vector<int> &embedding_dims() const { return embedding_dims_; }
 
   const std::vector<string> &embedding_fml() const { return embedding_fml_; }
 
   // Get parameter name by concatenating the prefix and the original name.
   string GetParamName(const string &param_name) const {
-    string full_name = ArgPrefix();
+    string full_name = arg_prefix_;
     full_name.push_back('_');
     full_name.append(param_name);
     return full_name;
   }
 
- protected:
-  // Provides the generic class with access to the templated extractors. This is
-  // used to get the type information out of the feature extractor without
-  // knowing the specific calling arguments of the extractor itself.
-  virtual const GenericFeatureExtractor &generic_feature_extractor(
-      int idx) const = 0;
-
  private:
+  // Prefix for TaskContext parameters.
+  const string arg_prefix_;
+
   // Embedding space names for parameter sharing.
   std::vector<string> embedding_names_;
 
@@ -119,6 +102,13 @@ class GenericEmbeddingFeatureExtractor {
 template <class EXTRACTOR, class OBJ, class... ARGS>
 class EmbeddingFeatureExtractor : public GenericEmbeddingFeatureExtractor {
  public:
+  // Constructs this EmbeddingFeatureExtractor.
+  //
+  // |arg_prefix| is a string prefix for the relevant TaskContext parameters, to
+  // avoid name clashes.  See GetParamName().
+  explicit EmbeddingFeatureExtractor(const string &arg_prefix)
+      : GenericEmbeddingFeatureExtractor(arg_prefix) {}
+
   // Sets up all predicate maps, feature extractors, and flags.
   SAFTM_MUST_USE_RESULT bool Setup(TaskContext *context) override {
     if (!GenericEmbeddingFeatureExtractor::Setup(context)) {
@@ -171,15 +161,6 @@ class EmbeddingFeatureExtractor : public GenericEmbeddingFeatureExtractor {
       feature_extractors_[i]->ExtractFeatures(workspaces, obj, args...,
                                               &(*features)[i]);
     }
-  }
-
- protected:
-  // Provides generic access to the feature extractors.
-  const GenericFeatureExtractor &generic_feature_extractor(
-      int idx) const override {
-    // DCHECK_LT(idx, feature_extractors_.size());
-    // DCHECK_GE(idx, 0);
-    return *feature_extractors_[idx];
   }
 
  private:

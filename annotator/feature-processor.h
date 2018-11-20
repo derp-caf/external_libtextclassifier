@@ -88,10 +88,7 @@ class FeatureProcessor {
   // identical.
   typedef std::map<CodepointSpan, std::vector<float>> EmbeddingCache;
 
-  // If unilib is nullptr, will create and own an instance of a UniLib,
-  // otherwise will use what's passed in.
-  explicit FeatureProcessor(const FeatureProcessorOptions* options,
-                            const UniLib* unilib)
+  FeatureProcessor(const FeatureProcessorOptions* options, const UniLib* unilib)
       : unilib_(unilib),
         feature_extractor_(internal::BuildTokenFeatureExtractorOptions(options),
                            *unilib_),

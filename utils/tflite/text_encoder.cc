@@ -21,6 +21,7 @@
 #include "utils/sentencepiece/double_array_trie.h"
 #include "utils/sentencepiece/encoder.h"
 #include "utils/sentencepiece/normalizer.h"
+#include "utils/sentencepiece/sorted_strings_table.h"
 #include "utils/strings/stringpiece.h"
 #include "utils/tflite/text_encoder.h"
 #include "utils/tflite/text_encoder_config_generated.h"
@@ -35,7 +36,8 @@ namespace {
 
 struct TextEncoderOp {
   std::unique_ptr<Normalizer> normalizer;
-  std::unique_ptr<Encoder<DoubleArrayTrie>> encoder;
+  std::unique_ptr<Encoder> encoder;
+  std::unique_ptr<SentencePieceMatcher> matcher;
 };
 
 // Input parameters for the op.
@@ -49,11 +51,16 @@ enum TextEncoderInputs {
 // Output parameters for the op.
 enum SmartReplyModelOutputs {
   TEXT_ENCODER_OUTPUT_ENCODED = 0,
-  TEXT_ENCODER_OUTPUT_LENGTHS = 1,
-  TEXT_ENCODER_OUTPUT_ATTR = 2,
+  TEXT_ENCODER_OUTPUT_POSITION = 1,
+  TEXT_ENCODER_OUTPUT_LENGTHS = 2,
+  TEXT_ENCODER_OUTPUT_ATTR = 3,
 };
 
 const char kTextEncoderConfigAttr[] = "text_encoder_config";
+
+// Input rank is 2 since there is a dummy batch dimension of 1.
+const int kInputRank = 2;
+const int kBatchSize = 1;
 
 // Initializes text encoder object from serialized options:
 //   The options are a flexbuffers attribute map that contain the op config
@@ -81,15 +88,32 @@ void* Initialize(TfLiteContext* context, const char* buffer, size_t length) {
       config->add_dummy_prefix(), config->remove_extra_whitespaces(),
       config->escape_whitespaces()));
 
-  const TrieNode* pieces_trie_nodes =
-      reinterpret_cast<const TrieNode*>(config->pieces()->Data());
-  const int pieces_trie_nodes_length =
-      config->pieces()->Length() / sizeof(TrieNode);
   const int num_pieces = config->pieces_scores()->Length();
-  encoder_op->encoder.reset(new Encoder<DoubleArrayTrie>(
-      DoubleArrayTrie(pieces_trie_nodes, pieces_trie_nodes_length), num_pieces,
-      config->pieces_scores()->data(), config->start_code(), config->end_code(),
-      config->encoding_offset()));
+
+  switch (config->matcher_type()) {
+    case SentencePieceMatcherType_MAPPED_TRIE: {
+      const TrieNode* pieces_trie_nodes =
+          reinterpret_cast<const TrieNode*>(config->pieces()->Data());
+      const int pieces_trie_nodes_length =
+          config->pieces()->Length() / sizeof(TrieNode);
+      encoder_op->matcher.reset(
+          new DoubleArrayTrie(pieces_trie_nodes, pieces_trie_nodes_length));
+      break;
+    }
+    case SentencePieceMatcherType_SORTED_STRING_TABLE: {
+      encoder_op->matcher.reset(new SortedStringsTable(
+          num_pieces, config->pieces_offsets()->data(),
+          StringPiece(config->pieces()->data(), config->pieces()->Length())));
+      break;
+    }
+    default: {
+      TC3_LOG(ERROR) << "Unknown sentence piece matcher type.";
+      return nullptr;
+    }
+  }
+  encoder_op->encoder.reset(new Encoder(
+      encoder_op->matcher.get(), num_pieces, config->pieces_scores()->data(),
+      config->start_code(), config->end_code(), config->encoding_offset()));
   return encoder_op.release();
 }
 
@@ -112,8 +136,8 @@ TfLiteStatus CopyAttribute(const TfLiteTensor& in,
                            const std::vector<int>& encoding_end_offsets,
                            int start_offset, TfLiteContext* context,
                            TfLiteTensor* out) {
-  TF_LITE_ENSURE_EQ(context, in.dims->size, 2);
-  TF_LITE_ENSURE_EQ(context, in.dims->data[0], 1);
+  TF_LITE_ENSURE_EQ(context, in.dims->size, kInputRank);
+  TF_LITE_ENSURE_EQ(context, in.dims->data[0], kBatchSize);
   const int output_size = out->dims->data[1];
   int output_offset = 0;
   for (int value_index = 0;
@@ -162,7 +186,8 @@ TfLiteStatus CopyAttribute(const TfLiteTensor& in,
           (output_offset > 0) ? out->data.f[output_offset - 1] : 0;
       std::fill(out->data.f + output_offset, out->data.f + output_size, value);
     } break;
-    default: {}
+    default:
+      break;
   }
   return kTfLiteOk;
 }
@@ -173,16 +198,26 @@ TfLiteStatus ResizeOutputTensors(TfLiteContext* context, TfLiteNode* node,
       context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_ENCODED]];
 
   TF_LITE_ENSURE_OK(
-      context, context->ResizeTensor(context, &output_encoded,
-                                     CreateSizeArray({1, max_output_length})));
+      context,
+      context->ResizeTensor(context, &output_encoded,
+                            CreateSizeArray({kBatchSize, max_output_length})));
+
+  TfLiteTensor& output_positions =
+      context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_POSITION]];
+
+  TF_LITE_ENSURE_OK(
+      context,
+      context->ResizeTensor(context, &output_positions,
+                            CreateSizeArray({kBatchSize, max_output_length})));
 
   const int num_output_attrs = node->outputs->size - TEXT_ENCODER_OUTPUT_ATTR;
   for (int i = 0; i < num_output_attrs; ++i) {
     TfLiteTensor& output =
         context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_ATTR + i]];
-    TF_LITE_ENSURE_OK(context, context->ResizeTensor(
-                                   context, &output,
-                                   CreateSizeArray({1, max_output_length})));
+    TF_LITE_ENSURE_OK(context,
+                      context->ResizeTensor(
+                          context, &output,
+                          CreateSizeArray({kBatchSize, max_output_length})));
   }
   return kTfLiteOk;
 }
@@ -190,19 +225,22 @@ TfLiteStatus ResizeOutputTensors(TfLiteContext* context, TfLiteNode* node,
 }  // namespace
 
 TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
-  // Check that the batch dimension is 1.
+  // Check that the batch dimension is kBatchSize.
   const TfLiteTensor& input_text =
       context->tensors[node->inputs->data[TEXT_ENCODER_INPUT_TEXTS]];
-  TF_LITE_ENSURE_EQ(context, input_text.dims->size, 2);
-  TF_LITE_ENSURE_EQ(context, input_text.dims->data[0], 1);
+  TF_LITE_ENSURE_EQ(context, input_text.dims->size, kInputRank);
+  TF_LITE_ENSURE_EQ(context, input_text.dims->data[0], kBatchSize);
 
   TfLiteTensor& output_lengths =
       context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_LENGTHS]];
   TfLiteTensor& output_encoded =
       context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_ENCODED]];
+  TfLiteTensor& output_positions =
+      context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_POSITION]];
 
-  TF_LITE_ENSURE_OK(context, context->ResizeTensor(context, &output_lengths,
-                                                   CreateSizeArray({1})));
+  TF_LITE_ENSURE_OK(context,
+                    context->ResizeTensor(context, &output_lengths,
+                                          CreateSizeArray({kBatchSize})));
 
   // Check that there are enough outputs for attributes.
   const int num_output_attrs = node->outputs->size - TEXT_ENCODER_OUTPUT_ATTR;
@@ -225,6 +263,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     return ResizeOutputTensors(context, node, output_length.data.i64[0]);
   } else {
     tflite::SetTensorToDynamic(&output_encoded);
+    tflite::SetTensorToDynamic(&output_positions);
     for (int i = 0; i < num_output_attrs; ++i) {
       TfLiteTensor& output_attr =
           context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_ATTR + i]];
@@ -253,10 +292,15 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     TF_LITE_ENSURE_OK(
         context, ResizeOutputTensors(context, node, output_length.data.i64[0]));
   }
+  TfLiteTensor& output_positions =
+      context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_POSITION]];
 
   std::vector<int> encoded_total;
   std::vector<int> encoded_offsets;
+  std::vector<int> encoded_positions;
   encoded_offsets.reserve(num_strings);
+  const int max_output_length = output_encoded.dims->data[1];
+  const int max_encoded_position = max_output_length;
 
   for (int i = 0; i < num_strings; ++i) {
     const auto& strref = tflite::GetString(&input_text, i);
@@ -264,16 +308,20 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
         encoder_op->normalizer->Normalize(StringPiece(strref.str, strref.len)));
     encoded_total.insert(encoded_total.end(), encoded.begin(), encoded.end());
     encoded_offsets.push_back(encoded_total.size());
+    for (int i = 0; i < encoded.size(); i++) {
+      encoded_positions.push_back(std::min(i, max_encoded_position - 1));
+    }
   }
-  const int max_output_length = output_encoded.dims->data[1];
 
   // Copy encoding to output tensor.
   const int start_offset =
       std::max(0, static_cast<int>(encoded_total.size()) - max_output_length);
   int output_offset = 0;
   int32_t* output_buffer = output_encoded.data.i32;
+  int32_t* output_positions_buffer = output_positions.data.i32;
   for (int i = start_offset; i < encoded_total.size(); ++i, ++output_offset) {
     output_buffer[output_offset] = encoded_total[i];
+    output_positions_buffer[output_offset] = encoded_positions[i];
   }
 
   // Save output encoded length.
@@ -284,6 +332,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   // Do padding.
   for (; output_offset < max_output_length; ++output_offset) {
     output_buffer[output_offset] = encoded_total.back();
+    output_positions_buffer[output_offset] = max_encoded_position;
   }
 
   // Process attributes, all checks of sizes and types are done in Prepare.

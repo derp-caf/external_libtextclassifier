@@ -77,66 +77,6 @@ class FeatureType {
   bool is_continuous_;
 };
 
-// Templated generic resource based feature type. This feature type delegates
-// look up of feature value names to an unknown resource class, which is not
-// owned. Optionally, this type can also store a mapping of extra values which
-// are not in the resource.
-//
-// Note: this class assumes that Resource->GetFeatureValueName() will return
-// successfully for values ONLY in the range [0, Resource->NumValues()) Any
-// feature value not in the extra value map and not in the above range of
-// Resource will result in a ERROR and return of "<INVALID>".
-template <class Resource>
-class ResourceBasedFeatureType : public FeatureType {
- public:
-  // Creates a new type with given name, resource object, and a mapping of
-  // special values. The values must be greater or equal to
-  // resource->NumValues() so as to avoid collisions; this is verified with
-  // SAFTM_CHECK at creation.
-  ResourceBasedFeatureType(const string &name, const Resource *resource,
-                           const std::map<FeatureValue, string> &values)
-      : FeatureType(name), resource_(resource), values_(values) {
-    max_value_ = resource->NumValues() - 1;
-    for (const auto &pair : values) {
-      SAFTM_CHECK_GE(pair.first, resource->NumValues())
-          << "Invalid extra value: " << pair.first << ", " << pair.second;
-      max_value_ = pair.first > max_value_ ? pair.first : max_value_;
-    }
-  }
-
-  // Creates a new type with no special values.
-  ResourceBasedFeatureType(const string &name, const Resource *resource)
-      : ResourceBasedFeatureType(name, resource, {}) {}
-
-  // Returns the feature name for a given feature value. First checks the values
-  // map, then checks the resource to look up the name.
-  string GetFeatureValueName(FeatureValue value) const override {
-    if (values_.find(value) != values_.end()) {
-      return values_.find(value)->second;
-    }
-    if (value >= 0 && value < resource_->NumValues()) {
-      return resource_->GetFeatureValueName(value);
-    } else {
-      // LOG(ERROR) << "Invalid feature value " << value << " for " << name();
-      return "<INVALID>";
-    }
-  }
-
-  // Returns the number of possible values for this feature type. This is the
-  // based on the largest value that was observed in the extra values.
-  FeatureValue GetDomainSize() const override { return max_value_ + 1; }
-
- protected:
-  // Shared resource. Not owned.
-  const Resource *resource_ = nullptr;
-
-  // Maximum possible value this feature could take.
-  FeatureValue max_value_;
-
-  // Mapping for extra feature values not in the resource.
-  std::map<FeatureValue, string> values_;
-};
-
 // Feature type that is defined using an explicit map from FeatureValue to
 // string values.  This can reduce some of the boilerplate when defining
 // features that generate enum values.  Example usage:

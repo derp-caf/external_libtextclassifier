@@ -20,6 +20,21 @@
 
 namespace libtextclassifier3 {
 
+bool JByteArrayToString(JNIEnv* env, const jbyteArray& array,
+                        std::string* result) {
+  jbyte* const array_bytes = env->GetByteArrayElements(array, JNI_FALSE);
+  if (array_bytes == nullptr) {
+    return false;
+  }
+
+  const int array_length = env->GetArrayLength(array);
+  *result = std::string(reinterpret_cast<char*>(array_bytes), array_length);
+
+  env->ReleaseByteArrayElements(array, array_bytes, JNI_ABORT);
+
+  return true;
+}
+
 bool JStringToUtf8String(JNIEnv* env, const jstring& jstr,
                          std::string* result) {
   if (jstr == nullptr) {
@@ -37,16 +52,13 @@ bool JStringToUtf8String(JNIEnv* env, const jstring& jstr,
       env->GetMethodID(string_class, "getBytes", "(Ljava/lang/String;)[B");
 
   jstring encoding = env->NewStringUTF("UTF-8");
+
   jbyteArray array = reinterpret_cast<jbyteArray>(
       env->CallObjectMethod(jstr, get_bytes_id, encoding));
 
-  jbyte* const array_bytes = env->GetByteArrayElements(array, JNI_FALSE);
-  int length = env->GetArrayLength(array);
-
-  *result = std::string(reinterpret_cast<char*>(array_bytes), length);
+  JByteArrayToString(env, array, result);
 
   // Release the array.
-  env->ReleaseByteArrayElements(array, array_bytes, JNI_ABORT);
   env->DeleteLocalRef(array);
   env->DeleteLocalRef(string_class);
   env->DeleteLocalRef(encoding);

@@ -61,21 +61,6 @@ bool GenericFeatureExtractor::InitializeFeatureTypes() {
   return true;
 }
 
-FeatureValue GenericFeatureExtractor::GetDomainSize() const {
-  // Domain size of the set of features is equal to:
-  //   [largest domain size of any feature types] * [number of feature types]
-  FeatureValue max_feature_type_dsize = 0;
-  for (size_t i = 0; i < feature_types_.size(); ++i) {
-    FeatureType *ft = feature_types_[i];
-    const FeatureValue feature_type_dsize = ft->GetDomainSize();
-    if (feature_type_dsize > max_feature_type_dsize) {
-      max_feature_type_dsize = feature_type_dsize;
-    }
-  }
-
-  return max_feature_type_dsize;
-}
-
 string GenericFeatureFunction::GetParameter(const string &name,
                                             const string &default_value) const {
   // Find named parameter in feature descriptor.

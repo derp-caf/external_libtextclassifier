@@ -136,17 +136,6 @@ class GenericFeatureExtractor {
   // before Init() has been called.
   int feature_types() const { return feature_types_.size(); }
 
-  // Returns a feature type used in the extractor.  Invalid before Init() has
-  // been called.
-  const FeatureType *feature_type(int index) const {
-    return feature_types_[index];
-  }
-
-  // Returns the feature domain size of this feature extractor.
-  // NOTE: The way that domain size is calculated is, for some, unintuitive. It
-  // is the largest domain size of any feature type.
-  FeatureValue GetDomainSize() const;
-
  protected:
   // Initializes the feature types used by the extractor.  Called from
   // FeatureExtractor<>::Init().
@@ -215,11 +204,6 @@ class GenericFeatureFunction {
   // the feature function produces features of different types this returns
   // null.  Invalid before Init() has been called.
   virtual FeatureType *GetFeatureType() const;
-
-  // Returns the name of the registry used for creating the feature function.
-  // This can be used for checking if two feature functions are of the same
-  // kind.
-  virtual const char *RegistryName() const = 0;
 
   // Returns value of parameter |name| from the feature function descriptor.
   // If the parameter is not present, returns the indicated |default_value|.
@@ -365,9 +349,6 @@ class FeatureFunction
     }
     return f;
   }
-
-  // Returns the name of the registry for the feature function.
-  const char *RegistryName() const override { return Self::registry()->name(); }
 
  private:
   // Special feature function class for resolving variable references. The type

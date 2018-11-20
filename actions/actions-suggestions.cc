@@ -22,44 +22,13 @@ namespace libtextclassifier3 {
 
 namespace {
 const ActionsModel* LoadAndVerifyModel(const uint8_t* addr, int size) {
-  const ActionsModel* model = GetActionsModel(addr);
   flatbuffers::Verifier verifier(addr, size);
-  if (model->Verify(verifier)) {
-    return model;
+  if (VerifyActionsModelBuffer(verifier)) {
+    return GetActionsModel(addr);
   } else {
     return nullptr;
   }
 }
-
-// Indices of the TensorFlow Lite model inputs.
-enum SmartReplyModelInputs {
-  SMART_REPLY_MODEL_INPUT_USER_ID = 0,
-  SMART_REPLY_MODEL_INPUT_CONTEXT = 1,
-  SMART_REPLY_MODEL_INPUT_CONTEXT_LENGTH = 2,
-  SMART_REPLY_MODEL_INPUT_TIME_DIFFS = 3,
-  SMART_REPLY_MODEL_INPUT_NUM_SUGGESTIONS = 4
-};
-
-// Indices of the TensorFlow Lite model outputs.
-enum SmartReplyModelOutputs {
-  SMART_REPLY_MODEL_OUTPUT_REPLIES = 0,
-  SMART_REPLY_MODEL_OUTPUT_SCORES = 1,
-  SMART_REPLY_MODEL_OUTPUT_EMBEDDINGS = 2,
-  SMART_REPLY_MODEL_OUTPUT_SENSITIVE_TOPIC_SCORE = 3,
-  SMART_REPLY_MODEL_OUTPUT_TRIGGERING_SCORE = 4,
-};
-
-// Indices of the TensorFlow Lite actions suggestion model inputs.
-enum ActionsSuggestionsModelInputs {
-  ACTIONS_SUGGESTIONS_MODEL_INPUT_EMBEDDINGS = 0,
-};
-
-// Indices of the TensorFlow Lite actions suggestion model outputss.
-enum ActionsSuggestionsModelOutputs {
-  ACTIONS_SUGGESTIONS_MODEL_OUTPUT_SCORES = 0,
-};
-
-const char* kOtherCategory = "other";
 
 }  // namespace
 
@@ -127,149 +96,189 @@ bool ActionsSuggestions::ValidateAndInitialize() {
     return false;
   }
 
-  smart_reply_executor_ = TfLiteModelExecutor::FromBuffer(
-      model_->smart_reply_model()->tflite_model());
-  if (!smart_reply_executor_) {
-    TC3_LOG(ERROR) << "Could not initialize smart reply model executor.";
-    return false;
-  }
-
-  actions_suggestions_executor_ = TfLiteModelExecutor::FromBuffer(
-      model_->actions_suggestions_model()->tflite_model());
-  if (!actions_suggestions_executor_) {
-    TC3_LOG(ERROR)
-        << "Could not initialize actions suggestions model executor.";
-    return false;
+  if (model_->tflite_model_spec()) {
+    model_executor_ = TfLiteModelExecutor::FromBuffer(
+        model_->tflite_model_spec()->tflite_model());
+    if (!model_executor_) {
+      TC3_LOG(ERROR) << "Could not initialize model executor.";
+      return false;
+    }
   }
 
   return true;
 }
 
-void ActionsSuggestions::SetupSmartReplyModelInput(
+void ActionsSuggestions::SetupModelInput(
     const std::vector<std::string>& context, const std::vector<int>& user_ids,
-    const int num_suggestions, tflite::Interpreter* interpreter) {
-  smart_reply_executor_->SetInput<std::string>(SMART_REPLY_MODEL_INPUT_CONTEXT,
-                                               context, interpreter);
-  *interpreter
-       ->tensor(interpreter->inputs()[SMART_REPLY_MODEL_INPUT_CONTEXT_LENGTH])
-       ->data.i64 = context.size();
+    const int num_suggestions, tflite::Interpreter* interpreter) const {
+  if (model_->tflite_model_spec()->input_context() >= 0) {
+    model_executor_->SetInput<std::string>(
+        model_->tflite_model_spec()->input_context(), context, interpreter);
+  }
+  if (model_->tflite_model_spec()->input_context_length() >= 0) {
+    *interpreter
+         ->tensor(interpreter->inputs()[model_->tflite_model_spec()
+                                            ->input_context_length()])
+         ->data.i64 = context.size();
+  }
 
-  smart_reply_executor_->SetInput<int>(SMART_REPLY_MODEL_INPUT_USER_ID,
-                                       user_ids, interpreter);
+  if (model_->tflite_model_spec()->input_user_id() >= 0) {
+    model_executor_->SetInput<int>(model_->tflite_model_spec()->input_user_id(),
+                                   user_ids, interpreter);
+  }
 
-  *interpreter
-       ->tensor(interpreter->inputs()[SMART_REPLY_MODEL_INPUT_NUM_SUGGESTIONS])
-       ->data.i64 = num_suggestions;
+  if (model_->tflite_model_spec()->input_num_suggestions() >= 0) {
+    *interpreter
+         ->tensor(interpreter->inputs()[model_->tflite_model_spec()
+                                            ->input_num_suggestions()])
+         ->data.i64 = num_suggestions;
+  }
 }
 
-void ActionsSuggestions::ReadSmartReplyModelOutput(
+bool ActionsSuggestions::ShouldSuppressPredictions(
+    tflite::Interpreter* interpreter) const {
+  const TensorView<float>& triggering_score =
+      model_executor_->OutputView<float>(
+          model_->tflite_model_spec()->output_triggering_score(), interpreter);
+  if (!triggering_score.is_valid() || triggering_score.dim(0) != 1) {
+    TC3_LOG(ERROR) << "Could not compute triggering score.";
+    return true;
+  }
+  if (triggering_score.data()[0] <= model_->min_triggering_confidence()) {
+    return true;
+  }
+
+  const TensorView<float>& sensitive_topic_score =
+      model_executor_->OutputView<float>(
+          model_->tflite_model_spec()->output_sensitive_topic_score(),
+          interpreter);
+  if (!sensitive_topic_score.is_valid() || sensitive_topic_score.dim(0) != 1) {
+    TC3_LOG(ERROR) << "Could not compute sensitive topic score.";
+    return true;
+  }
+  if (sensitive_topic_score.data()[0] > model_->max_sensitive_topic_score()) {
+    return true;
+  }
+  return false;
+}
+
+void ActionsSuggestions::ReadModelOutput(
     tflite::Interpreter* interpreter,
-    std::vector<ActionSuggestion>* suggestions) {
+    std::vector<ActionSuggestion>* suggestions) const {
+  // Read smart reply predictions.
   const std::vector<tflite::StringRef> replies =
-      smart_reply_executor_->Output<tflite::StringRef>(
-          SMART_REPLY_MODEL_OUTPUT_REPLIES, interpreter);
-  TensorView<float> scores = smart_reply_executor_->OutputView<float>(
-      SMART_REPLY_MODEL_OUTPUT_SCORES, interpreter);
+      model_executor_->Output<tflite::StringRef>(
+          model_->tflite_model_spec()->output_replies(), interpreter);
+  TensorView<float> scores = model_executor_->OutputView<float>(
+      model_->tflite_model_spec()->output_replies_scores(), interpreter);
   std::vector<ActionSuggestion> text_replies;
   for (int i = 0; i < replies.size(); i++) {
     suggestions->push_back({std::string(replies[i].str, replies[i].len),
-                            model_->smart_reply_model()->action_type()->str(),
+                            model_->smart_reply_action_type()->str(),
                             scores.data()[i]});
+  }
+
+  // Read actions suggestions.
+  const TensorView<float> actions_scores = model_executor_->OutputView<float>(
+      model_->tflite_model_spec()->output_actions_scores(), interpreter);
+  for (int i = 0; i < model_->action_type()->Length(); i++) {
+    // Skip disabled action classes, such as the default other category.
+    if (!(*model_->action_type())[i]->enabled()) {
+      continue;
+    }
+    const float score = actions_scores.data()[i];
+    if (score < (*model_->action_type())[i]->min_triggering_score()) {
+      continue;
+    }
+    const std::string& output_class =
+        (*model_->action_type())[i]->name()->str();
+    if (score >= model_->min_actions_confidence()) {
+      suggestions->push_back({/*response_text=*/"", output_class, score});
+    }
   }
 }
 
-void ActionsSuggestions::SuggestActionsFromConversationEmbedding(
-    const TensorView<float>& conversation_embedding,
-    const ActionSuggestionOptions& options,
-    std::vector<ActionSuggestion>* actions) {
-  std::unique_ptr<tflite::Interpreter> actions_suggestions_interpreter =
-      actions_suggestions_executor_->CreateInterpreter();
-  if (!actions_suggestions_interpreter) {
+void ActionsSuggestions::SuggestActionsFromModel(
+    const Conversation& conversation,
+    std::vector<ActionSuggestion>* suggestions) const {
+  if (!model_executor_) {
+    return;
+  }
+  std::unique_ptr<tflite::Interpreter> interpreter =
+      model_executor_->CreateInterpreter();
+
+  if (!interpreter) {
     TC3_LOG(ERROR) << "Could not build TensorFlow Lite interpreter for the "
-                      "action suggestions model.";
+                      "actions suggestions model.";
     return;
   }
 
-  const int embedding_size = conversation_embedding.shape().back();
-  actions_suggestions_interpreter->ResizeInputTensor(
-      ACTIONS_SUGGESTIONS_MODEL_INPUT_EMBEDDINGS, {1, embedding_size});
-  if (actions_suggestions_interpreter->AllocateTensors() != kTfLiteOk) {
-    TC3_LOG(ERROR) << "Failed to allocate TensorFlow Lite tensors for the "
-                      "action suggestions model.";
+  if (interpreter->AllocateTensors() != kTfLiteOk) {
+    TC3_LOG(ERROR)
+        << "Failed to allocate TensorFlow Lite tensors for the actions "
+           "suggestions model.";
     return;
   }
 
-  actions_suggestions_executor_->SetInput(
-      ACTIONS_SUGGESTIONS_MODEL_INPUT_EMBEDDINGS, conversation_embedding,
-      actions_suggestions_interpreter.get());
+  // Use only last message for now.
+  SetupModelInput({conversation.messages.back().text},
+                  {conversation.messages.back().user_id},
+                  /*num_suggestions=*/model_->num_smart_replies(),
+                  interpreter.get());
 
-  if (actions_suggestions_interpreter->Invoke() != kTfLiteOk) {
+  if (interpreter->Invoke() != kTfLiteOk) {
     TC3_LOG(ERROR) << "Failed to invoke TensorFlow Lite interpreter.";
     return;
   }
 
-  const TensorView<float> output =
-      actions_suggestions_executor_->OutputView<float>(
-          ACTIONS_SUGGESTIONS_MODEL_OUTPUT_SCORES,
-          actions_suggestions_interpreter.get());
-  for (int i = 0; i < model_->actions_suggestions_model()->classes()->Length();
-       i++) {
-    const std::string& output_class =
-        (*model_->actions_suggestions_model()->classes())[i]->str();
-    if (output_class == kOtherCategory) {
+  if (ShouldSuppressPredictions(interpreter.get())) {
+    return;
+  }
+
+  ReadModelOutput(interpreter.get(), suggestions);
+}
+
+void ActionsSuggestions::SuggestActionsFromAnnotations(
+    const Conversation& conversation,
+    std::vector<ActionSuggestion>* suggestions) const {
+  // Create actions based on the annotations present in the last message.
+  // TODO(smillius): Make this configurable.
+  for (const AnnotatedSpan& annotation :
+       conversation.messages.back().annotations) {
+    if (annotation.classification.empty() ||
+        annotation.classification[0].collection.empty()) {
       continue;
     }
-    const float score = output.data()[i];
-    if (score >= model_->actions_suggestions_model()->min_confidence()) {
-      actions->push_back({/*response_text=*/"", output_class, score});
-    }
+    const ClassificationResult& classification_result =
+        annotation.classification[0];
+    suggestions->push_back({/*response_text=*/"",
+                            /*type=*/classification_result.collection,
+                            /*score=*/classification_result.score});
   }
 }
 
 std::vector<ActionSuggestion> ActionsSuggestions::SuggestActions(
-    const Conversation& conversation, const ActionSuggestionOptions& options) {
+    const Conversation& conversation,
+    const ActionSuggestionOptions& options) const {
   std::vector<ActionSuggestion> suggestions;
   if (conversation.messages.empty()) {
     return suggestions;
   }
 
-  std::unique_ptr<tflite::Interpreter> smart_reply_interpreter =
-      smart_reply_executor_->CreateInterpreter();
+  SuggestActionsFromModel(conversation, &suggestions);
+  SuggestActionsFromAnnotations(conversation, &suggestions);
 
-  if (!smart_reply_interpreter) {
-    TC3_LOG(ERROR) << "Could not build TensorFlow Lite interpreter for the "
-                      "smart reply model.";
-    return suggestions;
-  }
-
-  if (smart_reply_interpreter->AllocateTensors() != kTfLiteOk) {
-    TC3_LOG(ERROR)
-        << "Failed to allocate TensorFlow Lite tensors for the smart "
-           "reply model.";
-    return suggestions;
-  }
-
-  // Use only last message for now.
-  SetupSmartReplyModelInput({conversation.messages.back().text},
-                            {conversation.messages.back().user_id},
-                            /*num_suggestions=*/3,
-                            smart_reply_interpreter.get());
-
-  if (smart_reply_interpreter->Invoke() != kTfLiteOk) {
-    TC3_LOG(ERROR) << "Failed to invoke TensorFlow Lite interpreter.";
-    return suggestions;
-  }
-
-  ReadSmartReplyModelOutput(smart_reply_interpreter.get(), &suggestions);
-
-  // Add action predictions.
-  const TensorView<float> conversation_embedding =
-      smart_reply_executor_->OutputView<float>(
-          SMART_REPLY_MODEL_OUTPUT_EMBEDDINGS, smart_reply_interpreter.get());
-  SuggestActionsFromConversationEmbedding(conversation_embedding, options,
-                                          &suggestions);
+  // TODO(smillius): Properly rank the actions.
 
   return suggestions;
+}
+
+const ActionsModel* ViewActionsModel(const void* buffer, int size) {
+  if (buffer == nullptr) {
+    return nullptr;
+  }
+
+  return LoadAndVerifyModel(reinterpret_cast<const uint8_t*>(buffer), size);
 }
 
 }  // namespace libtextclassifier3

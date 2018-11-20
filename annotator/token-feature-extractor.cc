@@ -58,11 +58,11 @@ void RemapTokenUnicode(const std::string& token,
   remapped->clear();
   for (auto it = word.begin(); it != word.end(); ++it) {
     if (options.remap_digits && unilib.IsDigit(*it)) {
-      remapped->AppendCodepoint('0');
+      remapped->push_back('0');
     } else if (options.lowercase_tokens) {
-      remapped->AppendCodepoint(unilib.ToLower(*it));
+      remapped->push_back(unilib.ToLower(*it));
     } else {
-      remapped->AppendCodepoint(*it);
+      remapped->push_back(*it);
     }
   }
 }
@@ -160,7 +160,7 @@ std::vector<float> TokenFeatureExtractor::ExtractDenseFeatures(
 
 int TokenFeatureExtractor::HashToken(StringPiece token) const {
   if (options_.allowed_chargrams.empty()) {
-    return tc2farmhash::Fingerprint64(token) % options_.num_buckets;
+    return tc3farmhash::Fingerprint64(token) % options_.num_buckets;
   } else {
     // Padding and out-of-vocabulary tokens have extra buckets reserved because
     // they are special and important tokens, and we don't want them to share
@@ -174,7 +174,7 @@ int TokenFeatureExtractor::HashToken(StringPiece token) const {
                options_.allowed_chargrams.end()) {
       return 0;  // Out-of-vocabulary.
     } else {
-      return (tc2farmhash::Fingerprint64(token) %
+      return (tc3farmhash::Fingerprint64(token) %
               (options_.num_buckets - kNumExtraBuckets)) +
              kNumExtraBuckets;
     }

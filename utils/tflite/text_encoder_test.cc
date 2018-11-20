@@ -55,6 +55,9 @@ class TextEncoderOpModel : public tflite::SingleOpModel {
   std::vector<int> GetOutputEncoding() {
     return ExtractVector<int>(output_encoding_);
   }
+  std::vector<int> GetOutputPositions() {
+    return ExtractVector<int>(output_positions_);
+  }
   std::vector<int> GetOutputAttributeInt32() {
     return ExtractVector<int>(output_attributes_int32_);
   }
@@ -71,6 +74,7 @@ class TextEncoderOpModel : public tflite::SingleOpModel {
   int input_attributes_float_;
 
   int output_encoding_;
+  int output_positions_;
   int output_length_;
   int output_attributes_int32_;
   int output_attributes_float_;
@@ -86,6 +90,7 @@ TextEncoderOpModel::TextEncoderOpModel(
   input_attributes_float_ = AddInput(tflite::TensorType_FLOAT32);
 
   output_encoding_ = AddOutput(tflite::TensorType_INT32);
+  output_positions_ = AddOutput(tflite::TensorType_INT32);
   output_length_ = AddOutput(tflite::TensorType_INT32);
   output_attributes_int32_ = AddOutput(tflite::TensorType_INT32);
   output_attributes_float_ = AddOutput(tflite::TensorType_FLOAT32);
@@ -113,6 +118,8 @@ TEST(TextEncoderTest, SimpleEncoder) {
   EXPECT_EQ(m.GetEncodedLength(), 5);
   EXPECT_THAT(m.GetOutputEncoding(),
               testing::ElementsAre(1, 90, 547, 58, 2, 2, 2, 2, 2, 2));
+  EXPECT_THAT(m.GetOutputPositions(),
+              testing::ElementsAre(0, 1, 2, 3, 4, 10, 10, 10, 10, 10));
   EXPECT_THAT(m.GetOutputAttributeInt32(),
               testing::ElementsAre(7, 7, 7, 7, 7, 7, 7, 7, 7, 7));
   EXPECT_THAT(
@@ -130,6 +137,8 @@ TEST(TextEncoderTest, ManyStrings) {
   EXPECT_EQ(m.GetEncodedLength(), 10);
   EXPECT_THAT(m.GetOutputEncoding(),
               testing::ElementsAre(547, 58, 2, 1, 862, 2, 1, 1919, 19, 2));
+  EXPECT_THAT(m.GetOutputPositions(),
+              testing::ElementsAre(2, 3, 4, 0, 1, 2, 0, 1, 2, 3));
   EXPECT_THAT(m.GetOutputAttributeInt32(),
               testing::ElementsAre(1, 1, 1, 2, 2, 2, 3, 3, 3, 3));
   EXPECT_THAT(
@@ -147,6 +156,8 @@ TEST(TextEncoderTest, LongStrings) {
   EXPECT_EQ(m.GetEncodedLength(), 9);
   EXPECT_THAT(m.GetOutputEncoding(),
               testing::ElementsAre(862, 2, 1, 1919, 19, 2, 1, 862, 2));
+  EXPECT_THAT(m.GetOutputPositions(),
+              testing::ElementsAre(1, 2, 0, 1, 2, 3, 0, 1, 2));
   EXPECT_THAT(m.GetOutputAttributeInt32(),
               testing::ElementsAre(2, 2, 3, 3, 3, 3, 4, 4, 4));
   EXPECT_THAT(

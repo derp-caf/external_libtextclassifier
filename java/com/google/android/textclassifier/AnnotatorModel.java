@@ -16,6 +16,8 @@
 
 package com.google.android.textclassifier;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Java wrapper for Annotator native library interface. This library is used for detecting entities
  * in text.
@@ -23,6 +25,7 @@ package com.google.android.textclassifier;
  * @hide
  */
 public final class AnnotatorModel implements AutoCloseable {
+  private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
   static {
     System.loadLibrary("textclassifier");
@@ -39,7 +42,7 @@ public final class AnnotatorModel implements AutoCloseable {
   static final String TYPE_DATE_TIME = "datetime";
   static final String TYPE_FLIGHT_NUMBER = "flight";
 
-  private final long annotatorPtr;
+  private long annotatorPtr;
 
   /**
    * Creates a new instance of SmartSelect predictor, using the provided model image, given as a
@@ -109,7 +112,19 @@ public final class AnnotatorModel implements AutoCloseable {
   /** Frees up the allocated memory. */
   @Override
   public void close() {
-    nativeCloseAnnotator(annotatorPtr);
+    if (isClosed.compareAndSet(false, true)) {
+      nativeCloseAnnotator(annotatorPtr);
+      annotatorPtr = 0L;
+    }
+  }
+
+  @Override
+  protected void finalize() throws Throwable {
+    try {
+      close();
+    } finally {
+      super.finalize();
+    }
   }
 
   /** Returns a comma separated list of locales supported by the model as BCP 47 tags. */
@@ -294,27 +309,26 @@ public final class AnnotatorModel implements AutoCloseable {
 
   private static native long nativeNewAnnotatorFromPath(String path);
 
-  private static native boolean nativeInitializeKnowledgeEngine(
-      long context, byte[] serializedConfig);
+  private static native String nativeGetLocales(int fd);
 
-  private static native int[] nativeSuggestSelection(
+  private static native int nativeGetVersion(int fd);
+
+  private static native String nativeGetName(int fd);
+
+  private native boolean nativeInitializeKnowledgeEngine(long context, byte[] serializedConfig);
+
+  private native int[] nativeSuggestSelection(
       long context, String text, int selectionBegin, int selectionEnd, SelectionOptions options);
 
-  private static native ClassificationResult[] nativeClassifyText(
+  private native ClassificationResult[] nativeClassifyText(
       long context,
       String text,
       int selectionBegin,
       int selectionEnd,
       ClassificationOptions options);
 
-  private static native AnnotatedSpan[] nativeAnnotate(
+  private native AnnotatedSpan[] nativeAnnotate(
       long context, String text, AnnotationOptions options);
 
-  private static native void nativeCloseAnnotator(long context);
-
-  private static native String nativeGetLocales(int fd);
-
-  private static native int nativeGetVersion(int fd);
-
-  private static native String nativeGetName(int fd);
+  private native void nativeCloseAnnotator(long context);
 }

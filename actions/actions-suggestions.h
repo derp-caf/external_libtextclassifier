@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "actions/actions_model_generated.h"
+#include "annotator/types.h"
 #include "utils/memory/mmap.h"
 #include "utils/tflite-model-executor.h"
 
@@ -43,6 +44,8 @@ struct ConversationMessage {
   int user_id;
   // Text of the message.
   std::string text;
+  // Annotations on the text.
+  std::vector<AnnotatedSpan> annotations;
 };
 
 // Conversation between multiple users.
@@ -69,32 +72,40 @@ class ActionsSuggestions {
 
   std::vector<ActionSuggestion> SuggestActions(
       const Conversation& conversation,
-      const ActionSuggestionOptions& options = ActionSuggestionOptions());
+      const ActionSuggestionOptions& options = ActionSuggestionOptions()) const;
 
  private:
   // Checks that model contains all required fields, and initializes internal
   // datastructures.
   bool ValidateAndInitialize();
 
-  void SetupSmartReplyModelInput(const std::vector<std::string>& context,
-                                 const std::vector<int>& user_ids,
-                                 const int num_suggestions,
-                                 tflite::Interpreter* interpreter);
-  void ReadSmartReplyModelOutput(tflite::Interpreter* interpreter,
-                                 std::vector<ActionSuggestion>* suggestions);
+  void SetupModelInput(const std::vector<std::string>& context,
+                       const std::vector<int>& user_ids,
+                       const int num_suggestions,
+                       tflite::Interpreter* interpreter) const;
+  void ReadModelOutput(tflite::Interpreter* interpreter,
+                       std::vector<ActionSuggestion>* suggestions) const;
 
-  void SuggestActionsFromConversationEmbedding(
-      const TensorView<float>& conversation_embedding,
-      const ActionSuggestionOptions& options,
-      std::vector<ActionSuggestion>* actions);
+  void SuggestActionsFromModel(
+      const Conversation& conversation,
+      std::vector<ActionSuggestion>* suggestions) const;
+
+  void SuggestActionsFromAnnotations(
+      const Conversation& conversation,
+      std::vector<ActionSuggestion>* suggestions) const;
+
+  // Check whether we shouldn't produce any predictions.
+  bool ShouldSuppressPredictions(tflite::Interpreter* interpreter) const;
 
   const ActionsModel* model_;
   std::unique_ptr<libtextclassifier3::ScopedMmap> mmap_;
 
   // Tensorflow Lite models.
-  std::unique_ptr<const TfLiteModelExecutor> smart_reply_executor_;
-  std::unique_ptr<const TfLiteModelExecutor> actions_suggestions_executor_;
+  std::unique_ptr<const TfLiteModelExecutor> model_executor_;
 };
+
+// Interprets the buffer as a Model flatbuffer and returns it for reading.
+const ActionsModel* ViewActionsModel(const void* buffer, int size);
 
 }  // namespace libtextclassifier3
 

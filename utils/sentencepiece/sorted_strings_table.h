@@ -20,7 +20,7 @@
 #include <functional>
 #include <vector>
 
-#include "utils/sentencepiece/match.h"
+#include "utils/sentencepiece/matcher.h"
 #include "utils/strings/stringpiece.h"
 
 namespace libtextclassifier3 {
@@ -34,7 +34,7 @@ namespace libtextclassifier3 {
 // pieces: String pieces, concatenated in sorted order and zero byte separated.
 // use_linear_scan_threshold: Minimum size of binary search range before
 //     switching to a linear sweep for prefix match testing.
-class SortedStringsTable {
+class SortedStringsTable : public SentencePieceMatcher {
  public:
   SortedStringsTable(const int num_pieces, const int* offsets,
                      StringPiece pieces,
@@ -45,10 +45,10 @@ class SortedStringsTable {
         use_linear_scan_threshold_(use_linear_scan_threshold) {}
 
   // Find matches that are prefixes of a string.
-  std::vector<TrieMatch> FindAllPrefixMatches(StringPiece input) const;
+  std::vector<TrieMatch> FindAllPrefixMatches(StringPiece input) const override;
 
   // Find the longest prefix match of a string.
-  TrieMatch LongestPrefixMatch(StringPiece input) const;
+  TrieMatch LongestPrefixMatch(StringPiece input) const override;
 
  private:
   void GatherPrefixMatches(

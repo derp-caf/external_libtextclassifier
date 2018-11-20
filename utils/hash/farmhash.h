@@ -24,7 +24,7 @@
 #include <utility>
 
 #ifndef NAMESPACE_FOR_HASH_FUNCTIONS
-#define NAMESPACE_FOR_HASH_FUNCTIONS tc2farmhash
+#define NAMESPACE_FOR_HASH_FUNCTIONS tc3farmhash
 #endif
 
 namespace NAMESPACE_FOR_HASH_FUNCTIONS {

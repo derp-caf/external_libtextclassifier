@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <memory>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -32,9 +33,10 @@ TEST(EncoderTest, SimpleTokenization) {
   const char pieces[] = "hell\0hello\0o\0there\0";
   const int offsets[] = {0, 5, 11, 13};
   float scores[] = {-0.5, -1.0, -10.0, -1.0};
-  const Encoder<SortedStringsTable> encoder(
-      SortedStringsTable(/*num_pieces=*/4, offsets, StringPiece(pieces, 18)),
-      /*num_pieces=*/4, scores);
+  std::unique_ptr<SentencePieceMatcher> matcher(new SortedStringsTable(
+      /*num_pieces=*/4, offsets, StringPiece(pieces, 18)));
+  const Encoder encoder(matcher.get(),
+                        /*num_pieces=*/4, scores);
 
   EXPECT_THAT(encoder.Encode("hellothere"), ElementsAreArray({0, 3, 5, 1}));
 
@@ -48,9 +50,10 @@ TEST(EncoderTest, HandlesEdgeCases) {
   const char pieces[] = "hell\0hello\0o\0there\0";
   const int offsets[] = {0, 5, 11, 13};
   float scores[] = {-0.5, -1.0, -10.0, -1.0};
-  const Encoder<SortedStringsTable> encoder(
-      SortedStringsTable(/*num_pieces=*/4, offsets, StringPiece(pieces, 18)),
-      /*num_pieces=*/4, scores);
+  std::unique_ptr<SentencePieceMatcher> matcher(new SortedStringsTable(
+      /*num_pieces=*/4, offsets, StringPiece(pieces, 18)));
+  const Encoder encoder(matcher.get(),
+                        /*num_pieces=*/4, scores);
   EXPECT_THAT(encoder.Encode("hellhello"), ElementsAreArray({0, 2, 3, 1}));
   EXPECT_THAT(encoder.Encode("hellohell"), ElementsAreArray({0, 3, 2, 1}));
   EXPECT_THAT(encoder.Encode(""), ElementsAreArray({0, 1}));

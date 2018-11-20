@@ -168,29 +168,6 @@ class WorkspaceSet {
   std::vector<std::vector<Workspace *> > workspaces_;
 };
 
-// A workspace that wraps around a single int.
-class SingletonIntWorkspace : public Workspace {
- public:
-  // Default-initializes the int value.
-  SingletonIntWorkspace() {}
-
-  // Initializes the int with the given value.
-  explicit SingletonIntWorkspace(int value) : value_(value) {}
-
-  // Returns the name of this type of workspace.
-  static string TypeName() { return "SingletonInt"; }
-
-  // Returns the int value.
-  int get() const { return value_; }
-
-  // Sets the int value.
-  void set(int value) { value_ = value; }
-
- private:
-  // The enclosed int.
-  int value_ = 0;
-};
-
 // A workspace that wraps around a vector of int.
 class VectorIntWorkspace : public Workspace {
  public:
@@ -219,26 +196,6 @@ class VectorIntWorkspace : public Workspace {
  private:
   // The enclosed vector.
   std::vector<int> elements_;
-};
-
-// A workspace that wraps around a vector of vector of int.
-class VectorVectorIntWorkspace : public Workspace {
- public:
-  // Creates a vector of empty vectors of the given size.
-  explicit VectorVectorIntWorkspace(int size);
-
-  // Returns the name of this type of workspace.
-  static string TypeName();
-
-  // Returns the i'th vector of elements.
-  const std::vector<int> &elements(int i) const { return elements_[i]; }
-
-  // Mutable access to the i'th vector of elements.
-  std::vector<int> *mutable_elements(int i) { return &(elements_[i]); }
-
- private:
-  // The enclosed vector of vector of elements.
-  std::vector<std::vector<int> > elements_;
 };
 
 }  // namespace mobile

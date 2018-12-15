@@ -156,6 +156,9 @@ namespace {
 bool DecompressBuffer(const CompressedBufferT* compressed_pattern,
                       ZlibDecompressor* zlib_decompressor,
                       std::string* uncompressed_pattern) {
+  if (!compressed_pattern) {
+    return true;
+  }
   std::string packed_pattern =
       PackFlatbuffer<CompressedBuffer>(compressed_pattern);
   if (!zlib_decompressor->Decompress(

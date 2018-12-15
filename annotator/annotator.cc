@@ -39,11 +39,9 @@ const std::string& Annotator::kDateCollection =
 
 namespace {
 const Model* LoadAndVerifyModel(const void* addr, int size) {
-  const Model* model = GetModel(addr);
-
   flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(addr), size);
-  if (model->Verify(verifier)) {
-    return model;
+  if (VerifyModelBuffer(verifier)) {
+    return GetModel(addr);
   } else {
     return nullptr;
   }

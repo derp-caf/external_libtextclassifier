@@ -54,10 +54,5 @@ VectorIntWorkspace::VectorIntWorkspace(const std::vector<int> &elements)
 
 string VectorIntWorkspace::TypeName() { return "Vector"; }
 
-VectorVectorIntWorkspace::VectorVectorIntWorkspace(int size)
-    : elements_(size) {}
-
-string VectorVectorIntWorkspace::TypeName() { return "VectorVector"; }
-
 }  // namespace mobile
 }  // namespace nlp_saft

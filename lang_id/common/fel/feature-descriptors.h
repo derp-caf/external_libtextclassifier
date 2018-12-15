@@ -53,14 +53,12 @@ class FeatureFunctionDescriptor {
   // Accessors for the feature function type.  The function type is the string
   // that the feature extractor code is registered under.
   void set_type(const string &type) { type_ = type; }
-  bool has_type() const { return !type_.empty(); }
   const string &type() const { return type_; }
 
   // Accessors for the feature function name.  The function name (if available)
   // is used for some log messages.  Otherwise, a more precise, but also more
   // verbose name based on the feature specification is used.
   void set_name(const string &name) { name_ = name; }
-  bool has_name() const { return !name_.empty(); }
   const string &name() const { return name_; }
 
   // Accessors for the default (name-less) parameter.

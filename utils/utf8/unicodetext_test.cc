@@ -24,11 +24,11 @@ namespace {
 class UnicodeTextTest : public testing::Test {
  protected:
   UnicodeTextTest() : empty_text_() {
-    text_.AppendCodepoint(0x1C0);
-    text_.AppendCodepoint(0x4E8C);
-    text_.AppendCodepoint(0xD7DB);
-    text_.AppendCodepoint(0x34);
-    text_.AppendCodepoint(0x1D11E);
+    text_.push_back(0x1C0);
+    text_.push_back(0x4E8C);
+    text_.push_back(0xD7DB);
+    text_.push_back(0x34);
+    text_.push_back(0x1D11E);
   }
 
   UnicodeText empty_text_;

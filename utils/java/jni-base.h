@@ -72,7 +72,12 @@ std::pair<bool, T> CallJniMethod0(JNIEnv* env, jobject object,
 }
 
 std::string ToStlString(JNIEnv* env, const jstring& str);
+
+// Get system-level file descriptor from AssetFileDescriptor.
 jint GetFdFromAssetFileDescriptor(JNIEnv* env, jobject afd);
+
+// Get system-level file descriptor from FileDescriptor.
+jint GetFdFromFileDescriptor(JNIEnv* env, jobject fd);
 }  // namespace libtextclassifier3
 
 #endif  // LIBTEXTCLASSIFIER_UTILS_JAVA_JNI_BASE_H_

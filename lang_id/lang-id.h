@@ -69,20 +69,6 @@ class LangId {
 
   virtual ~LangId();
 
-  // Returns language code for the most likely language for a text.
-  //
-  // The input text consists of the |num_bytes| bytes that starts at |data|.
-  //
-  // Note: if this LangId object is not valid (see is_valid()) or if this LangId
-  // object can't make a prediction, then this method returns
-  // LangId::kUnknownLanguageCode.
-  string FindLanguage(const char *data, size_t num_bytes) const;
-
-  // Convenience version of FindLanguage(const char *, size_t).
-  string FindLanguage(const string &text) const {
-    return FindLanguage(text.data(), text.size());
-  }
-
   // Computes the an n-best list of language codes and probabilities
   // corresponding to the most likely languages the given input text is written
   // in. The list is sorted in descending order by language probability.
@@ -98,6 +84,28 @@ class LangId {
   // Convenience version of FindLanguages(const char *, size_t, LangIdResult *).
   void FindLanguages(const string &text, LangIdResult *result) const {
     FindLanguages(text.data(), text.size(), result);
+  }
+
+  // Returns language code for the most likely language for a piece of text.
+  //
+  // The input text consists of the |num_bytes| bytes that start at |data|.
+  //
+  // Note: this method reports the most likely (1-best) language only if its
+  // probability is high enough; otherwise, it returns
+  // LangId::kUnknownLanguageCode.  The specific probability threshold is tuned
+  // to the needs of an early client.  If you need a different threshold, you
+  // can use FindLanguages (plural) to get the full LangIdResult, and apply your
+  // own threshold.
+  //
+  // Note: if this LangId object is not valid (see is_valid()) or if this LangId
+  // object can't make a prediction, then this method returns
+  // LangId::kUnknownLanguageCode.
+  //
+  string FindLanguage(const char *data, size_t num_bytes) const;
+
+  // Convenience version of FindLanguage(const char *, size_t).
+  string FindLanguage(const string &text) const {
+    return FindLanguage(text.data(), text.size());
   }
 
   // Returns true if this object has been correctly initialized and is ready to

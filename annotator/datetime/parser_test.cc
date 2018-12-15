@@ -124,7 +124,7 @@ class ParserTest : public testing::Test {
         {{expected_start_index, expected_end_index},
          {expected_ms_utc, expected_granularity},
          /*target_classification_score=*/1.0,
-         /*priority_score=*/0.0}};
+         /*priority_score=*/0.1}};
     const bool matches =
         testing::Matches(ElementsAreArray(expected))(filtered_results);
     if (!matches) {

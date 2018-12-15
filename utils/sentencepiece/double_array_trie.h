@@ -20,7 +20,7 @@
 #include <functional>
 #include <vector>
 
-#include "utils/sentencepiece/match.h"
+#include "utils/sentencepiece/matcher.h"
 #include "utils/strings/stringpiece.h"
 
 namespace libtextclassifier3 {
@@ -35,17 +35,17 @@ namespace libtextclassifier3 {
 typedef unsigned int TrieNode;
 
 // A memory mappable trie, compatible with Darts::DoubleArray.
-class DoubleArrayTrie {
+class DoubleArrayTrie : public SentencePieceMatcher {
  public:
   // nodes and nodes_length specify the array of the nodes of the trie.
   DoubleArrayTrie(const TrieNode* nodes, const int nodes_length)
       : nodes_(nodes), nodes_length_(nodes_length) {}
 
   // Find matches that are prefixes of a string.
-  std::vector<TrieMatch> FindAllPrefixMatches(StringPiece input) const;
+  std::vector<TrieMatch> FindAllPrefixMatches(StringPiece input) const override;
 
   // Find the longest prefix match of a string.
-  TrieMatch LongestPrefixMatch(StringPiece input) const;
+  TrieMatch LongestPrefixMatch(StringPiece input) const override;
 
  private:
   // Returns whether a node as a leaf as a child.

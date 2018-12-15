@@ -16,24 +16,6 @@
 
 // Fast approximation for exp.
 //
-// Note: this file is based on util/math/fastmath.h; we trimmed it down to
-// contain only vfexp() and vfexp2() (plus their transitive dependencies), and
-// renamed those functions to VeryFastExp() / VeryFastExp2().
-//
-// Both functions are based on a table lookup.  "vf" stands for "very fast".  In
-// terms of precision, VeryFastExp(x) differs from expf(x) by less than 1%
-// (relative to expf(x)); we have tests for that.
-//
-// The functions produce undefined results on overflow/underflow.
-// Bounds checking is only done in debug mode.
-//
-// To microbenchmark, run
-//
-// blaze run -c opt --dynamic_mode=off --run_under=perflab \
-//   //lang_id/common:fastexp_benchmark \
-//   -- --benchmarks=all --heap_check=
-//
-// You will receive an email when the results are ready.
 
 #ifndef NLP_SAFT_COMPONENTS_COMMON_MOBILE_MATH_FASTEXP_H_
 #define NLP_SAFT_COMPONENTS_COMMON_MOBILE_MATH_FASTEXP_H_
@@ -80,7 +62,6 @@ class FastMathClass {
 
 extern FastMathClass FastMathInstance;
 
-inline float VeryFastExp2(float f) { return FastMathInstance.VeryFastExp2(f); }
 inline float VeryFastExp(float f) { return FastMathInstance.VeryFastExp(f); }
 
 }  // namespace mobile

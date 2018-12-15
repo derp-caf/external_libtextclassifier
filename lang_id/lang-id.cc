@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "lang_id/common/embedding-feature-interface.h"
 #include "lang_id/common/embedding-network-params.h"
 #include "lang_id/common/embedding-network.h"
 #include "lang_id/common/fel/feature-extractor.h"
@@ -34,7 +35,7 @@
 #include "lang_id/common/math/algorithm.h"
 #include "lang_id/common/math/softmax.h"
 #include "lang_id/custom-tokenizer.h"
-#include "lang_id/lang-id-brain-interface.h"
+#include "lang_id/features/light-sentence-features.h"
 #include "lang_id/light-sentence.h"
 
 namespace libtextclassifier3 {
@@ -55,7 +56,8 @@ static const float kDefaultConfidenceThreshold = 0.50f;
 class LangIdImpl {
  public:
   explicit LangIdImpl(std::unique_ptr<ModelProvider> model_provider)
-      : model_provider_(std::move(model_provider)) {
+      : model_provider_(std::move(model_provider)),
+        lang_id_brain_interface_("language_identifier") {
     // Note: in the code below, we set valid_ to true only if all initialization
     // steps completed successfully.  Otherwise, we return early, leaving valid_
     // to its default value false.
@@ -139,18 +141,9 @@ class LangIdImpl {
     // language code string in ascending order.
     std::vector<float> softmax = ComputeSoftmax(scores);
 
-    // We will need to renormalize after removing items from the support.
-    // Keep track of the normalization constant.
-    float normalization_z = 0.0f;
     for (int i = 0; i < softmax.size(); ++i) {
       result->predictions.emplace_back(GetLanguageForSoftmaxLabel(i),
                                        softmax[i]);
-      normalization_z += softmax[i];
-    }
-
-    // Renormalize prediction probabilities.
-    for (auto &prediction : result->predictions) {
-      prediction.second /= normalization_z;
     }
 
     // Sort the resulting language predictions by probability in descending
@@ -207,13 +200,10 @@ class LangIdImpl {
   void ComputeScores(StringPiece text, std::vector<float> *scores) const {
     // Create a Sentence storing the input text.
     LightSentence sentence;
-
     tokenizer_.Tokenize(text, &sentence);
 
-    // TODO(salcianu): reuse vector<FeatureVector>.
-    std::vector<FeatureVector> features(
-        lang_id_brain_interface_.NumEmbeddings());
-    lang_id_brain_interface_.GetFeatures(&sentence, &features);
+    std::vector<FeatureVector> features =
+        lang_id_brain_interface_.GetFeaturesNoCaching(&sentence);
 
     // Run feed-forward neural network to compute scores.
     network_->ComputeFinalScores(features, scores);
@@ -235,7 +225,8 @@ class LangIdImpl {
 
   TokenizerForLangId tokenizer_;
 
-  LangIdBrainInterface lang_id_brain_interface_;
+  EmbeddingFeatureInterface<LightSentenceExtractor, LightSentence>
+      lang_id_brain_interface_;
 
   // Neural network to use for scoring.
   std::unique_ptr<EmbeddingNetwork> network_;

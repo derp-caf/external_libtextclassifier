@@ -16,21 +16,32 @@
 
 #include "actions/actions-suggestions.h"
 
+#include <fstream>
+#include <iterator>
 #include <memory>
 
+#include "actions/actions_model_generated.h"
+#include "annotator/types.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "flatbuffers/flatbuffers.h"
 
 namespace libtextclassifier3 {
 namespace {
+
+constexpr char kModelFileName[] = "actions_suggestions_test.model";
+
+std::string ReadFile(const std::string& file_name) {
+  std::ifstream file_stream(file_name);
+  return std::string(std::istreambuf_iterator<char>(file_stream), {});
+}
 
 std::string GetModelPath() {
   return "";
 }
 
 std::unique_ptr<ActionsSuggestions> LoadTestModel() {
-  return ActionsSuggestions::FromPath(GetModelPath() +
-                                      "actions_suggestions_test.model");
+  return ActionsSuggestions::FromPath(GetModelPath() + kModelFileName);
 }
 
 TEST(ActionsSuggestionsTest, InstantiateActionSuggestions) {
@@ -39,9 +50,56 @@ TEST(ActionsSuggestionsTest, InstantiateActionSuggestions) {
 
 TEST(ActionsSuggestionsTest, SuggestActions) {
   std::unique_ptr<ActionsSuggestions> actions_suggestions = LoadTestModel();
-  const auto actions = actions_suggestions->SuggestActions(
-      {{{/*user_id=*/1, "where are you?"}}});
+  const std::vector<ActionSuggestion>& actions =
+      actions_suggestions->SuggestActions(
+          {{{/*user_id=*/1, "where are you?"}}});
   EXPECT_EQ(actions.size(), 6);
+}
+
+TEST(ActionsSuggestionsTest, SuggestActionsFromAnnotations) {
+  std::unique_ptr<ActionsSuggestions> actions_suggestions = LoadTestModel();
+  AnnotatedSpan annotation;
+  annotation.span = {11, 15};
+  annotation.classification = {ClassificationResult("address", 1.0)};
+  const std::vector<ActionSuggestion>& actions =
+      actions_suggestions->SuggestActions({{{/*user_id=*/1, "are you at home?",
+                                             /*annotations=*/{annotation}}}});
+  EXPECT_EQ(actions.size(), 7);
+  EXPECT_EQ(actions.back().type, "address");
+  EXPECT_EQ(actions.back().score, 1.0);
+}
+
+void TestSuggestActionsWithThreshold(
+    const std::function<void(ActionsModelT*)>& set_value_fn) {
+  const std::string actions_model_string =
+      ReadFile(GetModelPath() + kModelFileName);
+  std::unique_ptr<ActionsModelT> actions_model =
+      UnPackActionsModel(actions_model_string.c_str());
+  set_value_fn(actions_model.get());
+  flatbuffers::FlatBufferBuilder builder;
+  FinishActionsModelBuffer(builder,
+                           ActionsModel::Pack(builder, actions_model.get()));
+  std::unique_ptr<ActionsSuggestions> actions_suggestions =
+      ActionsSuggestions::FromUnownedBuffer(
+          reinterpret_cast<const uint8_t*>(builder.GetBufferPointer()),
+          builder.GetSize());
+  ASSERT_TRUE(actions_suggestions);
+  const std::vector<ActionSuggestion>& actions =
+      actions_suggestions->SuggestActions(
+          {{{/*user_id=*/1, "where are you?"}}});
+  EXPECT_THAT(actions, testing::IsEmpty());
+}
+
+TEST(ActionsSuggestionsTest, SuggestActionsWithTriggeringScore) {
+  TestSuggestActionsWithThreshold([](ActionsModelT* actions_model) {
+    actions_model->min_triggering_confidence = 1.0;
+  });
+}
+
+TEST(ActionsSuggestionsTest, SuggestActionsWithSensitiveTopicScore) {
+  TestSuggestActionsWithThreshold([](ActionsModelT* actions_model) {
+    actions_model->max_sensitive_topic_score = 0.0;
+  });
 }
 
 }  // namespace

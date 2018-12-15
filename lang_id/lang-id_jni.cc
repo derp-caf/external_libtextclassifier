@@ -83,7 +83,7 @@ TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNewLangIdModelFromPath)
 }
 
 TC3_JNI_METHOD(jobjectArray, TC3_LANG_ID_CLASS_NAME, nativeDetectLanguages)
-(JNIEnv* env, jobject thiz, jlong ptr, jstring text) {
+(JNIEnv* env, jobject clazz, jlong ptr, jstring text) {
   LangId* model = reinterpret_cast<LangId*>(ptr);
   if (!model) {
     return nullptr;
@@ -97,7 +97,7 @@ TC3_JNI_METHOD(jobjectArray, TC3_LANG_ID_CLASS_NAME, nativeDetectLanguages)
 }
 
 TC3_JNI_METHOD(void, TC3_LANG_ID_CLASS_NAME, nativeCloseLangIdModel)
-(JNIEnv* env, jobject thiz, jlong ptr) {
+(JNIEnv* env, jobject clazz, jlong ptr) {
   if (!ptr) {
     TC3_LOG(ERROR) << "Trying to close null LangId.";
     return;
@@ -107,7 +107,7 @@ TC3_JNI_METHOD(void, TC3_LANG_ID_CLASS_NAME, nativeCloseLangIdModel)
 }
 
 TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetLangIdModelVersion)
-(JNIEnv* env, jobject thiz, jlong ptr) {
+(JNIEnv* env, jobject clazz, jlong ptr) {
   if (!ptr) {
     return -1;
   }

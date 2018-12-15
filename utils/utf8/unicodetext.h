@@ -168,7 +168,7 @@ class UnicodeText {
 
   // Calling this may invalidate pointers to underlying data.
   UnicodeText& AppendUTF8(const char* utf8, int len);
-  UnicodeText& AppendCodepoint(char32 ch);
+  UnicodeText& push_back(char32 ch);
   void clear();
 
   std::string ToUTF8String() const;

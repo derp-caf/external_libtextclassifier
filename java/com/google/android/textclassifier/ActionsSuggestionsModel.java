@@ -16,6 +16,8 @@
 
 package com.google.android.textclassifier;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Java wrapper for ActionsSuggestions native library interface. This library is used to suggest
  * actions and replies in a given conversation.
@@ -23,12 +25,13 @@ package com.google.android.textclassifier;
  * @hide
  */
 public final class ActionsSuggestionsModel implements AutoCloseable {
+  private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
   static {
     System.loadLibrary("textclassifier");
   }
 
-  private final long actionsModelPtr;
+  private long actionsModelPtr;
 
   /**
    * Creates a new instance of Actions predictor, using the provided model image, given as a file
@@ -61,12 +64,38 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
   /** Frees up the allocated memory. */
   @Override
   public void close() {
-    nativeCloseActionsModel(actionsModelPtr);
+    if (isClosed.compareAndSet(false, true)) {
+      nativeCloseActionsModel(actionsModelPtr);
+      actionsModelPtr = 0L;
+    }
+  }
+
+  @Override
+  protected void finalize() throws Throwable {
+    try {
+      close();
+    } finally {
+      super.finalize();
+    }
+  }
+
+  /** Returns a comma separated list of locales supported by the model as BCP 47 tags. */
+  public static String getLocales(int fd) {
+    return nativeGetLocales(fd);
+  }
+
+  /** Returns the version of the model. */
+  public static int getVersion(int fd) {
+    return nativeGetVersion(fd);
+  }
+
+  /** Returns the name of the model. */
+  public static String getName(int fd) {
+    return nativeGetName(fd);
   }
 
   /** Action suggestion that contains a response text and the type of the response. */
   public static final class ActionSuggestion {
-
     private final String responseText;
     private final String actionType;
     private final float score;
@@ -131,8 +160,14 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
 
   private static native long nativeNewActionsModelFromPath(String path);
 
-  private static native ActionSuggestion[] nativeSuggestActions(
+  private static native String nativeGetLocales(int fd);
+
+  private static native int nativeGetVersion(int fd);
+
+  private static native String nativeGetName(int fd);
+
+  private native ActionSuggestion[] nativeSuggestActions(
       long context, Conversation conversation, ActionSuggestionOptions options);
 
-  private static native void nativeCloseActionsModel(long context);
+  private native void nativeCloseActionsModel(long context);
 }

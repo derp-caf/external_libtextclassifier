@@ -22,6 +22,8 @@
 
 namespace libtextclassifier3 {
 
+bool JByteArrayToString(JNIEnv* env, const jbyteArray& array,
+                        std::string* result);
 bool JStringToUtf8String(JNIEnv* env, const jstring& jstr, std::string* result);
 
 }  // namespace libtextclassifier3

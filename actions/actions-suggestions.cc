@@ -90,6 +90,10 @@ std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromPath(
   return FromScopedMmap(std::move(mmap));
 }
 
+void ActionsSuggestions::SetAnnotator(const Annotator* annotator) {
+  annotator_ = annotator;
+}
+
 bool ActionsSuggestions::ValidateAndInitialize() {
   if (model_ == nullptr) {
     TC3_LOG(ERROR) << "No model specified.";
@@ -110,7 +114,8 @@ bool ActionsSuggestions::ValidateAndInitialize() {
 
 void ActionsSuggestions::SetupModelInput(
     const std::vector<std::string>& context, const std::vector<int>& user_ids,
-    const int num_suggestions, tflite::Interpreter* interpreter) const {
+    const std::vector<float>& time_diffs, const int num_suggestions,
+    tflite::Interpreter* interpreter) const {
   if (model_->tflite_model_spec()->input_context() >= 0) {
     model_executor_->SetInput<std::string>(
         model_->tflite_model_spec()->input_context(), context, interpreter);
@@ -121,17 +126,20 @@ void ActionsSuggestions::SetupModelInput(
                                             ->input_context_length()])
          ->data.i64 = context.size();
   }
-
   if (model_->tflite_model_spec()->input_user_id() >= 0) {
     model_executor_->SetInput<int>(model_->tflite_model_spec()->input_user_id(),
                                    user_ids, interpreter);
   }
-
   if (model_->tflite_model_spec()->input_num_suggestions() >= 0) {
     *interpreter
          ->tensor(interpreter->inputs()[model_->tflite_model_spec()
                                             ->input_num_suggestions()])
          ->data.i64 = num_suggestions;
+  }
+  if (model_->tflite_model_spec()->input_time_diffs() >= 0) {
+    model_executor_->SetInput<float>(
+        model_->tflite_model_spec()->input_time_diffs(), time_diffs,
+        interpreter);
   }
 }
 
@@ -220,9 +228,31 @@ void ActionsSuggestions::SuggestActionsFromModel(
     return;
   }
 
-  // Use only last message for now.
-  SetupModelInput({conversation.messages.back().text},
-                  {conversation.messages.back().user_id},
+  int num_messages = conversation.messages.size();
+  if (model_->max_conversation_history_length() >= 0 &&
+      num_messages > model_->max_conversation_history_length()) {
+    num_messages = model_->max_conversation_history_length();
+  }
+
+  if (num_messages <= 0) {
+    TC3_LOG(INFO) << "No messages provided for actions suggestions.";
+    return;
+  }
+
+  std::vector<std::string> context;
+  std::vector<int> user_ids;
+  std::vector<float> time_diffs;
+
+  // Gather last `num__messages` messages from the conversation.
+  for (int i = conversation.messages.size() - num_messages;
+       i < conversation.messages.size(); i++) {
+    const ConversationMessage& message = conversation.messages[i];
+    context.push_back(message.text);
+    user_ids.push_back(message.user_id);
+    time_diffs.push_back(message.time_diff_secs);
+  }
+
+  SetupModelInput(context, user_ids, time_diffs,
                   /*num_suggestions=*/model_->num_smart_replies(),
                   interpreter.get());
 
@@ -239,12 +269,17 @@ void ActionsSuggestions::SuggestActionsFromModel(
 }
 
 void ActionsSuggestions::SuggestActionsFromAnnotations(
-    const Conversation& conversation,
+    const Conversation& conversation, const ActionSuggestionOptions& options,
     std::vector<ActionSuggestion>* suggestions) const {
   // Create actions based on the annotations present in the last message.
   // TODO(smillius): Make this configurable.
-  for (const AnnotatedSpan& annotation :
-       conversation.messages.back().annotations) {
+  std::vector<AnnotatedSpan> annotations =
+      conversation.messages.back().annotations;
+  if (annotations.empty() && annotator_ != nullptr) {
+    annotations = annotator_->Annotate(conversation.messages.back().text,
+                                       options.annotation_options);
+  }
+  for (const AnnotatedSpan& annotation : annotations) {
     if (annotation.classification.empty() ||
         annotation.classification[0].collection.empty()) {
       continue;
@@ -266,7 +301,7 @@ std::vector<ActionSuggestion> ActionsSuggestions::SuggestActions(
   }
 
   SuggestActionsFromModel(conversation, &suggestions);
-  SuggestActionsFromAnnotations(conversation, &suggestions);
+  SuggestActionsFromAnnotations(conversation, options, &suggestions);
 
   // TODO(smillius): Properly rank the actions.
 

@@ -85,8 +85,8 @@ LOCAL_REQUIRED_MODULES += libtextclassifier_lang_id_model
 
 LOCAL_ADDITIONAL_DEPENDENCIES += $(LOCAL_PATH)/jni.lds
 LOCAL_LDFLAGS += -Wl,-version-script=$(LOCAL_PATH)/jni.lds
-LOCAL_CPPFLAGS_32 += -DLIBTEXTCLASSIFIER_TEST_DATA_DIR="\"/data/nativetest/libtextclassifier_tests/test_data/\""
-LOCAL_CPPFLAGS_64 += -DLIBTEXTCLASSIFIER_TEST_DATA_DIR="\"/data/nativetest64/libtextclassifier_tests/test_data/\""
+LOCAL_CPPFLAGS_32 += -DTC3_TEST_DATA_DIR="\"/data/nativetest/libtextclassifier_tests/test_data/\""
+LOCAL_CPPFLAGS_64 += -DTC3_TEST_DATA_DIR="\"/data/nativetest64/libtextclassifier_tests/test_data/\""
 
 include $(BUILD_SHARED_LIBRARY)
 
@@ -109,8 +109,8 @@ LOCAL_STRIP_MODULE := $(LIBTEXTCLASSIFIER_STRIP_OPTS)
 
 LOCAL_TEST_DATA := $(call find-test-data-in-subdirs, $(LOCAL_PATH), *, annotator/test_data, actions/test_data)
 
-LOCAL_CPPFLAGS_32 += -DLIBTEXTCLASSIFIER_TEST_DATA_DIR="\"/data/nativetest/libtextclassifier_tests/test_data/\""
-LOCAL_CPPFLAGS_64 += -DLIBTEXTCLASSIFIER_TEST_DATA_DIR="\"/data/nativetest64/libtextclassifier_tests/test_data/\""
+LOCAL_CPPFLAGS_32 += -DTC3_TEST_DATA_DIR="\"/data/nativetest/libtextclassifier_tests/test_data/\""
+LOCAL_CPPFLAGS_64 += -DTC3_TEST_DATA_DIR="\"/data/nativetest64/libtextclassifier_tests/test_data/\""
 
 # TODO: Do not filter out tflite test once the dependency issue is resolved.
 LOCAL_SRC_FILES := $(filter-out utils/tflite/%_test.cc,$(call all-subdir-cpp-files))

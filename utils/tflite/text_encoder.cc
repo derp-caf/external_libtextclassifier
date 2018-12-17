@@ -35,7 +35,7 @@ namespace libtextclassifier3 {
 namespace {
 
 struct TextEncoderOp {
-  std::unique_ptr<Normalizer> normalizer;
+  std::unique_ptr<SentencePieceNormalizer> normalizer;
   std::unique_ptr<Encoder> encoder;
   std::unique_ptr<SentencePieceMatcher> matcher;
 };
@@ -81,7 +81,7 @@ void* Initialize(TfLiteContext* context, const char* buffer, size_t length) {
       config->normalization_charsmap()->Data());
   const int charsmap_trie_nodes_length =
       config->normalization_charsmap()->Length() / sizeof(TrieNode);
-  encoder_op->normalizer.reset(new Normalizer(
+  encoder_op->normalizer.reset(new SentencePieceNormalizer(
       DoubleArrayTrie(charsmap_trie_nodes, charsmap_trie_nodes_length),
       StringPiece(config->normalization_charsmap_values()->data(),
                   config->normalization_charsmap_values()->size()),
@@ -113,7 +113,8 @@ void* Initialize(TfLiteContext* context, const char* buffer, size_t length) {
   }
   encoder_op->encoder.reset(new Encoder(
       encoder_op->matcher.get(), num_pieces, config->pieces_scores()->data(),
-      config->start_code(), config->end_code(), config->encoding_offset()));
+      config->start_code(), config->end_code(), config->encoding_offset(),
+      config->unknown_code(), config->unknown_score()));
   return encoder_op.release();
 }
 

@@ -867,7 +867,7 @@ TEST_F(FeatureProcessorTest, InternalTokenizeOnScriptChange) {
                                 Token("웹사이트", 7, 11)}));
 }
 
-#ifdef LIBTEXTCLASSIFIER_TEST_ICU
+#ifdef TC3_TEST_ICU
 TEST_F(FeatureProcessorTest, ICUTokenize) {
   FeatureProcessorOptionsT options;
   options.tokenization_type = FeatureProcessorOptions_::TokenizationType_ICU;
@@ -889,7 +889,7 @@ TEST_F(FeatureProcessorTest, ICUTokenize) {
 }
 #endif
 
-#ifdef LIBTEXTCLASSIFIER_TEST_ICU
+#ifdef TC3_TEST_ICU
 TEST_F(FeatureProcessorTest, ICUTokenizeWithWhitespaces) {
   FeatureProcessorOptionsT options;
   options.tokenization_type = FeatureProcessorOptions_::TokenizationType_ICU;
@@ -917,7 +917,7 @@ TEST_F(FeatureProcessorTest, ICUTokenizeWithWhitespaces) {
 }
 #endif
 
-#ifdef LIBTEXTCLASSIFIER_TEST_ICU
+#ifdef TC3_TEST_ICU
 TEST_F(FeatureProcessorTest, MixedTokenize) {
   FeatureProcessorOptionsT options;
   options.tokenization_type = FeatureProcessorOptions_::TokenizationType_MIXED;

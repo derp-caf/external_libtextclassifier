@@ -36,9 +36,10 @@ TEST(NormalizerTest, NormalizesAsReferenceNormalizer) {
   std::ifstream test_config_stream(GetTestConfigPath());
   std::string config((std::istreambuf_iterator<char>(test_config_stream)),
                      (std::istreambuf_iterator<char>()));
-  Normalizer normalizer = NormalizerFromSpec(config, /*add_dummy_prefix=*/true,
-                                             /*remove_extra_whitespaces=*/true,
-                                             /*escape_whitespaces=*/true);
+  SentencePieceNormalizer normalizer =
+      NormalizerFromSpec(config, /*add_dummy_prefix=*/true,
+                         /*remove_extra_whitespaces=*/true,
+                         /*escape_whitespaces=*/true);
 
   EXPECT_EQ(normalizer.Normalize("hello there"), "▁hello▁there");
 
@@ -63,9 +64,10 @@ TEST(NormalizerTest, NoDummyPrefix) {
   std::ifstream test_config_stream(GetTestConfigPath());
   std::string config((std::istreambuf_iterator<char>(test_config_stream)),
                      (std::istreambuf_iterator<char>()));
-  Normalizer normalizer = NormalizerFromSpec(config, /*add_dummy_prefix=*/false,
-                                             /*remove_extra_whitespaces=*/true,
-                                             /*escape_whitespaces=*/true);
+  SentencePieceNormalizer normalizer =
+      NormalizerFromSpec(config, /*add_dummy_prefix=*/false,
+                         /*remove_extra_whitespaces=*/true,
+                         /*escape_whitespaces=*/true);
 
   EXPECT_EQ(normalizer.Normalize("hello there"), "hello▁there");
 
@@ -90,9 +92,10 @@ TEST(NormalizerTest, NoRemoveExtraWhitespace) {
   std::ifstream test_config_stream(GetTestConfigPath());
   std::string config((std::istreambuf_iterator<char>(test_config_stream)),
                      (std::istreambuf_iterator<char>()));
-  Normalizer normalizer = NormalizerFromSpec(config, /*add_dummy_prefix=*/false,
-                                             /*remove_extra_whitespaces=*/false,
-                                             /*escape_whitespaces=*/true);
+  SentencePieceNormalizer normalizer =
+      NormalizerFromSpec(config, /*add_dummy_prefix=*/false,
+                         /*remove_extra_whitespaces=*/false,
+                         /*escape_whitespaces=*/true);
 
   EXPECT_EQ(normalizer.Normalize("hello there"), "hello▁there");
 
@@ -108,9 +111,10 @@ TEST(NormalizerTest, NoEscapeWhitespaces) {
   std::ifstream test_config_stream(GetTestConfigPath());
   std::string config((std::istreambuf_iterator<char>(test_config_stream)),
                      (std::istreambuf_iterator<char>()));
-  Normalizer normalizer = NormalizerFromSpec(config, /*add_dummy_prefix=*/false,
-                                             /*remove_extra_whitespaces=*/false,
-                                             /*escape_whitespaces=*/false);
+  SentencePieceNormalizer normalizer =
+      NormalizerFromSpec(config, /*add_dummy_prefix=*/false,
+                         /*remove_extra_whitespaces=*/false,
+                         /*escape_whitespaces=*/false);
 
   EXPECT_EQ(normalizer.Normalize("hello there"), "hello there");
 

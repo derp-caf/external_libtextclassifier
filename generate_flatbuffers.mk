@@ -4,22 +4,34 @@ define transform-fbs-to-cpp
 @echo "Flatc: $@ <= $(PRIVATE_INPUT_FBS)"
 @rm -f $@
 @mkdir -p $(dir $@)
-$(hide) $(FLATC) \
+$(FLATC) \
     --cpp \
     --no-union-value-namespacing \
     --gen-object-api \
+    --keep-prefix \
+    -I $(INPUT_DIR) \
     -o $(dir $@) \
     $(PRIVATE_INPUT_FBS) \
     || exit 33
-$(hide) [ -f $@ ] || exit 33
+[ -f $@ ] || exit 33
 endef
 
 intermediates := $(call local-generated-sources-dir)
+
+# Generate utils/intent/intent-config_generated.h using FlatBuffer schema compiler.
+INTENT_CONFIG_FBS := $(LOCAL_PATH)/utils/intents/intent-config.fbs
+INTENT_CONFIG_H := $(intermediates)/utils/intents/intent-config_generated.h
+$(INTENT_CONFIG_H): PRIVATE_INPUT_FBS := $(INTENT_CONFIG_FBS)
+$(INTENT_CONFIG_H): INPUT_DIR := $(LOCAL_PATH)
+$(INTENT_CONFIG_H): $(FLATC)
+	$(transform-fbs-to-cpp)
+LOCAL_GENERATED_SOURCES += $(INTENT_CONFIG_H)
 
 # Generate annotator/model_generated.h using FlatBuffer schema compiler.
 ANNOTATOR_MODEL_FBS := $(LOCAL_PATH)/annotator/model.fbs
 ANNOTATOR_MODEL_H := $(intermediates)/annotator/model_generated.h
 $(ANNOTATOR_MODEL_H): PRIVATE_INPUT_FBS := $(ANNOTATOR_MODEL_FBS)
+$(ANNOTATOR_MODEL_H): INPUT_DIR := $(LOCAL_PATH)
 $(ANNOTATOR_MODEL_H): $(FLATC)
 	$(transform-fbs-to-cpp)
 LOCAL_GENERATED_SOURCES += $(ANNOTATOR_MODEL_H)
@@ -28,6 +40,7 @@ LOCAL_GENERATED_SOURCES += $(ANNOTATOR_MODEL_H)
 ACTIONS_MODEL_FBS := $(LOCAL_PATH)/actions/actions_model.fbs
 ACTIONS_MODEL_H := $(intermediates)/actions/actions_model_generated.h
 $(ACTIONS_MODEL_H): PRIVATE_INPUT_FBS := $(ACTIONS_MODEL_FBS)
+$(ACTIONS_MODEL_H): INPUT_DIR := $(LOCAL_PATH)
 $(ACTIONS_MODEL_H): $(FLATC)
 	$(transform-fbs-to-cpp)
 LOCAL_GENERATED_SOURCES += $(ACTIONS_MODEL_H)
@@ -36,6 +49,7 @@ LOCAL_GENERATED_SOURCES += $(ACTIONS_MODEL_H)
 UTILS_TFLITE_TEXT_ENCODER_CONFIG_FBS := $(LOCAL_PATH)/utils/tflite/text_encoder_config.fbs
 UTILS_TFLITE_TEXT_ENCODER_CONFIG_H := $(intermediates)/utils/tflite/text_encoder_config_generated.h
 $(UTILS_TFLITE_TEXT_ENCODER_CONFIG_H): PRIVATE_INPUT_FBS := $(UTILS_TFLITE_TEXT_ENCODER_CONFIG_FBS)
+$(UTILS_TFLITE_TEXT_ENCODER_CONFIG_H): INPUT_DIR := $(LOCAL_PATH)
 $(UTILS_TFLITE_TEXT_ENCODER_CONFIG_H): $(FLATC)
 	$(transform-fbs-to-cpp)
 LOCAL_GENERATED_SOURCES += $(UTILS_TFLITE_TEXT_ENCODER_CONFIG_H)
@@ -44,6 +58,7 @@ LOCAL_GENERATED_SOURCES += $(UTILS_TFLITE_TEXT_ENCODER_CONFIG_H)
 LANG_ID_COMMON_FLATBUFFERS_EMBEDDING_NETWORK_FBS := $(LOCAL_PATH)/lang_id/common/flatbuffers/embedding-network.fbs
 LANG_ID_COMMON_FLATBUFFERS_EMBEDDING_NETWORK_H := $(intermediates)/lang_id/common/flatbuffers/embedding-network_generated.h
 $(LANG_ID_COMMON_FLATBUFFERS_EMBEDDING_NETWORK_H): PRIVATE_INPUT_FBS := $(LANG_ID_COMMON_FLATBUFFERS_EMBEDDING_NETWORK_FBS)
+$(LANG_ID_COMMON_FLATBUFFERS_EMBEDDING_NETWORK_H): INPUT_DIR := $(LOCAL_PATH)
 $(LANG_ID_COMMON_FLATBUFFERS_EMBEDDING_NETWORK_H): $(FLATC)
 	$(transform-fbs-to-cpp)
 LOCAL_GENERATED_SOURCES += $(LANG_ID_COMMON_FLATBUFFERS_EMBEDDING_NETWORK_H)
@@ -52,7 +67,7 @@ LOCAL_GENERATED_SOURCES += $(LANG_ID_COMMON_FLATBUFFERS_EMBEDDING_NETWORK_H)
 LANG_ID_COMMON_FLATBUFFERS_MODEL_FBS := $(LOCAL_PATH)/lang_id/common/flatbuffers/model.fbs
 LANG_ID_COMMON_FLATBUFFERS_MODEL_H := $(intermediates)/lang_id/common/flatbuffers/model_generated.h
 $(LANG_ID_COMMON_FLATBUFFERS_MODEL_H): PRIVATE_INPUT_FBS := $(LANG_ID_COMMON_FLATBUFFERS_MODEL_FBS)
+$(LANG_ID_COMMON_FLATBUFFERS_MODEL_H): INPUT_DIR := $(LOCAL_PATH)
 $(LANG_ID_COMMON_FLATBUFFERS_MODEL_H): $(FLATC)
 	$(transform-fbs-to-cpp)
 LOCAL_GENERATED_SOURCES += $(LANG_ID_COMMON_FLATBUFFERS_MODEL_H)
-

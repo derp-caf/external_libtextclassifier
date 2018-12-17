@@ -51,7 +51,6 @@ class TaskContext {
   // Returns parameter value.  If the parameter is not specified in this
   // context, the default value is returned.
   string Get(const string &name, const char *defval) const;
-  string Get(const string &name, const string &defval) const;
   int Get(const string &name, int defval) const;
   float Get(const string &name, float defval) const;
   bool Get(const string &name, bool defval) const;

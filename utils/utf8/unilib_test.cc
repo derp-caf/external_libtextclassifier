@@ -50,7 +50,7 @@ TEST_F(UniLibTest, CharacterClassesAscii) {
   EXPECT_EQ(unilib_.GetPairedBracket('}'), '{');
 }
 
-#ifndef LIBTEXTCLASSIFIER_UNILIB_DUMMY
+#ifndef TC3_UNILIB_DUMMY
 TEST_F(UniLibTest, CharacterClassesUnicode) {
   EXPECT_TRUE(unilib_.IsOpeningBracket(0x0F3C));  // TIBET ANG KHANG GYON
   EXPECT_TRUE(unilib_.IsClosingBracket(0x0F3D));  // TIBET ANG KHANG GYAS
@@ -72,7 +72,7 @@ TEST_F(UniLibTest, CharacterClassesUnicode) {
   EXPECT_EQ(unilib_.GetPairedBracket(0x0F3C), 0x0F3D);
   EXPECT_EQ(unilib_.GetPairedBracket(0x0F3D), 0x0F3C);
 }
-#endif  // ndef LIBTEXTCLASSIFIER_UNILIB_DUMMY
+#endif  // ndef TC3_UNILIB_DUMMY
 
 TEST_F(UniLibTest, RegexInterface) {
   const UnicodeText regex_pattern =
@@ -89,7 +89,7 @@ TEST_F(UniLibTest, RegexInterface) {
   TC3_LOG(INFO) << matcher->Group(0, &status).size_codepoints();
 }
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_F(UniLibTest, Regex) {
   // The smiley face is a 4-byte UTF8 codepoint 0x1F60B, and it's important to
   // test the regex functionality with it to verify we are handling the indices
@@ -126,9 +126,9 @@ TEST_F(UniLibTest, Regex) {
   EXPECT_EQ(matcher->Group(0, &status).ToUTF8String(), "0123😋");
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_F(UniLibTest, RegexGroups) {
   // The smiley face is a 4-byte UTF8 codepoint 0x1F60B, and it's important to
   // test the regex functionality with it to verify we are handling the indices
@@ -163,9 +163,9 @@ TEST_F(UniLibTest, RegexGroups) {
   EXPECT_EQ(matcher->Group(2, &status).ToUTF8String(), "123");
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 
 TEST_F(UniLibTest, BreakIterator) {
   const UnicodeText text = UTF8ToUnicodeText("some text", /*do_copy=*/false);
@@ -178,9 +178,9 @@ TEST_F(UniLibTest, BreakIterator) {
   }
   EXPECT_THAT(break_indices, ElementsAre(4, 5, 9));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_F(UniLibTest, BreakIterator4ByteUTF8) {
   const UnicodeText text = UTF8ToUnicodeText("😀😂😋", /*do_copy=*/false);
   std::unique_ptr<UniLib::BreakIterator> iterator =
@@ -192,18 +192,18 @@ TEST_F(UniLibTest, BreakIterator4ByteUTF8) {
   }
   EXPECT_THAT(break_indices, ElementsAre(1, 2, 3));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifndef LIBTEXTCLASSIFIER_UNILIB_JAVAICU
+#ifndef TC3_UNILIB_JAVAICU
 TEST_F(UniLibTest, IntegerParse) {
   int result;
   EXPECT_TRUE(
       unilib_.ParseInt32(UTF8ToUnicodeText("123", /*do_copy=*/false), &result));
   EXPECT_EQ(result, 123);
 }
-#endif  // ndef LIBTEXTCLASSIFIER_UNILIB_JAVAICU
+#endif  // ndef TC3_UNILIB_JAVAICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_F(UniLibTest, IntegerParseFullWidth) {
   int result;
   // The input string here is full width
@@ -211,16 +211,16 @@ TEST_F(UniLibTest, IntegerParseFullWidth) {
                                  &result));
   EXPECT_EQ(result, 123);
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_F(UniLibTest, IntegerParseFullWidthWithAlpha) {
   int result;
   // The input string here is full width
   EXPECT_FALSE(unilib_.ParseInt32(UTF8ToUnicodeText("１a３", /*do_copy=*/false),
                                   &result));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
 }  // namespace
 }  // namespace libtextclassifier3

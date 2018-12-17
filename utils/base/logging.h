@@ -155,7 +155,7 @@ inline NullStream &operator<<(NullStream &str, const T &) {
 
 #endif  // NDEBUG
 
-#ifdef LIBTEXTCLASSIFIER_VLOG
+#ifdef TC3_VLOG
 #define TC3_VLOG(severity)                                     \
   ::libtextclassifier3::logging::LogMessage(                   \
       ::libtextclassifier3::logging::INFO, __FILE__, __LINE__) \

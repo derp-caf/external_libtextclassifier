@@ -34,7 +34,7 @@ namespace libtextclassifier3 {
 namespace {
 
 std::string GetModelPath() {
-  return LIBTEXTCLASSIFIER_TEST_DATA_DIR;
+  return TC3_TEST_DATA_DIR;
 }
 
 std::string ReadFile(const std::string& file_name) {

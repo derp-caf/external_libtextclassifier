@@ -81,6 +81,9 @@ table ActionsModel {
 
   // Default number of smart reply predictions.
   num_smart_replies:int = 3;
+
+  // Length of message history to consider, -1 if unbounded.
+  max_conversation_history_length:int = 1;
 }
 
 root_type libtextclassifier3.ActionsModel;

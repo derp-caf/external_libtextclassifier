@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "actions/actions-suggestions.h"
+#include "annotator/annotator.h"
 #include "utils/base/integral_types.h"
 #include "utils/java/scoped_local_ref.h"
 #include "utils/memory/mmap.h"
@@ -30,6 +31,7 @@
 using libtextclassifier3::ActionsSuggestions;
 using libtextclassifier3::ActionSuggestion;
 using libtextclassifier3::ActionSuggestionOptions;
+using libtextclassifier3::Annotator;
 using libtextclassifier3::Conversation;
 using libtextclassifier3::ScopedLocalRef;
 using libtextclassifier3::ToStlString;
@@ -233,4 +235,14 @@ TC3_JNI_METHOD(jint, TC3_ACTIONS_CLASS_NAME, nativeGetVersion)
   const std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
       new libtextclassifier3::ScopedMmap(fd));
   return libtextclassifier3::GetVersionFromMmap(env, mmap.get());
+}
+
+TC3_JNI_METHOD(void, TC3_ACTIONS_CLASS_NAME, nativeSetAnnotator)
+(JNIEnv* env, jobject clazz, jlong ptr, jlong annotatorPtr) {
+  if (!ptr) {
+    return;
+  }
+  ActionsSuggestions* action_model = reinterpret_cast<ActionsSuggestions*>(ptr);
+  Annotator* annotator = reinterpret_cast<Annotator*>(annotatorPtr);
+  action_model->SetAnnotator(annotator);
 }

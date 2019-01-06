@@ -35,6 +35,17 @@ std::vector<int> Encoder::Encode(StringPiece normalized_text) const {
       normalized_text.RemovePrefix(1);
       continue;
     }
+    // Check whether we can use the unknown token.
+    if (unknown_code_ >= 0) {
+      const int pos = i + 1;
+      const float unknown_penalty = segmentation[i].score + unknown_score_;
+      if (segmentation[pos].previous_pos < 0 ||
+          segmentation[pos].score < unknown_penalty) {
+        segmentation[pos] = {/*score=*/unknown_penalty, /*previous_pos=*/i,
+                             /*piece_id=*/unknown_code_,
+                             /*num_pieces=*/segmentation[i].num_pieces + 1};
+      }
+    }
     for (const auto& match : matcher_->FindAllPrefixMatches(normalized_text)) {
       TC3_CHECK(match.id >= 0 && match.id < num_pieces_);
       const int pos = i + match.match_length;
@@ -42,7 +53,7 @@ std::vector<int> Encoder::Encode(StringPiece normalized_text) const {
       if (segmentation[pos].previous_pos < 0 ||
           segmentation[pos].score < candidate_score) {
         segmentation[pos] = {/*score=*/candidate_score, /*previous_pos=*/i,
-                             /*piece_id=*/match.id,
+                             /*piece_id=*/match.id + encoding_offset_,
                              /*num_pieces=*/segmentation[i].num_pieces + 1};
       }
     }
@@ -57,7 +68,7 @@ std::vector<int> Encoder::Encode(StringPiece normalized_text) const {
   result[num_pieces + 1] = end_code_;
   int pos = len;
   for (int i = num_pieces; i > 0; i--) {
-    result[i] = segmentation[pos].piece_id + encoding_offset_;
+    result[i] = segmentation[pos].piece_id;
     pos = segmentation[pos].previous_pos;
   }
   result[0] = start_code_;

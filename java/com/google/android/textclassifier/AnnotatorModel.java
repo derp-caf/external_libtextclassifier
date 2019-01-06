@@ -305,6 +305,14 @@ public final class AnnotatorModel implements AutoCloseable {
     }
   }
 
+  /**
+   * Retrieves the pointer to the native object. Note: Need to keep the AnnotatorModel alive as long
+   * as the pointer is used.
+   */
+  long getNativeAnnotator() {
+    return annotatorPtr;
+  }
+
   private static native long nativeNewAnnotator(int fd);
 
   private static native long nativeNewAnnotatorFromPath(String path);

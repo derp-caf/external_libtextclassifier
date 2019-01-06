@@ -27,7 +27,7 @@ namespace libtextclassifier3 {
 
 // Normalizer implements a simple text normalizer with user-defined
 // string-to-string rules and leftmost longest matching.
-class Normalizer {
+class SentencePieceNormalizer {
  public:
   // charsmap_trie and charsmap_normalized specify the normalization/replacement
   // string-to-string rules in the following way:
@@ -41,10 +41,11 @@ class Normalizer {
   //   internal whitespace.
   //
   // escape_whitespaces: Whether to replace whitespace with a meta symbol.
-  Normalizer(const DoubleArrayTrie &charsmap_trie,
-             StringPiece charsmap_normalized, bool add_dummy_prefix = true,
-             bool remove_extra_whitespaces = true,
-             bool escape_whitespaces = true)
+  SentencePieceNormalizer(const DoubleArrayTrie &charsmap_trie,
+                          StringPiece charsmap_normalized,
+                          bool add_dummy_prefix = true,
+                          bool remove_extra_whitespaces = true,
+                          bool escape_whitespaces = true)
       : charsmap_trie_(charsmap_trie),
         charsmap_normalized_(charsmap_normalized),
         add_dummy_prefix_(add_dummy_prefix),

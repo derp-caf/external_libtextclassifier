@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "actions/actions_model_generated.h"
+#include "annotator/annotator.h"
 #include "annotator/types.h"
 #include "utils/memory/mmap.h"
 #include "utils/tflite-model-executor.h"
@@ -44,6 +45,8 @@ struct ConversationMessage {
   int user_id;
   // Text of the message.
   std::string text;
+  // Relative time to previous message.
+  float time_diff_secs;
   // Annotations on the text.
   std::vector<AnnotatedSpan> annotations;
 };
@@ -55,7 +58,12 @@ struct Conversation {
 };
 
 // Options for suggesting actions.
-struct ActionSuggestionOptions {};
+struct ActionSuggestionOptions {
+  // Options for annotation of the messages.
+  AnnotationOptions annotation_options = AnnotationOptions::Default();
+
+  static ActionSuggestionOptions Default() { return ActionSuggestionOptions(); }
+};
 
 // Class for predicting actions following a conversation.
 class ActionsSuggestions {
@@ -72,7 +80,11 @@ class ActionsSuggestions {
 
   std::vector<ActionSuggestion> SuggestActions(
       const Conversation& conversation,
-      const ActionSuggestionOptions& options = ActionSuggestionOptions()) const;
+      const ActionSuggestionOptions& options =
+          ActionSuggestionOptions::Default()) const;
+
+  // Provide an annotator.
+  void SetAnnotator(const Annotator* annotator);
 
  private:
   // Checks that model contains all required fields, and initializes internal
@@ -81,6 +93,7 @@ class ActionsSuggestions {
 
   void SetupModelInput(const std::vector<std::string>& context,
                        const std::vector<int>& user_ids,
+                       const std::vector<float>& time_diffs,
                        const int num_suggestions,
                        tflite::Interpreter* interpreter) const;
   void ReadModelOutput(tflite::Interpreter* interpreter,
@@ -91,7 +104,7 @@ class ActionsSuggestions {
       std::vector<ActionSuggestion>* suggestions) const;
 
   void SuggestActionsFromAnnotations(
-      const Conversation& conversation,
+      const Conversation& conversation, const ActionSuggestionOptions& options,
       std::vector<ActionSuggestion>* suggestions) const;
 
   // Check whether we shouldn't produce any predictions.
@@ -102,6 +115,9 @@ class ActionsSuggestions {
 
   // Tensorflow Lite models.
   std::unique_ptr<const TfLiteModelExecutor> model_executor_;
+
+  // Annotator.
+  const Annotator* annotator_ = nullptr;
 };
 
 // Interprets the buffer as a Model flatbuffer and returns it for reading.

@@ -32,16 +32,22 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
   }
 
   private long actionsModelPtr;
+  private AnnotatorModel annotator;
 
   /**
    * Creates a new instance of Actions predictor, using the provided model image, given as a file
    * descriptor.
    */
   public ActionsSuggestionsModel(int fileDescriptor) {
+    this(fileDescriptor, null);
+  }
+
+  public ActionsSuggestionsModel(int fileDescriptor, AnnotatorModel annotator) {
     actionsModelPtr = nativeNewActionsModel(fileDescriptor);
     if (actionsModelPtr == 0L) {
       throw new IllegalArgumentException("Couldn't initialize actions model from file descriptor.");
     }
+    setAnnotator(annotator);
   }
 
   /**
@@ -49,10 +55,15 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
    * path.
    */
   public ActionsSuggestionsModel(String path) {
+    this(path, null);
+  }
+
+  public ActionsSuggestionsModel(String path, AnnotatorModel annotator) {
     actionsModelPtr = nativeNewActionsModelFromPath(path);
     if (actionsModelPtr == 0L) {
       throw new IllegalArgumentException("Couldn't initialize actions model from given file.");
     }
+    setAnnotator(annotator);
   }
 
   /** Suggests actions / replies to the given conversation. */
@@ -156,6 +167,14 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
   /** Represents options for the SuggestActions call. */
   public static final class ActionSuggestionOptions {}
 
+  /** Sets and annotator to use for actions suggestions. */
+  private void setAnnotator(AnnotatorModel annotator) {
+    this.annotator = annotator;
+    if (annotator != null) {
+      nativeSetAnnotator(annotator.getNativeAnnotator());
+    }
+  }
+
   private static native long nativeNewActionsModel(int fd);
 
   private static native long nativeNewActionsModelFromPath(String path);
@@ -170,4 +189,6 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
       long context, Conversation conversation, ActionSuggestionOptions options);
 
   private native void nativeCloseActionsModel(long context);
+
+  private native void nativeSetAnnotator(long annotatorPtr);
 }

@@ -111,6 +111,7 @@ std::unique_ptr<Annotator> Annotator::FromUnownedBuffer(
   return classifier;
 }
 
+
 std::unique_ptr<Annotator> Annotator::FromScopedMmap(
     std::unique_ptr<ScopedMmap>* mmap, const UniLib* unilib,
     const CalendarLib* calendarlib) {

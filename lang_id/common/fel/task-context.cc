@@ -43,10 +43,6 @@ string TaskContext::Get(const string &name, const char *defval) const {
   return defval;
 }
 
-string TaskContext::Get(const string &name, const string &defval) const {
-  return Get(name, defval.c_str());
-}
-
 int TaskContext::Get(const string &name, int defval) const {
   const string s = Get(name, "");
   int value = defval;

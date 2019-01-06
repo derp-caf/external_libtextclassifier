@@ -30,8 +30,8 @@
 #include "utils/memory/mmap.h"
 #include "utils/utf8/unilib.h"
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_JAVAICU
-#ifndef LIBTEXTCLASSIFIER_CALENDAR_JAVAICU
+#ifdef TC3_UNILIB_JAVAICU
+#ifndef TC3_CALENDAR_JAVAICU
 #error Inconsistent usage of Java ICU components
 #else
 #define TC3_USE_JAVAICU

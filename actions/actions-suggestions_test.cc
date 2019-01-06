@@ -63,6 +63,7 @@ TEST(ActionsSuggestionsTest, SuggestActionsFromAnnotations) {
   annotation.classification = {ClassificationResult("address", 1.0)};
   const std::vector<ActionSuggestion>& actions =
       actions_suggestions->SuggestActions({{{/*user_id=*/1, "are you at home?",
+                                             /*time_diff_secs=*/0,
                                              /*annotations=*/{annotation}}}});
   EXPECT_EQ(actions.size(), 7);
   EXPECT_EQ(actions.back().type, "address");
@@ -100,6 +101,36 @@ TEST(ActionsSuggestionsTest, SuggestActionsWithSensitiveTopicScore) {
   TestSuggestActionsWithThreshold([](ActionsModelT* actions_model) {
     actions_model->max_sensitive_topic_score = 0.0;
   });
+}
+
+TEST(ActionsSuggestionsTest, SuggestActionsWithLongerConversation) {
+  const std::string actions_model_string =
+      ReadFile(GetModelPath() + kModelFileName);
+  std::unique_ptr<ActionsModelT> actions_model =
+      UnPackActionsModel(actions_model_string.c_str());
+
+  // Allow a larger conversation context.
+  actions_model->max_conversation_history_length = 10;
+
+  flatbuffers::FlatBufferBuilder builder;
+  FinishActionsModelBuffer(builder,
+                           ActionsModel::Pack(builder, actions_model.get()));
+  std::unique_ptr<ActionsSuggestions> actions_suggestions =
+      ActionsSuggestions::FromUnownedBuffer(
+          reinterpret_cast<const uint8_t*>(builder.GetBufferPointer()),
+          builder.GetSize());
+  AnnotatedSpan annotation;
+  annotation.span = {11, 15};
+  annotation.classification = {ClassificationResult("address", 1.0)};
+  const std::vector<ActionSuggestion>& actions =
+      actions_suggestions->SuggestActions(
+          {{{/*user_id=*/0, "hi, how are you?", /*time_diff_secs=*/0},
+            {/*user_id=*/1, "good! are you at home?",
+             /*time_diff_secs=*/60,
+             /*annotations=*/{annotation}}}});
+  EXPECT_EQ(actions.size(), 7);
+  EXPECT_EQ(actions.back().type, "address");
+  EXPECT_EQ(actions.back().score, 1.0);
 }
 
 }  // namespace

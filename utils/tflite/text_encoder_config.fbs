@@ -34,6 +34,12 @@ table TextEncoderConfig {
   // `start_code` and `end_code`.
   encoding_offset:int32 = 2;
 
+  // Code that is used for out-of-dictionary characters.
+  unknown_code:int32 = -1;
+
+  // Penalty associated with the unknown code.
+  unknown_score:float;
+
   // Normalization options.
   // Serialized normalization charsmap.
   normalization_charsmap:string;

@@ -45,7 +45,7 @@ TEST_F(CalendarTest, Interface) {
   TC3_LOG(INFO) << result;
 }
 
-#ifdef LIBTEXTCLASSIFIER_CALENDAR_ICU
+#ifdef TC3_CALENDAR_ICU
 TEST_F(CalendarTest, RoundingToGranularity) {
   int64 time;
   DateParseData data;
@@ -238,7 +238,7 @@ TEST_F(CalendarTest, RelativeTimeWeekday) {
       /*granularity=*/GRANULARITY_DAY, &time));
   EXPECT_EQ(time, 1523397600000L /* 11 April 2018 00:00:00 */);
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_DUMMY
+#endif  // TC3_UNILIB_DUMMY
 
 }  // namespace
 }  // namespace libtextclassifier3

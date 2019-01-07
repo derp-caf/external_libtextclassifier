@@ -34,6 +34,7 @@
 #include "annotator/zlib-utils.h"
 #include "utils/memory/mmap.h"
 #include "utils/utf8/unilib.h"
+#include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
 
@@ -169,6 +170,13 @@ class Annotator {
   static const std::string& kPhoneCollection;
   static const std::string& kAddressCollection;
   static const std::string& kDateCollection;
+  static const std::string& kUrlCollection;
+  static const std::string& kFlightCollection;
+  static const std::string& kEmailCollection;
+  static const std::string& kIbanCollection;
+  static const std::string& kPaymentCardCollection;
+  static const std::string& kIsbnCollection;
+  static const std::string& kTrackingNumberCollection;
 
  protected:
   struct ScoredChunk {

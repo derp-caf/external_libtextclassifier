@@ -284,6 +284,11 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteTensor& input_text =
       context->tensors[node->inputs->data[TEXT_ENCODER_INPUT_TEXTS]];
   const int num_strings = tflite::GetStringCount(&input_text);
+  // Check that the number of strings matches the length parameter.
+  const int num_strings_param =
+      context->tensors[node->inputs->data[TEXT_ENCODER_INPUT_NUM_TEXTS]]
+          .data.i32[0];
+  TF_LITE_ENSURE_EQ(context, num_strings, num_strings_param);
 
   TfLiteTensor& output_encoded =
       context->tensors[node->outputs->data[TEXT_ENCODER_OUTPUT_ENCODED]];

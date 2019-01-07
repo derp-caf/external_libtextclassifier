@@ -66,4 +66,10 @@ bool JStringToUtf8String(JNIEnv* env, const jstring& jstr,
   return true;
 }
 
+ScopedStringChars GetScopedStringChars(JNIEnv* env, jstring string,
+                                       jboolean* is_copy) {
+  return ScopedStringChars(env->GetStringUTFChars(string, is_copy),
+                           StringCharsReleaser(env, string));
+}
+
 }  // namespace libtextclassifier3

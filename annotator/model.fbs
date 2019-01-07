@@ -15,6 +15,7 @@
 //
 
 include "utils/intents/intent-config.fbs";
+include "utils/zlib/buffer.fbs";
 
 file_identifier "TC2 ";
 
@@ -129,12 +130,6 @@ enum DatetimeGroupType : int {
   GROUP_DUMMY1 = 12,
 
   GROUP_DUMMY2 = 13,
-}
-
-namespace libtextclassifier3;
-table CompressedBuffer {
-  buffer:[ubyte];
-  uncompressed_size:int;
 }
 
 // Options for the model that predicts text selection.
@@ -348,7 +343,10 @@ table Model {
   output_options:libtextclassifier3.OutputOptions;
 
   // Configures how Intents should be generated on Android.
+  // TODO(smillius): Remove deprecated factory options.
   android_intent_options:libtextclassifier3.AndroidIntentFactoryOptions;
+
+  intent_options:libtextclassifier3.IntentFactoryModel;
 }
 
 // Role of the codepoints in the range.

@@ -17,7 +17,7 @@
 #ifndef LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_H_
 #define LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_H_
 
-#include "utils/calendar/calendar-icu.h"
-#define INIT_CALENDARLIB_FOR_TESTING(VAR) VAR()
+#include "utils/calendar/calendar-javaicu.h"
+#define INIT_CALENDARLIB_FOR_TESTING(VAR) VAR(nullptr)
 
 #endif  // LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_H_

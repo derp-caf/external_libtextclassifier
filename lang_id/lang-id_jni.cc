@@ -63,7 +63,7 @@ jobjectArray LangIdResultToJObjectArray(JNIEnv* env,
 }
 }  // namespace
 
-TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNewLangIdModel)
+TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNew)
 (JNIEnv* env, jobject thiz, jint fd) {
   std::unique_ptr<LangId> lang_id = GetLangIdFromFlatbufferFileDescriptor(fd);
   if (!lang_id->is_valid()) {
@@ -72,7 +72,7 @@ TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNewLangIdModel)
   return reinterpret_cast<jlong>(lang_id.release());
 }
 
-TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNewLangIdModelFromPath)
+TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNewFromPath)
 (JNIEnv* env, jobject thiz, jstring path) {
   const std::string path_str = ToStlString(env, path);
   std::unique_ptr<LangId> lang_id = GetLangIdFromFlatbufferFile(path_str);
@@ -96,7 +96,7 @@ TC3_JNI_METHOD(jobjectArray, TC3_LANG_ID_CLASS_NAME, nativeDetectLanguages)
   return LangIdResultToJObjectArray(env, result);
 }
 
-TC3_JNI_METHOD(void, TC3_LANG_ID_CLASS_NAME, nativeCloseLangIdModel)
+TC3_JNI_METHOD(void, TC3_LANG_ID_CLASS_NAME, nativeClose)
 (JNIEnv* env, jobject clazz, jlong ptr) {
   if (!ptr) {
     TC3_LOG(ERROR) << "Trying to close null LangId.";
@@ -106,11 +106,20 @@ TC3_JNI_METHOD(void, TC3_LANG_ID_CLASS_NAME, nativeCloseLangIdModel)
   delete model;
 }
 
-TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetLangIdModelVersion)
+TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetVersion)
 (JNIEnv* env, jobject clazz, jlong ptr) {
   if (!ptr) {
     return -1;
   }
-  // TODO(zilka): Work out with LangId team a way to support this.
-  return 0;
+  LangId* model = reinterpret_cast<LangId*>(ptr);
+  return model->GetModelVersion();
+}
+
+TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetVersionFromFd)
+(JNIEnv* env, jobject clazz, jint fd) {
+  std::unique_ptr<LangId> lang_id = GetLangIdFromFlatbufferFileDescriptor(fd);
+  if (!lang_id->is_valid()) {
+    return -1;
+  }
+  return lang_id->GetModelVersion();
 }

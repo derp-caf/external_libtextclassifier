@@ -33,20 +33,23 @@
 extern "C" {
 #endif
 
-TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNewLangIdModel)
-(JNIEnv* env, jobject thiz, jint fd);
+TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNew)
+(JNIEnv* env, jobject clazz, jint fd);
 
-TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNewLangIdModelFromPath)
-(JNIEnv* env, jobject thiz, jstring path);
+TC3_JNI_METHOD(jlong, TC3_LANG_ID_CLASS_NAME, nativeNewFromPath)
+(JNIEnv* env, jobject clazz, jstring path);
 
 TC3_JNI_METHOD(jobjectArray, TC3_LANG_ID_CLASS_NAME, nativeDetectLanguages)
 (JNIEnv* env, jobject clazz, jlong ptr, jstring text);
 
-TC3_JNI_METHOD(void, TC3_LANG_ID_CLASS_NAME, nativeCloseLangIdModel)
+TC3_JNI_METHOD(void, TC3_LANG_ID_CLASS_NAME, nativeClose)
 (JNIEnv* env, jobject clazz, jlong ptr);
 
-TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetLangIdModelVersion)
+TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetVersion)
 (JNIEnv* env, jobject clazz, jlong ptr);
+
+TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetVersionFromFd)
+(JNIEnv* env, jobject clazz, jint fd);
 
 #ifdef __cplusplus
 }

@@ -36,6 +36,20 @@ const std::string& Annotator::kAddressCollection =
     *[]() { return new std::string("address"); }();
 const std::string& Annotator::kDateCollection =
     *[]() { return new std::string("date"); }();
+const std::string& Annotator::kUrlCollection =
+    *[]() { return new std::string("url"); }();
+const std::string& Annotator::kFlightCollection =
+    *[]() { return new std::string("flight"); }();
+const std::string& Annotator::kEmailCollection =
+    *[]() { return new std::string("email"); }();
+const std::string& Annotator::kIbanCollection =
+    *[]() { return new std::string("iban"); }();
+const std::string& Annotator::kPaymentCardCollection =
+    *[]() { return new std::string("payment_card"); }();
+const std::string& Annotator::kIsbnCollection =
+    *[]() { return new std::string("isbn"); }();
+const std::string& Annotator::kTrackingNumberCollection =
+    *[]() { return new std::string("tracking_number"); }();
 
 namespace {
 const Model* LoadAndVerifyModel(const void* addr, int size) {

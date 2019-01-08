@@ -17,6 +17,12 @@
 // Configuration for the text encoder op.
 
 namespace libtextclassifier3;
+
+enum SentencePieceMatcherType : byte {
+  MAPPED_TRIE = 0,
+  SORTED_STRING_TABLE = 1,
+}
+
 table TextEncoderConfig {
   // Code that is used as encoding of the start code.
   start_code:int32 = 0;
@@ -46,6 +52,8 @@ table TextEncoderConfig {
   // Sentence pieces scores.
   pieces_scores:[float];
 
-  // Serialized sentence pieces trie.
+  // Serialized sentence pieces.
   pieces:string;
+  pieces_offsets:[int32];
+  matcher_type: SentencePieceMatcherType = MAPPED_TRIE;
 }

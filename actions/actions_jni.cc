@@ -25,6 +25,7 @@
 #include "actions/actions-suggestions.h"
 #include "utils/base/integral_types.h"
 #include "utils/java/scoped_local_ref.h"
+#include "utils/memory/mmap.h"
 
 using libtextclassifier3::ActionsSuggestions;
 using libtextclassifier3::ActionSuggestion;
@@ -127,6 +128,42 @@ Conversation FromJavaConversation(JNIEnv* env, jobject jconversation) {
   conversation.messages = messages;
   return conversation;
 }
+
+jstring GetLocalesFromMmap(JNIEnv* env, libtextclassifier3::ScopedMmap* mmap) {
+  if (!mmap->handle().ok()) {
+    return env->NewStringUTF("");
+  }
+  const ActionsModel* model = libtextclassifier3::ViewActionsModel(
+      mmap->handle().start(), mmap->handle().num_bytes());
+  if (!model || !model->locales()) {
+    return env->NewStringUTF("");
+  }
+  return env->NewStringUTF(model->locales()->c_str());
+}
+
+jint GetVersionFromMmap(JNIEnv* env, libtextclassifier3::ScopedMmap* mmap) {
+  if (!mmap->handle().ok()) {
+    return 0;
+  }
+  const ActionsModel* model = libtextclassifier3::ViewActionsModel(
+      mmap->handle().start(), mmap->handle().num_bytes());
+  if (!model) {
+    return 0;
+  }
+  return model->version();
+}
+
+jstring GetNameFromMmap(JNIEnv* env, libtextclassifier3::ScopedMmap* mmap) {
+  if (!mmap->handle().ok()) {
+    return env->NewStringUTF("");
+  }
+  const ActionsModel* model = libtextclassifier3::ViewActionsModel(
+      mmap->handle().start(), mmap->handle().num_bytes());
+  if (!model || !model->name()) {
+    return env->NewStringUTF("");
+  }
+  return env->NewStringUTF(model->name()->c_str());
+}
 }  // namespace
 }  // namespace libtextclassifier3
 
@@ -156,7 +193,7 @@ TC3_JNI_METHOD(jlong, TC3_ACTIONS_CLASS_NAME,
 }
 
 TC3_JNI_METHOD(jobjectArray, TC3_ACTIONS_CLASS_NAME, nativeSuggestActions)
-(JNIEnv* env, jobject thiz, jlong ptr, jobject jconversation,
+(JNIEnv* env, jobject clazz, jlong ptr, jobject jconversation,
  jobject joptions) {
   if (!ptr) {
     return nullptr;
@@ -172,7 +209,28 @@ TC3_JNI_METHOD(jobjectArray, TC3_ACTIONS_CLASS_NAME, nativeSuggestActions)
 }
 
 TC3_JNI_METHOD(void, TC3_ACTIONS_CLASS_NAME, nativeCloseActionsModel)
-(JNIEnv* env, jobject thiz, jlong ptr) {
+(JNIEnv* env, jobject clazz, jlong ptr) {
   ActionsSuggestions* model = reinterpret_cast<ActionsSuggestions*>(ptr);
   delete model;
+}
+
+TC3_JNI_METHOD(jstring, TC3_ACTIONS_CLASS_NAME, nativeGetLocales)
+(JNIEnv* env, jobject clazz, jint fd) {
+  const std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
+      new libtextclassifier3::ScopedMmap(fd));
+  return libtextclassifier3::GetLocalesFromMmap(env, mmap.get());
+}
+
+TC3_JNI_METHOD(jstring, TC3_ACTIONS_CLASS_NAME, nativeGetName)
+(JNIEnv* env, jobject clazz, jint fd) {
+  const std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
+      new libtextclassifier3::ScopedMmap(fd));
+  return libtextclassifier3::GetNameFromMmap(env, mmap.get());
+}
+
+TC3_JNI_METHOD(jint, TC3_ACTIONS_CLASS_NAME, nativeGetVersion)
+(JNIEnv* env, jobject clazz, jint fd) {
+  const std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
+      new libtextclassifier3::ScopedMmap(fd));
+  return libtextclassifier3::GetVersionFromMmap(env, mmap.get());
 }

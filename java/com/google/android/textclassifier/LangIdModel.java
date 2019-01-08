@@ -16,44 +16,59 @@
 
 package com.google.android.textclassifier;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Java wrapper for LangId native library interface. This class is used to detect languages in text.
  *
  * @hide
  */
 public final class LangIdModel implements AutoCloseable {
+  private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
   static {
     System.loadLibrary("textclassifier");
   }
 
-  private final long mModelPtr;
+  private long modelPtr;
 
   /** Creates a new instance of LangId predictor, using the provided model image. */
   public LangIdModel(int fd) {
-    mModelPtr = nativeNewLangIdModel(fd);
-    if (mModelPtr == 0L) {
+    modelPtr = nativeNewLangIdModel(fd);
+    if (modelPtr == 0L) {
       throw new IllegalArgumentException("Couldn't initialize LangId from given file descriptor.");
     }
   }
 
   /** Creates a new instance of LangId predictor, using the provided model image. */
   public LangIdModel(String modelPath) {
-    mModelPtr = nativeNewLangIdModelFromPath(modelPath);
-    if (mModelPtr == 0L) {
+    modelPtr = nativeNewLangIdModelFromPath(modelPath);
+    if (modelPtr == 0L) {
       throw new IllegalArgumentException("Couldn't initialize LangId from given file.");
     }
   }
 
   /** Detects the languages for given text. */
   public LanguageResult[] detectLanguages(String text) {
-    return nativeDetectLanguages(mModelPtr, text);
+    return nativeDetectLanguages(modelPtr, text);
   }
 
   /** Frees up the allocated memory. */
   @Override
   public void close() {
-    nativeCloseLangIdModel(mModelPtr);
+    if (isClosed.compareAndSet(false, true)) {
+      nativeCloseLangIdModel(modelPtr);
+      modelPtr = 0L;
+    }
+  }
+
+  @Override
+  protected void finalize() throws Throwable {
+    try {
+      close();
+    } finally {
+      super.finalize();
+    }
   }
 
   /** Result for detectLanguages method. */
@@ -77,16 +92,16 @@ public final class LangIdModel implements AutoCloseable {
 
   /** Returns the version of the LangId model used. */
   public int getVersion() {
-    return nativeGetLangIdModelVersion(mModelPtr);
+    return nativeGetLangIdModelVersion(modelPtr);
   }
 
   private static native long nativeNewLangIdModel(int fd);
 
   private static native long nativeNewLangIdModelFromPath(String path);
 
-  private static native LanguageResult[] nativeDetectLanguages(long context, String text);
+  private native LanguageResult[] nativeDetectLanguages(long context, String text);
 
-  private static native void nativeCloseLangIdModel(long context);
+  private native void nativeCloseLangIdModel(long context);
 
-  private static native int nativeGetLangIdModelVersion(long context);
+  private native int nativeGetLangIdModelVersion(long context);
 }

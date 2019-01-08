@@ -2,6 +2,7 @@ FLATC := $(HOST_OUT_EXECUTABLES)/flatc$(HOST_EXECUTABLE_SUFFIX)
 
 define transform-fbs-to-cpp
 @echo "Flatc: $@ <= $(PRIVATE_INPUT_FBS)"
+@rm -f $@
 @mkdir -p $(dir $@)
 $(hide) $(FLATC) \
     --cpp \

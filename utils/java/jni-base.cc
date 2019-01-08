@@ -36,21 +36,7 @@ std::string ToStlString(JNIEnv* env, const jstring& str) {
   return result;
 }
 
-jint GetFdFromAssetFileDescriptor(JNIEnv* env, jobject afd) {
-  // Get system-level file descriptor from AssetFileDescriptor.
-  ScopedLocalRef<jclass> afd_class(
-      env->FindClass("android/content/res/AssetFileDescriptor"), env);
-  if (afd_class == nullptr) {
-    TC3_LOG(ERROR) << "Couldn't find AssetFileDescriptor.";
-    return reinterpret_cast<jlong>(nullptr);
-  }
-  jmethodID afd_class_getFileDescriptor = env->GetMethodID(
-      afd_class.get(), "getFileDescriptor", "()Ljava/io/FileDescriptor;");
-  if (afd_class_getFileDescriptor == nullptr) {
-    TC3_LOG(ERROR) << "Couldn't find getFileDescriptor.";
-    return reinterpret_cast<jlong>(nullptr);
-  }
-
+jint GetFdFromFileDescriptor(JNIEnv* env, jobject fd) {
   ScopedLocalRef<jclass> fd_class(env->FindClass("java/io/FileDescriptor"),
                                   env);
   if (fd_class == nullptr) {
@@ -63,9 +49,24 @@ jint GetFdFromAssetFileDescriptor(JNIEnv* env, jobject afd) {
     TC3_LOG(ERROR) << "Couldn't find descriptor.";
     return reinterpret_cast<jlong>(nullptr);
   }
+  return env->GetIntField(fd, fd_class_descriptor);
+}
 
+jint GetFdFromAssetFileDescriptor(JNIEnv* env, jobject afd) {
+  ScopedLocalRef<jclass> afd_class(
+      env->FindClass("android/content/res/AssetFileDescriptor"), env);
+  if (afd_class == nullptr) {
+    TC3_LOG(ERROR) << "Couldn't find AssetFileDescriptor.";
+    return reinterpret_cast<jlong>(nullptr);
+  }
+  jmethodID afd_class_getFileDescriptor = env->GetMethodID(
+      afd_class.get(), "getFileDescriptor", "()Ljava/io/FileDescriptor;");
+  if (afd_class_getFileDescriptor == nullptr) {
+    TC3_LOG(ERROR) << "Couldn't find getFileDescriptor.";
+    return reinterpret_cast<jlong>(nullptr);
+  }
   jobject bundle_jfd = env->CallObjectMethod(afd, afd_class_getFileDescriptor);
-  return env->GetIntField(bundle_jfd, fd_class_descriptor);
+  return GetFdFromFileDescriptor(env, bundle_jfd);
 }
 
 }  // namespace libtextclassifier3

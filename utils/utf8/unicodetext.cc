@@ -176,7 +176,7 @@ int runetochar(const char32 rune, char* dest) {
 
 }  // namespace
 
-UnicodeText& UnicodeText::AppendCodepoint(char32 ch) {
+UnicodeText& UnicodeText::push_back(char32 ch) {
   char str[4];
   int char_len = runetochar(ch, str);
   repr_.append(str, char_len);

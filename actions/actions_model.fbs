@@ -16,28 +16,41 @@
 
 file_identifier "TC3A";
 
+// Options to specify triggering behaviour per action class.
 namespace libtextclassifier3;
-table ActionsSuggestionsModel {
+table ActionTypeOptions {
+  // The name of the predicted action.
+  name:string;
+
+  // Triggering behaviour.
+  // Whether the action class is considered in the model output or not.
+  enabled:bool = true;
+
+  // Minimal output score threshold.
+  min_triggering_score:float = 0;
+}
+
+// TensorFlow Lite model for suggesting actions.
+namespace libtextclassifier3;
+table TensorflowLiteModelSpec {
   // TensorFlow Lite model for suggesting actions.
   tflite_model:[ubyte] (force_align: 16);
 
-  // Output classes.
-  classes:[string];
+  // Input specification.
+  input_user_id:int = 0;
 
-  // Lower bound threshold for model prediction output.
-  min_confidence:float;
-}
+  input_context:int = 1;
+  input_context_length:int = 2;
+  input_time_diffs:int = 3;
+  input_num_suggestions:int = 4;
 
-namespace libtextclassifier3;
-table SmartReplyModel {
-  // TensorFlow Lite model for suggesting smart replies.
-  tflite_model:[ubyte] (force_align: 16);
+  // Output specification.
+  output_replies:int = 0;
 
-  // Output type.
-  action_type:string;
-
-  // Lower bound threshold for model prediction output.
-  min_confidence:float;
+  output_replies_scores:int = 1;
+  output_sensitive_topic_score:int = 3;
+  output_triggering_score:int = 4;
+  output_actions_scores:int = 5;
 }
 
 namespace libtextclassifier3;
@@ -51,11 +64,23 @@ table ActionsModel {
   // A name for the model that can be used e.g. for logging.
   name:string;
 
-  // Model for suggesting smart replies.
-  smart_reply_model:libtextclassifier3.SmartReplyModel;
+  tflite_model_spec:libtextclassifier3.TensorflowLiteModelSpec;
 
-  // Model for suggesting actions.
-  actions_suggestions_model:libtextclassifier3.ActionsSuggestionsModel;
+  // Output classes.
+  smart_reply_action_type:string;
+
+  action_type:[libtextclassifier3.ActionTypeOptions];
+
+  // Lower bound thresholds for model prediction output.
+  min_actions_confidence:float;
+
+  min_triggering_confidence:float;
+
+  // Maximum sensitive score for which actions and smart replies are shown.
+  max_sensitive_topic_score:float = 1;
+
+  // Default number of smart reply predictions.
+  num_smart_replies:int = 3;
 }
 
 root_type libtextclassifier3.ActionsModel;

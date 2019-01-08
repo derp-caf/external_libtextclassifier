@@ -123,7 +123,7 @@ TEST_P(AnnotatorTest, ClassifyTextDisabledFail) {
   unpacked_model->triggering_options->enabled_modes = ModeFlag_SELECTION;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -142,7 +142,7 @@ TEST_P(AnnotatorTest, ClassifyTextDisabled) {
       ModeFlag_ANNOTATION_AND_SELECTION;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -172,7 +172,7 @@ TEST_P(AnnotatorTest, ClassifyTextFilteredCollections) {
       "phone");
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -227,7 +227,7 @@ TEST_P(AnnotatorTest, ClassifyTextRegularExpression) {
   unpacked_model->regex_model->patterns.push_back(std::move(verified_pattern));
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -291,7 +291,7 @@ TEST_P(AnnotatorTest, SuggestSelectionRegularExpression) {
   unpacked_model->regex_model->patterns.push_back(std::move(verified_pattern));
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -325,7 +325,7 @@ TEST_P(AnnotatorTest, SuggestSelectionRegularExpressionConflictsModelWins) {
   unpacked_model->regex_model->patterns.back()->priority_score = 0.5;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -356,7 +356,7 @@ TEST_P(AnnotatorTest, SuggestSelectionRegularExpressionConflictsRegexWins) {
   unpacked_model->regex_model->patterns.back()->priority_score = 1.1;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -393,7 +393,7 @@ TEST_P(AnnotatorTest, AnnotateRegex) {
   verified_pattern->verification_options->verify_luhn_checksum = true;
   unpacked_model->regex_model->patterns.push_back(std::move(verified_pattern));
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -479,7 +479,7 @@ TEST_P(AnnotatorTest, SuggestSelectionDisabledFail) {
   unpacked_model->triggering_options->enabled_modes = ModeFlag_ANNOTATION;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -499,7 +499,7 @@ TEST_P(AnnotatorTest, SuggestSelectionDisabled) {
   unpacked_model->enabled_modes = ModeFlag_CLASSIFICATION;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -538,7 +538,7 @@ TEST_P(AnnotatorTest, SuggestSelectionFilteredCollections) {
   unpacked_model->selection_options->always_classify_suggested_selection = true;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -746,7 +746,7 @@ TEST_P(AnnotatorTest, AnnotateSmallBatches) {
   // Set the batch size.
   unpacked_model->selection_options->batch_size = 4;
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -778,7 +778,7 @@ TEST_P(AnnotatorTest, AnnotateFilteringDiscardAll) {
   unpacked_model->triggering_options->min_annotate_confidence =
       2.f;  // Discards all results.
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -803,7 +803,7 @@ TEST_P(AnnotatorTest, AnnotateFilteringKeepAll) {
       0.f;  // Keeps all results.
   unpacked_model->triggering_options->enabled_modes = ModeFlag_ALL;
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -823,7 +823,7 @@ TEST_P(AnnotatorTest, AnnotateDisabled) {
   // Disable the model for annotation.
   unpacked_model->enabled_modes = ModeFlag_CLASSIFICATION_AND_SELECTION;
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -860,7 +860,7 @@ TEST_P(AnnotatorTest, AnnotateFilteredCollections) {
       "phone");
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -905,7 +905,7 @@ TEST_P(AnnotatorTest, AnnotateFilteredCollectionsSuppress) {
       /*enabled_for_selection=*/false, /*enabled_for_annotation=*/true, 2.0));
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -1014,7 +1014,7 @@ TEST_P(AnnotatorTest, SuggestTextDateDisabled) {
         ModeFlag_ANNOTATION_AND_CLASSIFICATION;
   }
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
 
   std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
@@ -1186,7 +1186,7 @@ TEST_P(AnnotatorTest, MaxTokenLength) {
   unpacked_model->classification_options->max_num_tokens = -1;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
   classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
       builder.GetSize(), &unilib_, &calendarlib_);
@@ -1200,7 +1200,7 @@ TEST_P(AnnotatorTest, MaxTokenLength) {
   unpacked_model->classification_options->max_num_tokens = 3;
 
   flatbuffers::FlatBufferBuilder builder2;
-  builder2.Finish(Model::Pack(builder2, unpacked_model.get()));
+  FinishModelBuffer(builder2, Model::Pack(builder2, unpacked_model.get()));
   classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder2.GetBufferPointer()),
       builder2.GetSize(), &unilib_, &calendarlib_);
@@ -1223,7 +1223,7 @@ TEST_P(AnnotatorTest, MinAddressTokenLength) {
   unpacked_model->classification_options->address_min_num_tokens = 0;
 
   flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(Model::Pack(builder, unpacked_model.get()));
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
   classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder.GetBufferPointer()),
       builder.GetSize(), &unilib_, &calendarlib_);
@@ -1237,7 +1237,7 @@ TEST_P(AnnotatorTest, MinAddressTokenLength) {
   unpacked_model->classification_options->address_min_num_tokens = 5;
 
   flatbuffers::FlatBufferBuilder builder2;
-  builder2.Finish(Model::Pack(builder2, unpacked_model.get()));
+  FinishModelBuffer(builder2, Model::Pack(builder2, unpacked_model.get()));
   classifier = Annotator::FromUnownedBuffer(
       reinterpret_cast<const char*>(builder2.GetBufferPointer()),
       builder2.GetSize(), &unilib_, &calendarlib_);

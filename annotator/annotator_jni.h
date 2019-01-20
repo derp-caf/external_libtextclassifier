@@ -19,14 +19,9 @@
 
 #include <jni.h>
 #include <string>
+#include "annotator/annotator_jni_common.h"
 #include "annotator/types.h"
 #include "utils/java/jni-base.h"
-
-#ifndef TC3_ANNOTATOR_CLASS_NAME
-#define TC3_ANNOTATOR_CLASS_NAME AnnotatorModel
-#endif
-
-#define TC3_ANNOTATOR_CLASS_NAME_STR TC3_ADD_QUOTES(TC3_ANNOTATOR_CLASS_NAME)
 
 #ifdef __cplusplus
 extern "C" {

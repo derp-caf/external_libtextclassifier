@@ -41,7 +41,9 @@ MY_LIBTEXTCLASSIFIER_CFLAGS := \
     -DLIBTEXTCLASSIFIER_UNILIB_ICU \
     -DZLIB_CONST \
     -DSAFTM_COMPACT_LOGGING \
-    -DTC3_WITH_ACTIONS_OPS
+    -DTC3_WITH_ACTIONS_OPS \
+    -DTC3_UNILIB_JAVAICU \
+    -DTC3_CALENDAR_JAVAICU
 
 # Only enable debug logging in userdebug/eng builds.
 ifneq (,$(filter userdebug eng, $(TARGET_BUILD_VARIANT)))
@@ -71,8 +73,6 @@ LOCAL_C_INCLUDES += $(TOP)/external/libutf
 LOCAL_C_INCLUDES += $(intermediates)
 
 LOCAL_SHARED_LIBRARIES += liblog
-LOCAL_SHARED_LIBRARIES += libicuuc
-LOCAL_SHARED_LIBRARIES += libicui18n
 LOCAL_SHARED_LIBRARIES += libtflite
 LOCAL_SHARED_LIBRARIES += libz
 
@@ -122,8 +122,6 @@ LOCAL_C_INCLUDES += $(TOP)/external/libutf
 LOCAL_C_INCLUDES += $(intermediates)
 
 LOCAL_SHARED_LIBRARIES += liblog
-LOCAL_SHARED_LIBRARIES += libicuuc
-LOCAL_SHARED_LIBRARIES += libicui18n
 LOCAL_SHARED_LIBRARIES += libtflite
 LOCAL_SHARED_LIBRARIES += libz
 

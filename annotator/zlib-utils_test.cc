@@ -19,6 +19,7 @@
 #include <memory>
 
 #include "annotator/model_generated.h"
+#include "utils/zlib/zlib.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -62,27 +63,27 @@ TEST(ZlibUtilsTest, CompressModel) {
   std::unique_ptr<ZlibDecompressor> decompressor = ZlibDecompressor::Instance();
   ASSERT_TRUE(decompressor != nullptr);
   std::string uncompressed_pattern;
-  EXPECT_TRUE(decompressor->Decompress(
+  EXPECT_TRUE(decompressor->MaybeDecompress(
       compressed_model->regex_model()->patterns()->Get(0)->compressed_pattern(),
       &uncompressed_pattern));
   EXPECT_EQ(uncompressed_pattern, "this is a test pattern");
-  EXPECT_TRUE(decompressor->Decompress(
+  EXPECT_TRUE(decompressor->MaybeDecompress(
       compressed_model->regex_model()->patterns()->Get(1)->compressed_pattern(),
       &uncompressed_pattern));
   EXPECT_EQ(uncompressed_pattern, "this is a second test pattern");
-  EXPECT_TRUE(decompressor->Decompress(compressed_model->datetime_model()
-                                           ->patterns()
-                                           ->Get(0)
-                                           ->regexes()
-                                           ->Get(0)
-                                           ->compressed_pattern(),
-                                       &uncompressed_pattern));
+  EXPECT_TRUE(decompressor->MaybeDecompress(compressed_model->datetime_model()
+                                                ->patterns()
+                                                ->Get(0)
+                                                ->regexes()
+                                                ->Get(0)
+                                                ->compressed_pattern(),
+                                            &uncompressed_pattern));
   EXPECT_EQ(uncompressed_pattern, "an example datetime pattern");
-  EXPECT_TRUE(decompressor->Decompress(compressed_model->datetime_model()
-                                           ->extractors()
-                                           ->Get(0)
-                                           ->compressed_pattern(),
-                                       &uncompressed_pattern));
+  EXPECT_TRUE(decompressor->MaybeDecompress(compressed_model->datetime_model()
+                                                ->extractors()
+                                                ->Get(0)
+                                                ->compressed_pattern(),
+                                            &uncompressed_pattern));
   EXPECT_EQ(uncompressed_pattern, "an example datetime extractor");
 
   EXPECT_TRUE(DecompressModel(&model));

@@ -19,45 +19,9 @@
 #ifndef LIBTEXTCLASSIFIER_ANNOTATOR_ZLIB_UTILS_H_
 #define LIBTEXTCLASSIFIER_ANNOTATOR_ZLIB_UTILS_H_
 
-#include <memory>
-
 #include "annotator/model_generated.h"
-#include "utils/utf8/unilib.h"
-#include "zlib.h"
 
 namespace libtextclassifier3 {
-
-class ZlibDecompressor {
- public:
-  static std::unique_ptr<ZlibDecompressor> Instance();
-  ~ZlibDecompressor();
-
-  bool Decompress(const CompressedBuffer* compressed_buffer, std::string* out);
-
- private:
-  ZlibDecompressor();
-  z_stream stream_;
-  bool initialized_;
-};
-
-class ZlibCompressor {
- public:
-  static std::unique_ptr<ZlibCompressor> Instance();
-  ~ZlibCompressor();
-
-  void Compress(const std::string& uncompressed_content,
-                CompressedBufferT* out);
-
- private:
-  explicit ZlibCompressor(int level = Z_BEST_COMPRESSION,
-                          // Tmp. buffer size was set based on the current set
-                          // of patterns to be compressed.
-                          int tmp_buffer_size = 64 * 1024);
-  z_stream stream_;
-  std::unique_ptr<Bytef[]> buffer_;
-  unsigned int buffer_size_;
-  bool initialized_;
-};
 
 // Compresses regex and datetime rules in the model in place.
 bool CompressModel(ModelT* model);
@@ -67,12 +31,6 @@ bool DecompressModel(ModelT* model);
 
 // Compresses regex and datetime rules in the model.
 std::string CompressSerializedModel(const std::string& model);
-
-// Create and compile a regex pattern from optionally compressed pattern.
-std::unique_ptr<UniLib::RegexPattern> UncompressMakeRegexPattern(
-    const UniLib& unilib, const flatbuffers::String* uncompressed_pattern,
-    const CompressedBuffer* compressed_pattern, ZlibDecompressor* decompressor,
-    std::string* result_pattern_text = nullptr);
 
 }  // namespace libtextclassifier3
 

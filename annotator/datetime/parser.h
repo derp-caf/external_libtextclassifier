@@ -26,10 +26,10 @@
 #include "annotator/datetime/extractor.h"
 #include "annotator/model_generated.h"
 #include "annotator/types.h"
-#include "annotator/zlib-utils.h"
 #include "utils/base/integral_types.h"
 #include "utils/calendar/calendar.h"
 #include "utils/utf8/unilib.h"
+#include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
 

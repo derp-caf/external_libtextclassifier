@@ -42,7 +42,8 @@ TC3_JNI_METHOD(jlong, TC3_ACTIONS_CLASS_NAME,
 (JNIEnv* env, jobject thiz, jobject afd, jlong offset, jlong size);
 
 TC3_JNI_METHOD(jobjectArray, TC3_ACTIONS_CLASS_NAME, nativeSuggestActions)
-(JNIEnv* env, jobject thiz, jlong ptr, jobject jconversation, jobject joptions);
+(JNIEnv* env, jobject thiz, jlong ptr, jobject jconversation, jobject joptions,
+ jlong annotatorPtr);
 
 TC3_JNI_METHOD(void, TC3_ACTIONS_CLASS_NAME, nativeCloseActionsModel)
 (JNIEnv* env, jobject thiz, jlong ptr);

@@ -23,6 +23,7 @@
 namespace tflite {
 namespace ops {
 namespace builtin {
+TfLiteRegistration* Register_DIV();
 TfLiteRegistration* Register_FULLY_CONNECTED();
 TfLiteRegistration* Register_SOFTMAX();  // TODO(smillius): remove.
 }  // namespace builtin
@@ -47,6 +48,8 @@ inline std::unique_ptr<tflite::OpResolver> BuildOpResolver() {
 #ifdef TC3_USE_SELECTIVE_REGISTRATION
   std::unique_ptr<tflite::MutableOpResolver> resolver(
       new tflite::MutableOpResolver);
+  resolver->AddBuiltin(tflite::BuiltinOperator_DIV,
+                       tflite::ops::builtin::Register_DIV());
   resolver->AddBuiltin(tflite::BuiltinOperator_FULLY_CONNECTED,
                        tflite::ops::builtin::Register_FULLY_CONNECTED());
   resolver->AddBuiltin(tflite::BuiltinOperator_SOFTMAX,
@@ -107,6 +110,8 @@ void TfLiteModelExecutor::SetInput(const int input_index,
   for (const std::string& s : input_data) {
     buf.AddString(s.data(), s.length());
   }
+  // TODO(b/120230709): Use WriteToTensorAsVector() instead, once available in
+  // AOSP.
   buf.WriteToTensor(interpreter->tensor(interpreter->inputs()[input_index]));
 }
 

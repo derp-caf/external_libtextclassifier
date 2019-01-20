@@ -105,6 +105,30 @@ struct JniCache {
   ScopedGlobalRef<jclass> timezone_class;
   jmethodID timezone_get_timezone = nullptr;
 
+  // java.net.URLEncoder
+  ScopedGlobalRef<jclass> urlencoder_class;
+  jmethodID urlencoder_encode = nullptr;
+
+#ifdef __ANDROID__
+  // android.content.Context
+  ScopedGlobalRef<jclass> context_class;
+  jmethodID context_get_package_name = nullptr;
+  jmethodID context_get_system_service = nullptr;
+
+  // android.net.Uri
+  ScopedGlobalRef<jclass> uri_class;
+  jmethodID uri_parse = nullptr;
+  jmethodID uri_get_scheme = nullptr;
+
+  // android.os.UserManager
+  ScopedGlobalRef<jclass> usermanager_class;
+  jmethodID usermanager_get_user_restrictions = nullptr;
+
+  // android.os.Bundle
+  ScopedGlobalRef<jclass> bundle_class;
+  jmethodID bundle_get_boolean = nullptr;
+#endif
+
   // Helper to convert lib3 UnicodeText to Java strings.
   ScopedLocalRef<jstring> ConvertToJavaString(const UnicodeText& text) const;
 

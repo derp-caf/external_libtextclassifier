@@ -19,94 +19,9 @@
 #include <memory>
 
 #include "utils/base/logging.h"
-#include "utils/flatbuffers.h"
+#include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
-
-std::unique_ptr<ZlibDecompressor> ZlibDecompressor::Instance() {
-  std::unique_ptr<ZlibDecompressor> result(new ZlibDecompressor());
-  if (!result->initialized_) {
-    result.reset();
-  }
-  return result;
-}
-
-ZlibDecompressor::ZlibDecompressor() {
-  memset(&stream_, 0, sizeof(stream_));
-  stream_.zalloc = Z_NULL;
-  stream_.zfree = Z_NULL;
-  initialized_ = (inflateInit(&stream_) == Z_OK);
-}
-
-ZlibDecompressor::~ZlibDecompressor() {
-  if (initialized_) {
-    inflateEnd(&stream_);
-  }
-}
-
-bool ZlibDecompressor::Decompress(const CompressedBuffer* compressed_buffer,
-                                  std::string* out) {
-  out->resize(compressed_buffer->uncompressed_size());
-  stream_.next_in =
-      reinterpret_cast<const Bytef*>(compressed_buffer->buffer()->Data());
-  stream_.avail_in = compressed_buffer->buffer()->Length();
-  stream_.next_out = reinterpret_cast<Bytef*>(const_cast<char*>(out->c_str()));
-  stream_.avail_out = compressed_buffer->uncompressed_size();
-  return (inflate(&stream_, Z_SYNC_FLUSH) == Z_OK);
-}
-
-std::unique_ptr<ZlibCompressor> ZlibCompressor::Instance() {
-  std::unique_ptr<ZlibCompressor> result(new ZlibCompressor());
-  if (!result->initialized_) {
-    result.reset();
-  }
-  return result;
-}
-
-ZlibCompressor::ZlibCompressor(int level, int tmp_buffer_size) {
-  memset(&stream_, 0, sizeof(stream_));
-  stream_.zalloc = Z_NULL;
-  stream_.zfree = Z_NULL;
-  buffer_size_ = tmp_buffer_size;
-  buffer_.reset(new Bytef[buffer_size_]);
-  initialized_ = (deflateInit(&stream_, level) == Z_OK);
-}
-
-ZlibCompressor::~ZlibCompressor() { deflateEnd(&stream_); }
-
-void ZlibCompressor::Compress(const std::string& uncompressed_content,
-                              CompressedBufferT* out) {
-  out->uncompressed_size = uncompressed_content.size();
-  out->buffer.clear();
-  stream_.next_in =
-      reinterpret_cast<const Bytef*>(uncompressed_content.c_str());
-  stream_.avail_in = uncompressed_content.size();
-  stream_.next_out = buffer_.get();
-  stream_.avail_out = buffer_size_;
-  unsigned char* buffer_deflate_start_position =
-      reinterpret_cast<unsigned char*>(buffer_.get());
-  int status;
-  do {
-    // Deflate chunk-wise.
-    // Z_SYNC_FLUSH causes all pending output to be flushed, but doesn't
-    // reset the compression state.
-    // As we do not know how big the compressed buffer will be, we compress
-    // chunk wise and append the flushed content to the output string buffer.
-    // As we store the uncompressed size, we do not have to do this during
-    // decompression.
-    status = deflate(&stream_, Z_SYNC_FLUSH);
-    unsigned char* buffer_deflate_end_position =
-        reinterpret_cast<unsigned char*>(stream_.next_out);
-    if (buffer_deflate_end_position != buffer_deflate_start_position) {
-      out->buffer.insert(out->buffer.end(), buffer_deflate_start_position,
-                         buffer_deflate_end_position);
-      stream_.next_out = buffer_deflate_start_position;
-      stream_.avail_out = buffer_size_;
-    } else {
-      break;
-    }
-  } while (status == Z_OK);
-}
 
 // Compress rule fields in the model.
 bool CompressModel(ModelT* model) {
@@ -151,26 +66,6 @@ bool CompressModel(ModelT* model) {
   return true;
 }
 
-namespace {
-
-bool DecompressBuffer(const CompressedBufferT* compressed_pattern,
-                      ZlibDecompressor* zlib_decompressor,
-                      std::string* uncompressed_pattern) {
-  if (!compressed_pattern) {
-    return true;
-  }
-  std::string packed_pattern =
-      PackFlatbuffer<CompressedBuffer>(compressed_pattern);
-  if (!zlib_decompressor->Decompress(
-          LoadAndVerifyFlatbuffer<CompressedBuffer>(packed_pattern),
-          uncompressed_pattern)) {
-    return false;
-  }
-  return true;
-}
-
-}  // namespace
-
 bool DecompressModel(ModelT* model) {
   std::unique_ptr<ZlibDecompressor> zlib_decompressor =
       ZlibDecompressor::Instance();
@@ -183,8 +78,8 @@ bool DecompressModel(ModelT* model) {
   if (model->regex_model != nullptr) {
     for (int i = 0; i < model->regex_model->patterns.size(); i++) {
       RegexModel_::PatternT* pattern = model->regex_model->patterns[i].get();
-      if (!DecompressBuffer(pattern->compressed_pattern.get(),
-                            zlib_decompressor.get(), &pattern->pattern)) {
+      if (!zlib_decompressor->MaybeDecompress(pattern->compressed_pattern.get(),
+                                              &pattern->pattern)) {
         TC3_LOG(ERROR) << "Cannot decompress pattern: " << i;
         return false;
       }
@@ -198,8 +93,8 @@ bool DecompressModel(ModelT* model) {
       DatetimeModelPatternT* pattern = model->datetime_model->patterns[i].get();
       for (int j = 0; j < pattern->regexes.size(); j++) {
         DatetimeModelPattern_::RegexT* regex = pattern->regexes[j].get();
-        if (!DecompressBuffer(regex->compressed_pattern.get(),
-                              zlib_decompressor.get(), &regex->pattern)) {
+        if (!zlib_decompressor->MaybeDecompress(regex->compressed_pattern.get(),
+                                                &regex->pattern)) {
           TC3_LOG(ERROR) << "Cannot decompress pattern: " << i << " " << j;
           return false;
         }
@@ -209,8 +104,8 @@ bool DecompressModel(ModelT* model) {
     for (int i = 0; i < model->datetime_model->extractors.size(); i++) {
       DatetimeModelExtractorT* extractor =
           model->datetime_model->extractors[i].get();
-      if (!DecompressBuffer(extractor->compressed_pattern.get(),
-                            zlib_decompressor.get(), &extractor->pattern)) {
+      if (!zlib_decompressor->MaybeDecompress(
+              extractor->compressed_pattern.get(), &extractor->pattern)) {
         TC3_LOG(ERROR) << "Cannot decompress pattern: " << i;
         return false;
       }
@@ -228,45 +123,6 @@ std::string CompressSerializedModel(const std::string& model) {
   FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
   return std::string(reinterpret_cast<const char*>(builder.GetBufferPointer()),
                      builder.GetSize());
-}
-
-std::unique_ptr<UniLib::RegexPattern> UncompressMakeRegexPattern(
-    const UniLib& unilib, const flatbuffers::String* uncompressed_pattern,
-    const CompressedBuffer* compressed_pattern, ZlibDecompressor* decompressor,
-    std::string* result_pattern_text) {
-  UnicodeText unicode_regex_pattern;
-  std::string decompressed_pattern;
-  if (compressed_pattern != nullptr &&
-      compressed_pattern->buffer() != nullptr) {
-    if (decompressor == nullptr ||
-        !decompressor->Decompress(compressed_pattern, &decompressed_pattern)) {
-      TC3_LOG(ERROR) << "Cannot decompress pattern.";
-      return nullptr;
-    }
-    unicode_regex_pattern =
-        UTF8ToUnicodeText(decompressed_pattern.data(),
-                          decompressed_pattern.size(), /*do_copy=*/false);
-  } else {
-    if (uncompressed_pattern == nullptr) {
-      TC3_LOG(ERROR) << "Cannot load uncompressed pattern.";
-      return nullptr;
-    }
-    unicode_regex_pattern =
-        UTF8ToUnicodeText(uncompressed_pattern->c_str(),
-                          uncompressed_pattern->Length(), /*do_copy=*/false);
-  }
-
-  if (result_pattern_text != nullptr) {
-    *result_pattern_text = unicode_regex_pattern.ToUTF8String();
-  }
-
-  std::unique_ptr<UniLib::RegexPattern> regex_pattern =
-      unilib.CreateRegexPattern(unicode_regex_pattern);
-  if (!regex_pattern) {
-    TC3_LOG(ERROR) << "Could not create pattern: "
-                   << unicode_regex_pattern.ToUTF8String();
-  }
-  return regex_pattern;
 }
 
 }  // namespace libtextclassifier3

@@ -41,9 +41,18 @@ std::vector<int> Encoder::Encode(StringPiece normalized_text) const {
       const float unknown_penalty = segmentation[i].score + unknown_score_;
       if (segmentation[pos].previous_pos < 0 ||
           segmentation[pos].score < unknown_penalty) {
-        segmentation[pos] = {/*score=*/unknown_penalty, /*previous_pos=*/i,
-                             /*piece_id=*/unknown_code_,
-                             /*num_pieces=*/segmentation[i].num_pieces + 1};
+        // Merge multiple unknown tokens into one.
+        if (segmentation[i].piece_id == unknown_code_) {
+          segmentation[pos] = {/*score=*/unknown_penalty,
+                               /*previous_pos=*/segmentation[i].previous_pos,
+                               /*piece_id=*/unknown_code_,
+                               /*num_pieces=*/segmentation[i].num_pieces};
+        } else {
+          segmentation[pos] = {/*score=*/unknown_penalty,
+                               /*previous_pos=*/i,
+                               /*piece_id=*/unknown_code_,
+                               /*num_pieces=*/segmentation[i].num_pieces + 1};
+        }
       }
     }
     for (const auto& match : matcher_->FindAllPrefixMatches(normalized_text)) {

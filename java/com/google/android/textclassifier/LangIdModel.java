@@ -34,7 +34,7 @@ public final class LangIdModel implements AutoCloseable {
 
   /** Creates a new instance of LangId predictor, using the provided model image. */
   public LangIdModel(int fd) {
-    modelPtr = nativeNewLangIdModel(fd);
+    modelPtr = nativeNew(fd);
     if (modelPtr == 0L) {
       throw new IllegalArgumentException("Couldn't initialize LangId from given file descriptor.");
     }
@@ -42,7 +42,7 @@ public final class LangIdModel implements AutoCloseable {
 
   /** Creates a new instance of LangId predictor, using the provided model image. */
   public LangIdModel(String modelPath) {
-    modelPtr = nativeNewLangIdModelFromPath(modelPath);
+    modelPtr = nativeNewFromPath(modelPath);
     if (modelPtr == 0L) {
       throw new IllegalArgumentException("Couldn't initialize LangId from given file.");
     }
@@ -57,7 +57,7 @@ public final class LangIdModel implements AutoCloseable {
   @Override
   public void close() {
     if (isClosed.compareAndSet(false, true)) {
-      nativeCloseLangIdModel(modelPtr);
+      nativeClose(modelPtr);
       modelPtr = 0L;
     }
   }
@@ -92,16 +92,22 @@ public final class LangIdModel implements AutoCloseable {
 
   /** Returns the version of the LangId model used. */
   public int getVersion() {
-    return nativeGetLangIdModelVersion(modelPtr);
+    return nativeGetVersion(modelPtr);
   }
 
-  private static native long nativeNewLangIdModel(int fd);
+  public static int getVersion(int fd) {
+    return nativeGetVersionFromFd(fd);
+  }
 
-  private static native long nativeNewLangIdModelFromPath(String path);
+  private static native long nativeNew(int fd);
 
-  private native LanguageResult[] nativeDetectLanguages(long context, String text);
+  private static native long nativeNewFromPath(String path);
 
-  private native void nativeCloseLangIdModel(long context);
+  private native LanguageResult[] nativeDetectLanguages(long nativePtr, String text);
 
-  private native int nativeGetLangIdModelVersion(long context);
+  private native void nativeClose(long nativePtr);
+
+  private native int nativeGetVersion(long nativePtr);
+
+  private static native int nativeGetVersionFromFd(int fd);
 }

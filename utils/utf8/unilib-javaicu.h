@@ -14,26 +14,30 @@
  * limitations under the License.
  */
 
-// UniLib implementation with the help of ICU. UniLib is basically a wrapper
-// around the ICU functionality.
+// An implementation of Unilib that uses Android Java interfaces via JNI. The
+// performance critical ops have been re-implemented in C++.
+// Specifically, this class must be compatible with API level 14 (ICS).
 
-#ifndef LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_ICU_H_
-#define LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_ICU_H_
+#ifndef LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_JAVAICU_H_
+#define LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_JAVAICU_H_
 
+#include <jni.h>
 #include <memory>
+#include <string>
 
 #include "utils/base/integral_types.h"
+#include "utils/java/jni-cache.h"
+#include "utils/java/scoped_global_ref.h"
+#include "utils/java/scoped_local_ref.h"
 #include "utils/utf8/unicodetext.h"
-#include "unicode/brkiter.h"
-#include "unicode/errorcode.h"
-#include "unicode/regex.h"
-#include "unicode/uchar.h"
-#include "unicode/unum.h"
 
 namespace libtextclassifier3 {
 
 class UniLib {
  public:
+  UniLib();
+  explicit UniLib(const std::shared_ptr<JniCache>& jni_cache);
+
   bool ParseInt32(const UnicodeText& text, int* result) const;
   bool IsOpeningBracket(char32 codepoint) const;
   bool IsClosingBracket(char32 codepoint) const;
@@ -102,29 +106,31 @@ class UniLib {
 
    protected:
     friend class RegexPattern;
-    explicit RegexMatcher(icu::RegexPattern* pattern, icu::UnicodeString text);
+    RegexMatcher(const JniCache* jni_cache, ScopedGlobalRef<jobject> matcher,
+                 ScopedGlobalRef<jstring> text);
 
    private:
     bool UpdateLastFindOffset() const;
 
-    std::unique_ptr<icu::RegexMatcher> matcher_;
-    icu::UnicodeString text_;
-    mutable int last_find_offset_;
-    mutable int last_find_offset_codepoints_;
-    mutable bool last_find_offset_dirty_;
+    const JniCache* jni_cache_;
+    ScopedGlobalRef<jobject> matcher_;
+    ScopedGlobalRef<jstring> text_;
+    mutable int last_find_offset_ = 0;
+    mutable int last_find_offset_codepoints_ = 0;
+    mutable bool last_find_offset_dirty_ = true;
   };
 
   class RegexPattern {
    public:
-    std::unique_ptr<RegexMatcher> Matcher(const UnicodeText& input) const;
+    std::unique_ptr<RegexMatcher> Matcher(const UnicodeText& context) const;
 
    protected:
     friend class UniLib;
-    explicit RegexPattern(std::unique_ptr<icu::RegexPattern> pattern)
-        : pattern_(std::move(pattern)) {}
+    RegexPattern(const JniCache* jni_cache, const UnicodeText& regex);
 
    private:
-    std::unique_ptr<icu::RegexPattern> pattern_;
+    const JniCache* jni_cache_;
+    ScopedGlobalRef<jobject> pattern_;
   };
 
   class BreakIterator {
@@ -135,11 +141,12 @@ class UniLib {
 
    protected:
     friend class UniLib;
-    explicit BreakIterator(const UnicodeText& text);
+    BreakIterator(const JniCache* jni_cache, const UnicodeText& text);
 
    private:
-    std::unique_ptr<icu::BreakIterator> break_iterator_;
-    icu::UnicodeString text_;
+    const JniCache* jni_cache_;
+    ScopedGlobalRef<jstring> text_;
+    ScopedGlobalRef<jobject> iterator_;
     int last_break_index_;
     int last_unicode_index_;
   };
@@ -148,8 +155,11 @@ class UniLib {
       const UnicodeText& regex) const;
   std::unique_ptr<BreakIterator> CreateBreakIterator(
       const UnicodeText& text) const;
+
+ private:
+  std::shared_ptr<JniCache> jni_cache_;
 };
 
 }  // namespace libtextclassifier3
 
-#endif  // LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_ICU_H_
+#endif  // LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_JAVAICU_H_

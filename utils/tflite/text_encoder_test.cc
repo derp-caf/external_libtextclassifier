@@ -20,6 +20,7 @@
 
 #include "utils/tflite/text_encoder.h"
 #include "gtest/gtest.h"
+#include "third_party/absl/flags/flag.h"
 #include "flatbuffers/flexbuffers.h"
 #include "tensorflow/contrib/lite/interpreter.h"
 #include "tensorflow/contrib/lite/kernels/register.h"

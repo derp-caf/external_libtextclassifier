@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+include "utils/zlib/buffer.fbs";
+
 file_identifier "TC3A";
 
 // Options to specify triggering behaviour per action class.
@@ -54,6 +56,77 @@ table TensorflowLiteModelSpec {
 }
 
 namespace libtextclassifier3;
+table TriggeringPreconditions {
+  // Lower bound thresholds for the smart reply model prediction output.
+  min_smart_reply_triggering_score:float;
+
+  // Maximum sensitive score for which actions and smart replies are shown.
+  max_sensitive_topic_score:float = 1;
+
+  // Whether to supress all model output when a conversation is classified as
+  // sensitive.
+  suppress_on_sensitive_topic:bool = true;
+
+  // Thresholds on the model prediction input.
+  // The minimal length of input to consider for prediction.
+  min_input_length:int = 0;
+
+  // The maximal length of input to consider for prediciton, -1 if unbounded.
+  max_input_length:int = -1;
+}
+
+namespace libtextclassifier3;
+table ActionSuggestionSpec {
+  // Type of the action suggestion.
+  type:string;
+
+  // Text of a smart reply action.
+  response_text:string;
+
+  // Score.
+  score:float;
+}
+
+namespace libtextclassifier3.AnnotationActionsSpec_;
+table AnnotationMapping {
+  // The annotation collection.
+  annotation_collection:string;
+
+  // The action name to use.
+  action:libtextclassifier3.ActionSuggestionSpec;
+
+  // Whether to use the score of the annotation as the action score.
+  use_annotation_score:bool = true;
+
+  // Minimum threshold for the annotation score for filtering.
+  min_annotation_score:float;
+}
+
+// Configuration for actions based on annotatations.
+namespace libtextclassifier3;
+table AnnotationActionsSpec {
+  annotation_mapping:[libtextclassifier3.AnnotationActionsSpec_.AnnotationMapping];
+}
+
+// List of regular expression matchers.
+namespace libtextclassifier3.RulesModel_;
+table Rule {
+  // The regular expression pattern.
+  pattern:string;
+
+  compressed_pattern:libtextclassifier3.CompressedBuffer;
+
+  // The actions to produce upon triggering.
+  actions:[libtextclassifier3.ActionSuggestionSpec];
+}
+
+// Rule based actions.
+namespace libtextclassifier3;
+table RulesModel {
+  rule:[libtextclassifier3.RulesModel_.Rule];
+}
+
+namespace libtextclassifier3;
 table ActionsModel {
   // Comma-separated list of locales supported by the model as BCP 47 tags.
   locales:string;
@@ -71,16 +144,20 @@ table ActionsModel {
 
   action_type:[libtextclassifier3.ActionTypeOptions];
 
-  // Lower bound thresholds for model prediction output.
-  min_actions_confidence:float;
-
-  min_triggering_confidence:float;
-
-  // Maximum sensitive score for which actions and smart replies are shown.
-  max_sensitive_topic_score:float = 1;
+  // Triggering conditions of the model.
+  preconditions:libtextclassifier3.TriggeringPreconditions;
 
   // Default number of smart reply predictions.
   num_smart_replies:int = 3;
+
+  // Length of message history to consider, -1 if unbounded.
+  max_conversation_history_length:int = 1;
+
+  // Configuration for mapping annotations to action suggestions.
+  annotation_actions_spec:libtextclassifier3.AnnotationActionsSpec;
+
+  // Configuration for rules.
+  rules:libtextclassifier3.RulesModel;
 }
 
 root_type libtextclassifier3.ActionsModel;

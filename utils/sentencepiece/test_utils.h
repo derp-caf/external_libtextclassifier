@@ -25,9 +25,10 @@
 
 namespace libtextclassifier3 {
 
-Normalizer NormalizerFromSpec(StringPiece spec, bool add_dummy_prefix,
-                              bool remove_extra_whitespaces,
-                              bool escape_whitespaces);
+SentencePieceNormalizer NormalizerFromSpec(StringPiece spec,
+                                           bool add_dummy_prefix,
+                                           bool remove_extra_whitespaces,
+                                           bool escape_whitespaces);
 
 }  // namespace libtextclassifier3
 

@@ -32,16 +32,22 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
   }
 
   private long actionsModelPtr;
+  private AnnotatorModel annotator;
 
   /**
    * Creates a new instance of Actions predictor, using the provided model image, given as a file
    * descriptor.
    */
   public ActionsSuggestionsModel(int fileDescriptor) {
+    this(fileDescriptor, null);
+  }
+
+  public ActionsSuggestionsModel(int fileDescriptor, AnnotatorModel annotator) {
     actionsModelPtr = nativeNewActionsModel(fileDescriptor);
     if (actionsModelPtr == 0L) {
       throw new IllegalArgumentException("Couldn't initialize actions model from file descriptor.");
     }
+    this.annotator = annotator;
   }
 
   /**
@@ -49,16 +55,25 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
    * path.
    */
   public ActionsSuggestionsModel(String path) {
+    this(path, null);
+  }
+
+  public ActionsSuggestionsModel(String path, AnnotatorModel annotator) {
     actionsModelPtr = nativeNewActionsModelFromPath(path);
     if (actionsModelPtr == 0L) {
       throw new IllegalArgumentException("Couldn't initialize actions model from given file.");
     }
+    this.annotator = annotator;
   }
 
   /** Suggests actions / replies to the given conversation. */
   public ActionSuggestion[] suggestActions(
       Conversation conversation, ActionSuggestionOptions options) {
-    return nativeSuggestActions(actionsModelPtr, conversation, options);
+    return nativeSuggestActions(
+        actionsModelPtr,
+        conversation,
+        options,
+        (annotator != null ? annotator.getNativeAnnotator() : 0));
   }
 
   /** Frees up the allocated memory. */
@@ -124,10 +139,14 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
   public static final class ConversationMessage {
     private final int userId;
     private final String text;
+    private final long referenceTimeMsUtc;
+    private final String locales;
 
-    public ConversationMessage(int userId, String text) {
+    public ConversationMessage(int userId, String text, long referenceTimeMsUtc, String locales) {
       this.userId = userId;
       this.text = text;
+      this.referenceTimeMsUtc = referenceTimeMsUtc;
+      this.locales = locales;
     }
 
     /** The identifier of the sender */
@@ -137,6 +156,19 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
 
     public String getText() {
       return text;
+    }
+
+    /**
+     * Return the reference time of the message, for example, it could be compose time or send time.
+     * {@code 0} means unspecified.
+     */
+    public long getReferenceTimeMsUtc() {
+      return referenceTimeMsUtc;
+    }
+
+    /** Returns a comma separated list of locales supported by the model as BCP 47 tags. */
+    public String getLocales() {
+      return locales;
     }
   }
 
@@ -154,7 +186,21 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
   }
 
   /** Represents options for the SuggestActions call. */
-  public static final class ActionSuggestionOptions {}
+  public static final class ActionSuggestionOptions {
+    private final AnnotatorModel.AnnotationOptions annotationOptions;
+
+    public ActionSuggestionOptions() {
+      this.annotationOptions = null;
+    }
+
+    public ActionSuggestionOptions(AnnotatorModel.AnnotationOptions annotationOptions) {
+      this.annotationOptions = annotationOptions;
+    }
+
+    public AnnotatorModel.AnnotationOptions getAnnotationOptions() {
+      return annotationOptions;
+    }
+  }
 
   private static native long nativeNewActionsModel(int fd);
 
@@ -167,7 +213,9 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
   private static native String nativeGetName(int fd);
 
   private native ActionSuggestion[] nativeSuggestActions(
-      long context, Conversation conversation, ActionSuggestionOptions options);
+      long context, Conversation conversation, ActionSuggestionOptions options, long annotatorPtr);
 
   private native void nativeCloseActionsModel(long context);
+
+  private native void nativeSetAnnotator(long annotatorPtr);
 }

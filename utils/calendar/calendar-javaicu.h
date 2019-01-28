@@ -14,24 +14,24 @@
  * limitations under the License.
  */
 
-#ifndef LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_ICU_H_
-#define LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_ICU_H_
+#ifndef LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_JAVAICU_H_
+#define LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_JAVAICU_H_
 
+#include <jni.h>
 #include <memory>
 #include <string>
 
 #include "annotator/types.h"
 #include "utils/base/integral_types.h"
-#include "utils/base/logging.h"
 #include "utils/calendar/calendar-common.h"
-#include "unicode/gregocal.h"
-#include "unicode/timezone.h"
-#include "unicode/ucal.h"
+#include "utils/java/jni-cache.h"
+#include "utils/java/scoped_local_ref.h"
 
 namespace libtextclassifier3 {
 
 class Calendar {
  public:
+  explicit Calendar(JniCache* jni_cache);
   bool Initialize(const std::string& time_zone, const std::string& locale,
                   int64 time_ms_utc);
   bool AddDayOfMonth(int value) const;
@@ -53,34 +53,37 @@ class Calendar {
   bool SetMillisecond(int value) const;
 
  private:
-  // We don't use a unique_ptr here because icu::Calendar has an implicit
-  // destructor - meaning that we couldn't use a forward declaration and would
-  // have to put the ICU includes in the header.
-  std::unique_ptr<icu::Calendar> calendar_;
+  JniCache* jni_cache_;
+  JNIEnv* jenv_;
+  ScopedLocalRef<jobject> calendar_;
 };
 
 class CalendarLib {
  public:
-  // Interprets parse_data as milliseconds since_epoch. Relative times are
-  // resolved against the current time (reference_time_ms_utc). Returns true if
-  // the interpratation was successful, false otherwise.
+  CalendarLib();
+  explicit CalendarLib(const std::shared_ptr<JniCache>& jni_cache);
+
+  // Returns false (dummy version).
   bool InterpretParseData(const DateParseData& parse_data,
                           int64 reference_time_ms_utc,
                           const std::string& reference_timezone,
                           const std::string& reference_locale,
                           DatetimeGranularity granularity,
                           int64* interpreted_time_ms_utc) const {
-    Calendar calendar;
-    calendar::CalendarLibTempl<Calendar> impl_;
-    if (!impl_.InterpretParseData(parse_data, reference_time_ms_utc,
-                                  reference_timezone, reference_locale,
-                                  granularity, &calendar)) {
+    Calendar calendar(jni_cache_.get());
+    calendar::CalendarLibTempl<Calendar> impl;
+    if (!impl.InterpretParseData(parse_data, reference_time_ms_utc,
+                                 reference_timezone, reference_locale,
+                                 granularity, &calendar)) {
       return false;
     }
     return calendar.GetTimeInMillis(interpreted_time_ms_utc);
   }
+
+ private:
+  std::shared_ptr<JniCache> jni_cache_;
 };
 
 }  // namespace libtextclassifier3
 
-#endif  // LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_ICU_H_
+#endif  // LIBTEXTCLASSIFIER_UTILS_CALENDAR_CALENDAR_JAVAICU_H_

@@ -136,8 +136,8 @@
 
 #elif defined(__NetBSD__)
 
-#include <sys/types.h>
 #include <machine/bswap.h>
+#include <sys/types.h>
 #if defined(__BSWAP_RENAME) && !defined(__bswap_32)
 #undef bswap_32
 #undef bswap_64
@@ -1509,9 +1509,9 @@ uint128_t Fingerprint128(const char* s, size_t len) {
 
 #ifndef FARMHASH_SELF_TEST_GUARD
 #define FARMHASH_SELF_TEST_GUARD
+#include <string.h>
 #include <cstdio>
 #include <iostream>
-#include <string.h>
 
 using std::cout;
 using std::cerr;
@@ -3129,9 +3129,9 @@ int main(int argc, char** argv) {
 #endif
 #ifndef FARMHASH_SELF_TEST_GUARD
 #define FARMHASH_SELF_TEST_GUARD
+#include <string.h>
 #include <cstdio>
 #include <iostream>
-#include <string.h>
 
 using std::cout;
 using std::cerr;
@@ -4021,9 +4021,9 @@ int main(int argc, char** argv) {
 #endif
 #ifndef FARMHASH_SELF_TEST_GUARD
 #define FARMHASH_SELF_TEST_GUARD
+#include <string.h>
 #include <cstdio>
 #include <iostream>
-#include <string.h>
 
 using std::cout;
 using std::cerr;
@@ -5277,9 +5277,9 @@ int main(int argc, char** argv) {
 #endif
 #ifndef FARMHASH_SELF_TEST_GUARD
 #define FARMHASH_SELF_TEST_GUARD
+#include <string.h>
 #include <cstdio>
 #include <iostream>
-#include <string.h>
 
 using std::cout;
 using std::cerr;
@@ -6169,9 +6169,9 @@ int main(int argc, char** argv) {
 #endif
 #ifndef FARMHASH_SELF_TEST_GUARD
 #define FARMHASH_SELF_TEST_GUARD
+#include <string.h>
 #include <cstdio>
 #include <iostream>
-#include <string.h>
 
 using std::cout;
 using std::cerr;
@@ -7061,9 +7061,9 @@ int main(int argc, char** argv) {
 #endif
 #ifndef FARMHASH_SELF_TEST_GUARD
 #define FARMHASH_SELF_TEST_GUARD
+#include <string.h>
 #include <cstdio>
 #include <iostream>
-#include <string.h>
 
 using std::cout;
 using std::cerr;

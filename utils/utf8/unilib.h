@@ -17,7 +17,7 @@
 #ifndef LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_H_
 #define LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_H_
 
-#include "utils/utf8/unilib-icu.h"
-#define INIT_UNILIB_FOR_TESTING(VAR) VAR()
+#include "utils/utf8/unilib-javaicu.h"
+#define INIT_UNILIB_FOR_TESTING(VAR) VAR(nullptr)
 
 #endif  // LIBTEXTCLASSIFIER_UTILS_UTF8_UNILIB_H_

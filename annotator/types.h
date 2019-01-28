@@ -20,13 +20,15 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
-#include "utils/base/integral_types.h"
 
+#include "utils/base/integral_types.h"
 #include "utils/base/logging.h"
+#include "utils/variant.h"
 
 namespace libtextclassifier3 {
 
@@ -225,6 +227,9 @@ struct ClassificationResult {
 
   // Internal score used for conflict resolution.
   float priority_score;
+
+  // Extra information.
+  std::map<std::string, Variant> extra;
 
   explicit ClassificationResult() : score(-1.0f), priority_score(-1.0) {}
 

@@ -17,7 +17,7 @@
 #include "utils/base/logging.h"
 
 #include <stdlib.h>
-
+#include <exception>
 #include <iostream>
 
 #include "utils/base/logging_raw.h"
@@ -59,7 +59,7 @@ LogMessage::LogMessage(LogSeverity severity, const char *file_name,
 LogMessage::~LogMessage() {
   LowLevelLogging(severity_, /* tag = */ "txtClsf", stream_.message);
   if (severity_ == FATAL) {
-    exit(1);
+    std::terminate();  // Will print a stacktrace (stdout or logcat).
   }
 }
 

@@ -52,7 +52,7 @@ std::string ReadFile(const std::string& file_name) {
 }
 
 std::string GetModelPath() {
-  return LIBTEXTCLASSIFIER_TEST_DATA_DIR;
+  return TC3_TEST_DATA_DIR;
 }
 
 class AnnotatorTest : public ::testing::TestWithParam<const char*> {
@@ -205,7 +205,7 @@ std::unique_ptr<RegexModel_::PatternT> MakePattern(
   return result;
 }
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, ClassifyTextRegularExpression) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -266,9 +266,9 @@ TEST_P(AnnotatorTest, ClassifyTextRegularExpression) {
                 "www.google.com every today!|Call me at (800) 123-456 today.",
                 {51, 65})));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, SuggestSelectionRegularExpression) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -308,9 +308,9 @@ TEST_P(AnnotatorTest, SuggestSelectionRegularExpression) {
   EXPECT_EQ(classifier->SuggestSelection("cc: 4012 8888 8888 1881", {9, 14}),
             std::make_pair(4, 23));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, SuggestSelectionRegularExpressionConflictsModelWins) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -339,9 +339,9 @@ TEST_P(AnnotatorTest, SuggestSelectionRegularExpressionConflictsModelWins) {
           {55, 57}),
       std::make_pair(26, 62));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, SuggestSelectionRegularExpressionConflictsRegexWins) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -370,9 +370,9 @@ TEST_P(AnnotatorTest, SuggestSelectionRegularExpressionConflictsRegexWins) {
           {55, 57}),
       std::make_pair(55, 62));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, AnnotateRegex) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -409,7 +409,7 @@ TEST_P(AnnotatorTest, AnnotateRegex) {
                                 IsAnnotatedSpan(79, 91, "phone"),
                                 IsAnnotatedSpan(107, 126, "payment_card")}));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
 TEST_P(AnnotatorTest, PhoneFiltering) {
   std::unique_ptr<Annotator> classifier =
@@ -739,6 +739,7 @@ TEST_P(AnnotatorTest, Annotate) {
           .empty());
 }
 
+
 TEST_P(AnnotatorTest, AnnotateSmallBatches) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -768,7 +769,7 @@ TEST_P(AnnotatorTest, AnnotateSmallBatches) {
   EXPECT_TRUE(classifier->Annotate("853 225\n3556", options).empty());
 }
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, AnnotateFilteringDiscardAll) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -791,7 +792,7 @@ TEST_P(AnnotatorTest, AnnotateFilteringDiscardAll) {
 
   EXPECT_EQ(classifier->Annotate(test_string).size(), 0);
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
 TEST_P(AnnotatorTest, AnnotateFilteringKeepAll) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
@@ -873,7 +874,7 @@ TEST_P(AnnotatorTest, AnnotateFilteredCollections) {
               }));
 }
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, AnnotateFilteredCollectionsSuppress) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
 
@@ -917,9 +918,9 @@ TEST_P(AnnotatorTest, AnnotateFilteredCollectionsSuppress) {
                   IsAnnotatedSpan(28, 55, "address"),
               }));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_CALENDAR_ICU
+#ifdef TC3_CALENDAR_ICU
 TEST_P(AnnotatorTest, ClassifyTextDate) {
   std::unique_ptr<Annotator> classifier =
       Annotator::FromPath(GetModelPath() + GetParam());
@@ -968,9 +969,9 @@ TEST_P(AnnotatorTest, ClassifyTextDate) {
   EXPECT_EQ(result[0].datetime_parse_result.granularity,
             DatetimeGranularity::GRANULARITY_DAY);
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_CALENDAR_ICU
+#ifdef TC3_CALENDAR_ICU
 TEST_P(AnnotatorTest, ClassifyTextDatePriorities) {
   std::unique_ptr<Annotator> classifier =
       Annotator::FromPath(GetModelPath() + GetParam());
@@ -1001,9 +1002,9 @@ TEST_P(AnnotatorTest, ClassifyTextDatePriorities) {
   EXPECT_EQ(result[0].datetime_parse_result.granularity,
             DatetimeGranularity::GRANULARITY_DAY);
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_CALENDAR_ICU
+#ifdef TC3_CALENDAR_ICU
 TEST_P(AnnotatorTest, SuggestTextDateDisabled) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -1027,7 +1028,7 @@ TEST_P(AnnotatorTest, SuggestTextDateDisabled) {
   EXPECT_THAT(classifier->Annotate("january 1, 2017"),
               ElementsAreArray({IsAnnotatedSpan(0, 15, "date")}));
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
 class TestingAnnotator : public Annotator {
  public:
@@ -1123,7 +1124,7 @@ TEST_F(AnnotatorTest, ResolveConflictsFiveSpans) {
   EXPECT_THAT(chosen, ElementsAreArray({0, 2, 4}));
 }
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, LongInput) {
   std::unique_ptr<Annotator> classifier =
       Annotator::FromPath(GetModelPath() + GetParam(), &unilib_, &calendarlib_);
@@ -1152,9 +1153,9 @@ TEST_P(AnnotatorTest, LongInput) {
                   input_100k, {50000, 50000 + value_length})));
   }
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 // These coarse tests are there only to make sure the execution happens in
 // reasonable amount of time.
 TEST_P(AnnotatorTest, LongInputNoResultCheck) {
@@ -1173,9 +1174,9 @@ TEST_P(AnnotatorTest, LongInputNoResultCheck) {
     classifier->ClassifyText(input_100k, {50000, 50000 + value_length});
   }
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, MaxTokenLength) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -1210,9 +1211,9 @@ TEST_P(AnnotatorTest, MaxTokenLength) {
                 "I live at 350 Third Street, Cambridge.", {10, 37})),
             "other");
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
-#ifdef LIBTEXTCLASSIFIER_UNILIB_ICU
+#ifdef TC3_UNILIB_ICU
 TEST_P(AnnotatorTest, MinAddressTokenLength) {
   const std::string test_model = ReadFile(GetModelPath() + GetParam());
   std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
@@ -1247,7 +1248,7 @@ TEST_P(AnnotatorTest, MinAddressTokenLength) {
                 "I live at 350 Third Street, Cambridge.", {10, 37})),
             "other");
 }
-#endif  // LIBTEXTCLASSIFIER_UNILIB_ICU
+#endif  // TC3_UNILIB_ICU
 
 }  // namespace
 }  // namespace libtextclassifier3

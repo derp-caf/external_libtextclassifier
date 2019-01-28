@@ -22,30 +22,88 @@
 #include <vector>
 
 #include "actions/actions_model_generated.h"
+#include "annotator/annotator.h"
 #include "annotator/types.h"
 #include "utils/memory/mmap.h"
 #include "utils/tflite-model-executor.h"
+#include "utils/utf8/unilib.h"
+#include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
+
+// An entity associated with an action.
+struct ActionSuggestionAnnotation {
+  // The referenced message.
+  // -1 if not referencing a particular message in the provided input.
+  int message_index;
+
+  // The span within the reference message.
+  // (-1, -1) if not referencing a particular location.
+  CodepointSpan span;
+  ClassificationResult entity;
+
+  // Optional annotation name.
+  std::string name;
+
+  explicit ActionSuggestionAnnotation()
+      : message_index(kInvalidIndex), span({kInvalidIndex, kInvalidIndex}) {}
+};
 
 // Action suggestion that contains a response text and the type of the response.
 struct ActionSuggestion {
   // Text of the action suggestion.
   std::string response_text;
+
   // Type of the action suggestion.
   std::string type;
+
   // Score.
   float score;
+
+  // The associated annotations.
+  std::vector<ActionSuggestionAnnotation> annotations;
+};
+
+// Actions suggestions result containing meta-information and the suggested
+// actions.
+struct ActionsSuggestionsResponse {
+  ActionsSuggestionsResponse()
+      : sensitivity_score(-1),
+        triggering_score(-1),
+        output_filtered_sensitivity(false),
+        output_filtered_min_triggering_score(false) {}
+
+  // The sensitivity assessment.
+  float sensitivity_score;
+  float triggering_score;
+
+  // Whether the output was suppressed by the sensitivity threshold.
+  bool output_filtered_sensitivity;
+
+  // Whether the output was suppressed by the triggering score threshold.
+  bool output_filtered_min_triggering_score;
+
+  // The suggested actions.
+  std::vector<ActionSuggestion> actions;
 };
 
 // Represents a single message in the conversation.
 struct ConversationMessage {
   // User ID distinguishing the user from other users in the conversation.
   int user_id;
+
   // Text of the message.
   std::string text;
+
+  // Reference time of this message.
+  int64 reference_time_ms_utc;
+
   // Annotations on the text.
   std::vector<AnnotatedSpan> annotations;
+
+  // Comma-separated list of locale specification for the text in the
+  // conversation (BCP 47 tags).
+  std::string locales;
 };
 
 // Conversation between multiple users.
@@ -55,53 +113,106 @@ struct Conversation {
 };
 
 // Options for suggesting actions.
-struct ActionSuggestionOptions {};
+struct ActionSuggestionOptions {
+  // Options for annotation of the messages.
+  AnnotationOptions annotation_options = AnnotationOptions::Default();
+
+  static ActionSuggestionOptions Default() { return ActionSuggestionOptions(); }
+};
 
 // Class for predicting actions following a conversation.
 class ActionsSuggestions {
  public:
   static std::unique_ptr<ActionsSuggestions> FromUnownedBuffer(
-      const uint8_t* buffer, const int size);
+      const uint8_t* buffer, const int size, const UniLib* unilib = nullptr);
   // Takes ownership of the mmap.
   static std::unique_ptr<ActionsSuggestions> FromScopedMmap(
-      std::unique_ptr<libtextclassifier3::ScopedMmap> mmap);
+      std::unique_ptr<libtextclassifier3::ScopedMmap> mmap,
+      const UniLib* unilib = nullptr);
   static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
-      const int fd, const int offset, const int size);
-  static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(const int fd);
-  static std::unique_ptr<ActionsSuggestions> FromPath(const std::string& path);
+      const int fd, const int offset, const int size,
+      const UniLib* unilib = nullptr);
+  static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
+      const int fd, const UniLib* unilib = nullptr);
+  static std::unique_ptr<ActionsSuggestions> FromPath(
+      const std::string& path, const UniLib* unilib = nullptr);
 
-  std::vector<ActionSuggestion> SuggestActions(
+  ActionsSuggestionsResponse SuggestActions(
       const Conversation& conversation,
-      const ActionSuggestionOptions& options = ActionSuggestionOptions()) const;
+      const ActionSuggestionOptions& options =
+          ActionSuggestionOptions::Default()) const;
+
+  ActionsSuggestionsResponse SuggestActions(
+      const Conversation& conversation, const Annotator* annotator,
+      const ActionSuggestionOptions& options =
+          ActionSuggestionOptions::Default()) const;
+
+  // Provide an annotator.
+  void SetAnnotator(const Annotator* annotator);
+
+  // Should be in sync with those defined in Android.
+  // android/frameworks/base/core/java/android/view/textclassifier/ConversationActions.java
+  static const std::string& kViewCalendarType;
+  static const std::string& kViewMapType;
+  static const std::string& kTrackFlightType;
+  static const std::string& kOpenUrlType;
+  static const std::string& kSendSmsType;
+  static const std::string& kCallPhoneType;
+  static const std::string& kSendEmailType;
+  static const std::string& kShareLocation;
 
  private:
   // Checks that model contains all required fields, and initializes internal
   // datastructures.
   bool ValidateAndInitialize();
 
+  void SetOrCreateUnilib(const UniLib* unilib);
+
+  // Initializes regular expression rules.
+  bool InitializeRules(ZlibDecompressor* decompressor);
+
   void SetupModelInput(const std::vector<std::string>& context,
                        const std::vector<int>& user_ids,
+                       const std::vector<float>& time_diffs,
                        const int num_suggestions,
                        tflite::Interpreter* interpreter) const;
   void ReadModelOutput(tflite::Interpreter* interpreter,
-                       std::vector<ActionSuggestion>* suggestions) const;
+                       ActionsSuggestionsResponse* response) const;
 
-  void SuggestActionsFromModel(
-      const Conversation& conversation,
-      std::vector<ActionSuggestion>* suggestions) const;
+  void SuggestActionsFromModel(const Conversation& conversation,
+                               const int num_messages,
+                               ActionsSuggestionsResponse* response) const;
 
   void SuggestActionsFromAnnotations(
-      const Conversation& conversation,
-      std::vector<ActionSuggestion>* suggestions) const;
+      const Conversation& conversation, const ActionSuggestionOptions& options,
+      const Annotator* annotator,
+      ActionsSuggestionsResponse* suggestions) const;
 
-  // Check whether we shouldn't produce any predictions.
-  bool ShouldSuppressPredictions(tflite::Interpreter* interpreter) const;
+  void CreateActionsFromAnnotationResult(
+      const int message_index, const AnnotatedSpan& annotation,
+      ActionsSuggestionsResponse* suggestions) const;
+
+  void SuggestActionsFromRules(const Conversation& conversation,
+                               ActionsSuggestionsResponse* suggestions) const;
+
+  // Rank and deduplicate actions suggestions.
+  void RankActions(ActionsSuggestionsResponse* suggestions) const;
 
   const ActionsModel* model_;
   std::unique_ptr<libtextclassifier3::ScopedMmap> mmap_;
 
   // Tensorflow Lite models.
   std::unique_ptr<const TfLiteModelExecutor> model_executor_;
+
+  // Rules.
+  struct CompiledRule {
+    int rule_id;
+    std::unique_ptr<UniLib::RegexPattern> pattern;
+  };
+  std::vector<CompiledRule> rules_;
+
+  std::unique_ptr<UniLib> owned_unilib_;
+  const UniLib* unilib_;
 };
 
 // Interprets the buffer as a Model flatbuffer and returns it for reading.

@@ -118,7 +118,7 @@ inline NullStream &operator<<(NullStream &str, const T &) {
 // TC3_CHECK(my_cond) << "I think we hit a problem";
 #define TC3_CHECK(x)                                                           \
   (x) || TC3_LOG(FATAL) << __FILE__ << ":" << __LINE__ << ": check failed: \"" \
-                        << #x
+                        << #x << "\" "
 
 #define TC3_CHECK_EQ(x, y) TC3_CHECK((x) == (y))
 #define TC3_CHECK_LT(x, y) TC3_CHECK((x) < (y))
@@ -155,7 +155,7 @@ inline NullStream &operator<<(NullStream &str, const T &) {
 
 #endif  // NDEBUG
 
-#ifdef LIBTEXTCLASSIFIER_VLOG
+#ifdef TC3_VLOG
 #define TC3_VLOG(severity)                                     \
   ::libtextclassifier3::logging::LogMessage(                   \
       ::libtextclassifier3::logging::INFO, __FILE__, __LINE__) \

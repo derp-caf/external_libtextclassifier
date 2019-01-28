@@ -233,7 +233,7 @@ TEST_F(TokenFeatureExtractorTest, ExtractUnicodeNoChargrams) {
   EXPECT_THAT(dense_features, testing::ElementsAreArray({-1.0, -1.0}));
 }
 
-#ifdef LIBTEXTCLASSIFIER_TEST_ICU
+#ifdef TC3_TEST_ICU
 TEST_F(TokenFeatureExtractorTest, ICUCaseFeature) {
   TokenFeatureExtractorOptions options;
   options.num_buckets = 1000;
@@ -340,7 +340,7 @@ TEST_F(TokenFeatureExtractorTest, LowercaseAscii) {
   EXPECT_THAT(sparse_features, testing::ElementsAreArray(sparse_features2));
 }
 
-#ifdef LIBTEXTCLASSIFIER_TEST_ICU
+#ifdef TC3_TEST_ICU
 TEST_F(TokenFeatureExtractorTest, LowercaseUnicode) {
   TokenFeatureExtractorOptions options;
   options.num_buckets = 1000;
@@ -360,7 +360,7 @@ TEST_F(TokenFeatureExtractorTest, LowercaseUnicode) {
 }
 #endif
 
-#ifdef LIBTEXTCLASSIFIER_TEST_ICU
+#ifdef TC3_TEST_ICU
 TEST_F(TokenFeatureExtractorTest, RegexFeatures) {
   TokenFeatureExtractorOptions options;
   options.num_buckets = 1000;

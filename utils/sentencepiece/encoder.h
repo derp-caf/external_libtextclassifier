@@ -33,19 +33,24 @@ class Encoder {
   //     a trie.
   // num_pieces: the number of pieces in the trie.
   // pieces_scores: the scores of the individual pieces.
-  // start_code: Code that is used as encoding of the start of input.
-  // end_code: Code that is used as encoding of the end of input.
-  // encoding_offset: Value added to the sentence piece ids to make them
+  // start_code: code that is used as encoding of the start of input.
+  // end_code: code that is used as encoding of the end of input.
+  // encoding_offset: value added to the sentence piece ids to make them
   //     not interesecting with start_code and end_code.
+  // unknown_code: code that is used for out-of-dictionary characters.
+  // unknown_score: the penality score associated with the unknown code.
   Encoder(const SentencePieceMatcher* matcher, const int num_pieces,
           const float* pieces_scores, int start_code = 0, int end_code = 1,
-          int encoding_offset = 2)
+          int encoding_offset = 2, int unknown_code = -1,
+          float unknown_score = 0.f)
       : num_pieces_(num_pieces),
         scores_(pieces_scores),
         matcher_(matcher),
         start_code_(start_code),
         end_code_(end_code),
-        encoding_offset_(encoding_offset) {}
+        encoding_offset_(encoding_offset),
+        unknown_code_(unknown_code),
+        unknown_score_(unknown_score) {}
 
   // Segment the input so that the total score of the pieces used is maximized.
   // This is a simplified implementation of the general Viterbi algorithm,
@@ -74,6 +79,8 @@ class Encoder {
   const int start_code_;
   const int end_code_;
   const int encoding_offset_;
+  const int unknown_code_;
+  const int unknown_score_;
 };
 
 }  // namespace libtextclassifier3

@@ -21,7 +21,7 @@
 
 namespace libtextclassifier3 {
 
-std::string Normalizer::Normalize(StringPiece input) const {
+std::string SentencePieceNormalizer::Normalize(StringPiece input) const {
   std::string normalized;
 
   // Ignores heading space.
@@ -106,7 +106,7 @@ std::string Normalizer::Normalize(StringPiece input) const {
   return normalized;
 }
 
-std::pair<StringPiece, int> Normalizer::NormalizePrefix(
+std::pair<StringPiece, int> SentencePieceNormalizer::NormalizePrefix(
     StringPiece input) const {
   std::pair<StringPiece, int> result;
   if (input.empty()) return result;

@@ -24,15 +24,16 @@
 
 namespace libtextclassifier3 {
 
-Normalizer NormalizerFromSpec(StringPiece spec, bool add_dummy_prefix,
-                              bool remove_extra_whitespaces,
-                              bool escape_whitespaces) {
+SentencePieceNormalizer NormalizerFromSpec(StringPiece spec,
+                                           bool add_dummy_prefix,
+                                           bool remove_extra_whitespaces,
+                                           bool escape_whitespaces) {
   const uint32 trie_blob_size = reinterpret_cast<const uint32*>(spec.data())[0];
   spec.RemovePrefix(sizeof(trie_blob_size));
   const TrieNode* trie_blob = reinterpret_cast<const TrieNode*>(spec.data());
   spec.RemovePrefix(trie_blob_size);
   const int num_nodes = trie_blob_size / sizeof(TrieNode);
-  return Normalizer(
+  return SentencePieceNormalizer(
       DoubleArrayTrie(trie_blob, num_nodes),
       /*charsmap_normalized=*/StringPiece(spec.data(), spec.size()),
       add_dummy_prefix, remove_extra_whitespaces, escape_whitespaces);

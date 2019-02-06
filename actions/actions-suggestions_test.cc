@@ -21,6 +21,7 @@
 #include <memory>
 
 #include "actions/actions_model_generated.h"
+#include "annotator/collections.h"
 #include "annotator/types.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -155,7 +156,7 @@ TEST_F(ActionsSuggestionsTest, SuppressActionsFromAnnotationsOnSensitiveTopic) {
   AnnotatedSpan annotation;
   annotation.span = {11, 15};
   annotation.classification = {
-      ClassificationResult(Annotator::kAddressCollection, 1.0)};
+      ClassificationResult(Collections::kAddress, 1.0)};
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions({{{/*user_id=*/1, "are you at home?",
                                              /*time_diff_secs=*/0,
@@ -182,7 +183,7 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsWithLongerConversation) {
   AnnotatedSpan annotation;
   annotation.span = {11, 15};
   annotation.classification = {
-      ClassificationResult(Annotator::kAddressCollection, 1.0)};
+      ClassificationResult(Collections::kAddress, 1.0)};
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions(
           {{{/*user_id=*/0, "hi, how are you?", /*reference_time=*/10000},
@@ -198,8 +199,7 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromClassificationResult) {
   std::unique_ptr<ActionsSuggestions> actions_suggestions = LoadTestModel();
   AnnotatedSpan annotation;
   annotation.span = {13, 16};
-  annotation.classification = {
-      ClassificationResult(Annotator::kPhoneCollection, 1.0)};
+  annotation.classification = {ClassificationResult(Collections::kPhone, 1.0)};
 
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions({{{/*user_id=*/1, "can you call 911?",
@@ -236,6 +236,18 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromRules) {
   actions_model->rules->rule.back()->actions.back()->response_text =
       "General Kenobi!";
   actions_model->rules->rule.back()->actions.back()->score = 1.f;
+  actions_model->rules->rule.back()->actions.back()->extra.emplace_back(
+      new NamedVariantT);
+  actions_model->rules->rule.back()->actions.back()->extra.back()->name =
+      "person";
+  actions_model->rules->rule.back()->actions.back()->extra.back()->value.reset(
+      new VariantValueT);
+  actions_model->rules->rule.back()
+      ->actions.back()
+      ->extra.back()
+      ->value->string_value = "Kenobi";
+  actions_model->rules->rule.back()->actions.back()->extra.back()->value->type =
+      VariantValue_::Type_STRING_VALUE;
 
   flatbuffers::FlatBufferBuilder builder;
   FinishActionsModelBuffer(builder,
@@ -247,8 +259,10 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromRules) {
 
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions({{{/*user_id=*/1, "hello there"}}});
-  EXPECT_EQ(response.actions.size(), 1);
+  EXPECT_GE(response.actions.size(), 1);
   EXPECT_EQ(response.actions[0].response_text, "General Kenobi!");
+  EXPECT_EQ(response.actions[0].extra.size(), 1);
+  EXPECT_EQ(response.actions[0].extra.at("person").StringValue(), "Kenobi");
 }
 
 TEST_F(ActionsSuggestionsTest, DeduplicateActions) {
@@ -297,6 +311,23 @@ TEST_F(ActionsSuggestionsTest, DeduplicateActions) {
   EXPECT_EQ(response.actions.size(), 5);
 }
 #endif
+
+TEST_F(ActionsSuggestionsTest, VisitActionsModel) {
+  EXPECT_TRUE(VisitActionsModel<bool>(GetModelPath() + kModelFileName,
+                                      [](const ActionsModel* model) {
+                                        if (model == nullptr) {
+                                          return false;
+                                        }
+                                        return true;
+                                      }));
+  EXPECT_FALSE(VisitActionsModel<bool>(GetModelPath() + "non_existing_model.fb",
+                                       [](const ActionsModel* model) {
+                                         if (model == nullptr) {
+                                           return false;
+                                         }
+                                         return true;
+                                       }));
+}
 
 }  // namespace
 }  // namespace libtextclassifier3

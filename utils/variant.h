@@ -17,47 +17,122 @@
 #ifndef LIBTEXTCLASSIFIER_UTILS_VARIANT_H_
 #define LIBTEXTCLASSIFIER_UTILS_VARIANT_H_
 
+#include <map>
 #include <string>
 
 #include "utils/base/integral_types.h"
+#include "utils/base/logging.h"
+#include "utils/named-extra_generated.h"
 #include "utils/strings/stringpiece.h"
 
 namespace libtextclassifier3 {
 
 // Represents a type-tagged union of different basic types.
-struct Variant {
-  Variant() : type(TYPE_INVALID) {}
-  explicit Variant(int value) : type(TYPE_INT_VALUE), int_value(value) {}
-  explicit Variant(int64 value) : type(TYPE_LONG_VALUE), long_value(value) {}
-  explicit Variant(float value) : type(TYPE_FLOAT_VALUE), float_value(value) {}
+class Variant {
+ public:
+  Variant() : type_(VariantValue_::Type_NONE) {}
+  explicit Variant(int value)
+      : type_(VariantValue_::Type_INT_VALUE), int_value_(value) {}
+  explicit Variant(int64 value)
+      : type_(VariantValue_::Type_INT64_VALUE), long_value_(value) {}
+  explicit Variant(float value)
+      : type_(VariantValue_::Type_FLOAT_VALUE), float_value_(value) {}
   explicit Variant(double value)
-      : type(TYPE_DOUBLE_VALUE), double_value(value) {}
+      : type_(VariantValue_::Type_DOUBLE_VALUE), double_value_(value) {}
   explicit Variant(StringPiece value)
-      : type(TYPE_STRING_VALUE), string_value(value.ToString()) {}
+      : type_(VariantValue_::Type_STRING_VALUE),
+        string_value_(value.ToString()) {}
   explicit Variant(std::string value)
-      : type(TYPE_STRING_VALUE), string_value(value) {}
+      : type_(VariantValue_::Type_STRING_VALUE), string_value_(value) {}
   explicit Variant(const char* value)
-      : type(TYPE_STRING_VALUE), string_value(value) {}
-  explicit Variant(bool value) : type(TYPE_BOOL_VALUE), bool_value(value) {}
-  enum Type {
-    TYPE_INVALID = 0,
-    TYPE_INT_VALUE = 1,
-    TYPE_LONG_VALUE = 2,
-    TYPE_FLOAT_VALUE = 3,
-    TYPE_DOUBLE_VALUE = 4,
-    TYPE_BOOL_VALUE = 5,
-    TYPE_STRING_VALUE = 6,
-  };
-  Type type;
+      : type_(VariantValue_::Type_STRING_VALUE), string_value_(value) {}
+  explicit Variant(bool value)
+      : type_(VariantValue_::Type_BOOL_VALUE), bool_value_(value) {}
+  explicit Variant(const VariantValue* value) : type_(value->type()) {
+    switch (type_) {
+      case VariantValue_::Type_INT_VALUE:
+        int_value_ = value->int_value();
+        break;
+      case VariantValue_::Type_INT64_VALUE:
+        long_value_ = value->int64_value();
+        break;
+      case VariantValue_::Type_FLOAT_VALUE:
+        float_value_ = value->float_value();
+        break;
+      case VariantValue_::Type_DOUBLE_VALUE:
+        double_value_ = value->double_value();
+        break;
+      case VariantValue_::Type_BOOL_VALUE:
+        bool_value_ = value->bool_value();
+        break;
+      case VariantValue_::Type_STRING_VALUE:
+        string_value_ = value->string_value()->str();
+        break;
+      default:
+        TC3_LOG(ERROR) << "Unknown variant type: " << type_;
+    }
+  }
+
+  int IntValue() const {
+    TC3_CHECK(HasInt());
+    return int_value_;
+  }
+
+  int64 Int64Value() const {
+    TC3_CHECK(HasInt64());
+    return long_value_;
+  }
+
+  float FloatValue() const {
+    TC3_CHECK(HasFloat());
+    return float_value_;
+  }
+
+  double DoubleValue() const {
+    TC3_CHECK(HasDouble());
+    return double_value_;
+  }
+
+  bool BoolValue() const {
+    TC3_CHECK(HasBool());
+    return bool_value_;
+  }
+
+  const std::string& StringValue() const {
+    TC3_CHECK(HasString());
+    return string_value_;
+  }
+
+  bool HasInt() const { return type_ == VariantValue_::Type_INT_VALUE; }
+
+  bool HasInt64() const { return type_ == VariantValue_::Type_INT64_VALUE; }
+
+  bool HasFloat() const { return type_ == VariantValue_::Type_FLOAT_VALUE; }
+
+  bool HasDouble() const { return type_ == VariantValue_::Type_DOUBLE_VALUE; }
+
+  bool HasBool() const { return type_ == VariantValue_::Type_BOOL_VALUE; }
+
+  bool HasString() const { return type_ == VariantValue_::Type_STRING_VALUE; }
+
+  VariantValue_::Type GetType() const { return type_; }
+
+  bool HasValue() const { return type_ != VariantValue_::Type_NONE; }
+
+ private:
+  VariantValue_::Type type_;
   union {
-    int int_value;
-    int64 long_value;
-    float float_value;
-    double double_value;
-    bool bool_value;
+    int int_value_;
+    int64 long_value_;
+    float float_value_;
+    double double_value_;
+    bool bool_value_;
   };
-  std::string string_value;
+  std::string string_value_;
 };
+
+std::map<std::string, Variant> AsVariantMap(
+    const flatbuffers::Vector<flatbuffers::Offset<NamedVariant>>* extra);
 
 }  // namespace libtextclassifier3
 

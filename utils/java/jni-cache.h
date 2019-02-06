@@ -109,7 +109,6 @@ struct JniCache {
   ScopedGlobalRef<jclass> urlencoder_class;
   jmethodID urlencoder_encode = nullptr;
 
-#ifdef __ANDROID__
   // android.content.Context
   ScopedGlobalRef<jclass> context_class;
   jmethodID context_get_package_name = nullptr;
@@ -127,7 +126,6 @@ struct JniCache {
   // android.os.Bundle
   ScopedGlobalRef<jclass> bundle_class;
   jmethodID bundle_get_boolean = nullptr;
-#endif
 
   // Helper to convert lib3 UnicodeText to Java strings.
   ScopedLocalRef<jstring> ConvertToJavaString(const UnicodeText& text) const;

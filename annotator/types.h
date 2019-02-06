@@ -17,6 +17,7 @@
 #ifndef LIBTEXTCLASSIFIER_ANNOTATOR_TYPES_H_
 #define LIBTEXTCLASSIFIER_ANNOTATOR_TYPES_H_
 
+#include <time.h>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -147,15 +148,8 @@ struct Token {
 };
 
 // Pretty-printing function for Token.
-inline logging::LoggingStringStream& operator<<(
-    logging::LoggingStringStream& stream, const Token& token) {
-  if (!token.is_padding) {
-    return stream << "Token(\"" << token.value << "\", " << token.start << ", "
-                  << token.end << ")";
-  } else {
-    return stream << "Token()";
-  }
-}
+logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
+                                         const Token& token);
 
 enum DatetimeGranularity {
   GRANULARITY_UNKNOWN = -1,  // GRANULARITY_UNKNOWN is used as a proxy for this
@@ -195,13 +189,12 @@ const float kFloatCompareEpsilon = 1e-5;
 
 struct DatetimeParseResultSpan {
   CodepointSpan span;
-  DatetimeParseResult data;
+  std::vector<DatetimeParseResult> data;
   float target_classification_score;
   float priority_score;
 
   bool operator==(const DatetimeParseResultSpan& other) const {
-    return span == other.span && data.granularity == other.data.granularity &&
-           data.time_ms_utc == other.data.time_ms_utc &&
+    return span == other.span && data == other.data &&
            std::abs(target_classification_score -
                     other.target_classification_score) < kFloatCompareEpsilon &&
            std::abs(priority_score - other.priority_score) <
@@ -210,20 +203,16 @@ struct DatetimeParseResultSpan {
 };
 
 // Pretty-printing function for DatetimeParseResultSpan.
-inline logging::LoggingStringStream& operator<<(
-    logging::LoggingStringStream& stream,
-    const DatetimeParseResultSpan& value) {
-  return stream << "DatetimeParseResultSpan({" << value.span.first << ", "
-                << value.span.second << "}, {/*time_ms_utc=*/ "
-                << value.data.time_ms_utc << ", /*granularity=*/ "
-                << value.data.granularity << "})";
-}
+logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
+                                         const DatetimeParseResultSpan& value);
 
 struct ClassificationResult {
   std::string collection;
   float score;
   DatetimeParseResult datetime_parse_result;
   std::string serialized_knowledge_result;
+  std::string contact_name, contact_given_name, contact_nickname,
+      contact_email_address, contact_phone_number;
 
   // Internal score used for conflict resolution.
   float priority_score;
@@ -246,23 +235,13 @@ struct ClassificationResult {
 };
 
 // Pretty-printing function for ClassificationResult.
-inline logging::LoggingStringStream& operator<<(
-    logging::LoggingStringStream& stream, const ClassificationResult& result) {
-  return stream << "ClassificationResult(" << result.collection << ", "
-                << result.score << ")";
-}
+logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
+                                         const ClassificationResult& result);
 
 // Pretty-printing function for std::vector<ClassificationResult>.
-inline logging::LoggingStringStream& operator<<(
+logging::LoggingStringStream& operator<<(
     logging::LoggingStringStream& stream,
-    const std::vector<ClassificationResult>& results) {
-  stream = stream << "{\n";
-  for (const ClassificationResult& result : results) {
-    stream = stream << "    " << result << "\n";
-  }
-  stream = stream << "}";
-  return stream;
-}
+    const std::vector<ClassificationResult>& results);
 
 // Represents a result of Annotate call.
 struct AnnotatedSpan {
@@ -274,17 +253,8 @@ struct AnnotatedSpan {
 };
 
 // Pretty-printing function for AnnotatedSpan.
-inline logging::LoggingStringStream& operator<<(
-    logging::LoggingStringStream& stream, const AnnotatedSpan& span) {
-  std::string best_class;
-  float best_score = -1;
-  if (!span.classification.empty()) {
-    best_class = span.classification[0].collection;
-    best_score = span.classification[0].score;
-  }
-  return stream << "Span(" << span.span.first << ", " << span.span.second
-                << ", " << best_class << ", " << best_score << ")";
-}
+logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
+                                         const AnnotatedSpan& span);
 
 // StringPiece analogue for std::vector<T>.
 template <class T>
@@ -312,7 +282,8 @@ class VectorSpan {
 };
 
 struct DateParseData {
-  enum Relation {
+  enum class Relation {
+    UNSPECIFIED = 0,
     NEXT = 1,
     NEXT_OR_SAME = 2,
     LAST = 3,
@@ -323,7 +294,8 @@ struct DateParseData {
     FUTURE = 8
   };
 
-  enum RelationType {
+  enum class RelationType {
+    UNSPECIFIED = 0,
     SUNDAY = 1,
     MONDAY = 2,
     TUESDAY = 3,
@@ -352,9 +324,9 @@ struct DateParseData {
     RELATION_DISTANCE_FIELD = 1 << 11
   };
 
-  enum AMPM { AM = 0, PM = 1 };
+  enum class AMPM { AM = 0, PM = 1 };
 
-  enum TimeUnit {
+  enum class TimeUnit {
     DAYS = 1,
     WEEKS = 2,
     MONTHS = 3,
@@ -365,36 +337,57 @@ struct DateParseData {
   };
 
   // Bit mask of fields which have been set on the struct
-  int field_set_mask;
+  int field_set_mask = 0;
 
   // Fields describing absolute date fields.
   // Year of the date seen in the text match.
-  int year;
+  int year = 0;
   // Month of the year starting with January = 1.
-  int month;
+  int month = 0;
   // Day of the month starting with 1.
-  int day_of_month;
+  int day_of_month = 0;
   // Hour of the day with a range of 0-23,
   // values less than 12 need the AMPM field below or heuristics
   // to definitively determine the time.
-  int hour;
+  int hour = 0;
   // Hour of the day with a range of 0-59.
-  int minute;
+  int minute = 0;
   // Hour of the day with a range of 0-59.
-  int second;
+  int second = 0;
   // 0 == AM, 1 == PM
-  int ampm;
+  AMPM ampm = AMPM::AM;
   // Number of hours offset from UTC this date time is in.
-  int zone_offset;
+  int zone_offset = 0;
   // Number of hours offest for DST
-  int dst_offset;
+  int dst_offset = 0;
 
   // The permutation from now that was made to find the date time.
-  Relation relation;
+  Relation relation = Relation::UNSPECIFIED;
   // The unit of measure of the change to the date time.
-  RelationType relation_type;
+  RelationType relation_type = RelationType::UNSPECIFIED;
   // The number of units of change that were made.
-  int relation_distance;
+  int relation_distance = 0;
+
+  DateParseData() = default;
+
+  DateParseData(int field_set_mask, int year, int month, int day_of_month,
+                int hour, int minute, int second, AMPM ampm, int zone_offset,
+                int dst_offset, Relation relation, RelationType relation_type,
+                int relation_distance) {
+    this->field_set_mask = field_set_mask;
+    this->year = year;
+    this->month = month;
+    this->day_of_month = day_of_month;
+    this->hour = hour;
+    this->minute = minute;
+    this->second = second;
+    this->ampm = ampm;
+    this->zone_offset = zone_offset;
+    this->dst_offset = dst_offset;
+    this->relation = relation;
+    this->relation_type = relation_type;
+    this->relation_distance = relation_distance;
+  }
 };
 
 }  // namespace libtextclassifier3

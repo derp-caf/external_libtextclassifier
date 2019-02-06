@@ -308,6 +308,49 @@ TEST_P(AnnotatorTest, SuggestSelectionRegularExpression) {
   EXPECT_EQ(classifier->SuggestSelection("cc: 4012 8888 8888 1881", {9, 14}),
             std::make_pair(4, 23));
 }
+
+TEST_P(AnnotatorTest, SuggestSelectionRegularExpressionCustomSelectionBounds) {
+  const std::string test_model = ReadFile(GetModelPath() + GetParam());
+  std::unique_ptr<ModelT> unpacked_model = UnPackModel(test_model.c_str());
+
+  // Add test regex models.
+  std::unique_ptr<RegexModel_::PatternT> custom_selection_bounds_pattern =
+      MakePattern("date_range",
+                  "(?:(?:from )?(\\d{2}\\/\\d{2}\\/\\d{4}) to "
+                  "(\\d{2}\\/\\d{2}\\/\\d{4}))|(for ever)",
+                  /*enabled_for_classification=*/false,
+                  /*enabled_for_selection=*/true,
+                  /*enabled_for_annotation=*/false, 1.0);
+  custom_selection_bounds_pattern->capturing_group.emplace_back(
+      new RegexModel_::Pattern_::CapturingGroupT);
+  custom_selection_bounds_pattern->capturing_group.emplace_back(
+      new RegexModel_::Pattern_::CapturingGroupT);
+  custom_selection_bounds_pattern->capturing_group.emplace_back(
+      new RegexModel_::Pattern_::CapturingGroupT);
+  custom_selection_bounds_pattern->capturing_group.emplace_back(
+      new RegexModel_::Pattern_::CapturingGroupT);
+  custom_selection_bounds_pattern->capturing_group[0]->extend_selection = false;
+  custom_selection_bounds_pattern->capturing_group[1]->extend_selection = true;
+  custom_selection_bounds_pattern->capturing_group[2]->extend_selection = true;
+  custom_selection_bounds_pattern->capturing_group[3]->extend_selection = true;
+  unpacked_model->regex_model->patterns.push_back(
+      std::move(custom_selection_bounds_pattern));
+
+  flatbuffers::FlatBufferBuilder builder;
+  FinishModelBuffer(builder, Model::Pack(builder, unpacked_model.get()));
+
+  std::unique_ptr<Annotator> classifier = Annotator::FromUnownedBuffer(
+      reinterpret_cast<const char*>(builder.GetBufferPointer()),
+      builder.GetSize(), &unilib_, &calendarlib_);
+  ASSERT_TRUE(classifier);
+
+  // Check regular expression selection.
+  EXPECT_EQ(classifier->SuggestSelection("it's from 04/30/1789 to 03/04/1797",
+                                         {21, 23}),
+            std::make_pair(10, 34));
+  EXPECT_EQ(classifier->SuggestSelection("it takes for ever", {9, 12}),
+            std::make_pair(9, 17));
+}
 #endif  // TC3_UNILIB_ICU
 
 #ifdef TC3_UNILIB_ICU
@@ -931,7 +974,6 @@ TEST_P(AnnotatorTest, ClassifyTextDate) {
 
   options.reference_timezone = "Europe/Zurich";
   result = classifier->ClassifyText("january 1, 2017", {0, 15}, options);
-
   ASSERT_EQ(result.size(), 1);
   EXPECT_THAT(result[0].collection, "date");
   EXPECT_EQ(result[0].datetime_parse_result.time_ms_utc, 1483225200000);
@@ -950,11 +992,24 @@ TEST_P(AnnotatorTest, ClassifyTextDate) {
 
   options.reference_timezone = "America/Los_Angeles";
   result = classifier->ClassifyText("2018/01/01 10:30:20", {0, 19}, options);
-  ASSERT_EQ(result.size(), 1);
+  ASSERT_EQ(result.size(), 2);  // Has 2 interpretations - a.m. or p.m.
   EXPECT_THAT(result[0].collection, "date");
   EXPECT_EQ(result[0].datetime_parse_result.time_ms_utc, 1514831420000);
   EXPECT_EQ(result[0].datetime_parse_result.granularity,
             DatetimeGranularity::GRANULARITY_SECOND);
+  EXPECT_THAT(result[1].collection, "date");
+  EXPECT_EQ(result[1].datetime_parse_result.time_ms_utc, 1514874620000);
+  EXPECT_EQ(result[1].datetime_parse_result.granularity,
+            DatetimeGranularity::GRANULARITY_SECOND);
+  result.clear();
+
+  options.reference_timezone = "America/Los_Angeles";
+  result = classifier->ClassifyText("2018/01/01 22:00", {0, 16}, options);
+  ASSERT_EQ(result.size(), 1);  // Has only 1 interpretation - 10 p.m.
+  EXPECT_THAT(result[0].collection, "date");
+  EXPECT_EQ(result[0].datetime_parse_result.time_ms_utc, 1514872800000);
+  EXPECT_EQ(result[0].datetime_parse_result.granularity,
+            DatetimeGranularity::GRANULARITY_MINUTE);
   result.clear();
 
   // Date on another line.
@@ -1034,7 +1089,8 @@ class TestingAnnotator : public Annotator {
  public:
   TestingAnnotator(const std::string& model, const UniLib* unilib,
                    const CalendarLib* calendarlib)
-      : Annotator(ViewModel(model.data(), model.size()), unilib, calendarlib) {}
+      : Annotator(libtextclassifier3::ViewModel(model.data(), model.size()),
+                  unilib, calendarlib) {}
 
   using Annotator::ResolveConflicts;
 };
@@ -1249,6 +1305,23 @@ TEST_P(AnnotatorTest, MinAddressTokenLength) {
             "other");
 }
 #endif  // TC3_UNILIB_ICU
+
+TEST_F(AnnotatorTest, VisitAnnotatorModel) {
+  EXPECT_TRUE(VisitAnnotatorModel<bool>(GetModelPath() + "test_model.fb",
+                                        [](const Model* model) {
+                                          if (model == nullptr) {
+                                            return false;
+                                          }
+                                          return true;
+                                        }));
+  EXPECT_FALSE(VisitAnnotatorModel<bool>(
+      GetModelPath() + "non_existing_model.fb", [](const Model* model) {
+        if (model == nullptr) {
+          return false;
+        }
+        return true;
+      }));
+}
 
 }  // namespace
 }  // namespace libtextclassifier3

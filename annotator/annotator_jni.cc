@@ -26,9 +26,13 @@
 #include "annotator/annotator_jni_common.h"
 #include "utils/base/integral_types.h"
 #include "utils/calendar/calendar.h"
+#include "utils/intents/intent-generator.h"
+#include "utils/intents/jni.h"
+#include "utils/java/jni-cache.h"
 #include "utils/java/scoped_local_ref.h"
 #include "utils/java/string_utils.h"
 #include "utils/memory/mmap.h"
+#include "utils/strings/stringpiece.h"
 #include "utils/utf8/unilib.h"
 
 #ifdef TC3_UNILIB_JAVAICU
@@ -59,8 +63,9 @@ using libtextclassifier3::CodepointSpan;
 
 namespace {
 
-jobjectArray ClassificationResultsToJObjectArray(
-    JNIEnv* env,
+jobjectArray ClassificationResultsWithIntentsToJObjectArray(
+    JNIEnv* env, const IntentGenerator* intent_generator,
+    const ClassificationOptions* options, StringPiece selection_text,
     const std::vector<ClassificationResult>& classification_result) {
   const ScopedLocalRef<jclass> result_class(
       env->FindClass(TC3_PACKAGE_PATH TC3_ANNOTATOR_CLASS_NAME_STR
@@ -82,12 +87,20 @@ jobjectArray ClassificationResultsToJObjectArray(
   const jmethodID result_class_constructor = env->GetMethodID(
       result_class.get(), "<init>",
       "(Ljava/lang/String;FL" TC3_PACKAGE_PATH TC3_ANNOTATOR_CLASS_NAME_STR
-      "$DatetimeResult;[B)V");
+      "$DatetimeResult;[BLjava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+      "Ljava/lang/String;Ljava/lang/String;[L" TC3_PACKAGE_PATH
+          TC3_REMOTE_ACTION_TEMPLATE_CLASS_NAME_STR ";)V");
   const jmethodID datetime_parse_class_constructor =
       env->GetMethodID(datetime_parse_class.get(), "<init>", "(JI)V");
 
   const jobjectArray results = env->NewObjectArray(classification_result.size(),
                                                    result_class.get(), nullptr);
+
+  std::unique_ptr<RemoteActionTemplatesHandler> remote_action_templates_handler;
+  if (intent_generator != nullptr) {
+    remote_action_templates_handler = RemoteActionTemplatesHandler::Create(env);
+  }
+
   for (int i = 0; i < classification_result.size(); i++) {
     jstring row_string =
         env->NewStringUTF(classification_result[i].collection.c_str());
@@ -112,14 +125,68 @@ jobjectArray ClassificationResultsToJObjectArray(
                                   serialized_knowledge_result_string.data()));
     }
 
-    jobject result =
-        env->NewObject(result_class.get(), result_class_constructor, row_string,
-                       static_cast<jfloat>(classification_result[i].score),
-                       row_datetime_parse, serialized_knowledge_result);
+    jstring contact_name = nullptr;
+    if (!classification_result[i].contact_name.empty()) {
+      contact_name =
+          env->NewStringUTF(classification_result[i].contact_name.c_str());
+    }
+
+    jstring contact_given_name = nullptr;
+    if (!classification_result[i].contact_given_name.empty()) {
+      contact_given_name = env->NewStringUTF(
+          classification_result[i].contact_given_name.c_str());
+    }
+
+    jstring contact_nickname = nullptr;
+    if (!classification_result[i].contact_nickname.empty()) {
+      contact_nickname =
+          env->NewStringUTF(classification_result[i].contact_nickname.c_str());
+    }
+
+    jstring contact_email_address = nullptr;
+    if (!classification_result[i].contact_email_address.empty()) {
+      contact_email_address = env->NewStringUTF(
+          classification_result[i].contact_email_address.c_str());
+    }
+
+    jstring contact_phone_number = nullptr;
+    if (!classification_result[i].contact_phone_number.empty()) {
+      contact_phone_number = env->NewStringUTF(
+          classification_result[i].contact_phone_number.c_str());
+    }
+
+    jobject remote_action_templates_result = nullptr;
+
+    if (intent_generator != nullptr &&
+        remote_action_templates_handler != nullptr) {
+      std::vector<RemoteActionTemplate> remote_action_templates =
+          intent_generator->GenerateIntents(classification_result[i],
+                                            options->reference_time_ms_utc,
+                                            selection_text);
+      remote_action_templates_result =
+          remote_action_templates_handler->RemoteActionTemplatesToJObjectArray(
+              remote_action_templates);
+    }
+
+    jobject result = env->NewObject(
+        result_class.get(), result_class_constructor, row_string,
+        static_cast<jfloat>(classification_result[i].score), row_datetime_parse,
+        serialized_knowledge_result, contact_name, contact_given_name,
+        contact_nickname, contact_email_address, contact_phone_number,
+        remote_action_templates_result);
     env->SetObjectArrayElement(results, i, result);
     env->DeleteLocalRef(result);
   }
   return results;
+}
+
+jobjectArray ClassificationResultsToJObjectArray(
+    JNIEnv* env,
+    const std::vector<ClassificationResult>& classification_result) {
+  return ClassificationResultsWithIntentsToJObjectArray(
+      env, /*(unused) intent_generator=*/nullptr,
+      /*(unusued) options=*/nullptr,
+      /*(unused) selection_text=*/"", classification_result);
 }
 
 CodepointSpan ConvertIndicesBMPUTF8(const std::string& utf8_str,
@@ -218,6 +285,7 @@ jstring GetNameFromMmap(JNIEnv* env, libtextclassifier3::ScopedMmap* mmap) {
 }  // namespace libtextclassifier3
 
 using libtextclassifier3::ClassificationResultsToJObjectArray;
+using libtextclassifier3::ClassificationResultsWithIntentsToJObjectArray;
 using libtextclassifier3::ConvertIndicesBMPToUTF8;
 using libtextclassifier3::ConvertIndicesUTF8ToBMP;
 using libtextclassifier3::FromJavaAnnotationOptions;
@@ -290,6 +358,25 @@ TC3_JNI_METHOD(jboolean, TC3_ANNOTATOR_CLASS_NAME,
   return model->InitializeKnowledgeEngine(serialized_config_string);
 }
 
+TC3_JNI_METHOD(jboolean, TC3_ANNOTATOR_CLASS_NAME,
+               nativeInitializeContactEngine)
+(JNIEnv* env, jobject thiz, jlong ptr, jbyteArray serialized_config) {
+  if (!ptr) {
+    return false;
+  }
+
+  Annotator* model = reinterpret_cast<Annotator*>(ptr);
+
+  std::string serialized_config_string;
+  const int length = env->GetArrayLength(serialized_config);
+  serialized_config_string.resize(length);
+  env->GetByteArrayRegion(serialized_config, 0, length,
+                          reinterpret_cast<jbyte*>(const_cast<char*>(
+                              serialized_config_string.data())));
+
+  return model->InitializeContactEngine(serialized_config_string);
+}
+
 TC3_JNI_METHOD(jintArray, TC3_ANNOTATOR_CLASS_NAME, nativeSuggestSelection)
 (JNIEnv* env, jobject thiz, jlong ptr, jstring context, jint selection_begin,
  jint selection_end, jobject options) {
@@ -314,7 +401,7 @@ TC3_JNI_METHOD(jintArray, TC3_ANNOTATOR_CLASS_NAME, nativeSuggestSelection)
 
 TC3_JNI_METHOD(jobjectArray, TC3_ANNOTATOR_CLASS_NAME, nativeClassifyText)
 (JNIEnv* env, jobject thiz, jlong ptr, jstring context, jint selection_begin,
- jint selection_end, jobject options) {
+ jint selection_end, jobject options, jobject app_context) {
   if (!ptr) {
     return nullptr;
   }
@@ -323,11 +410,24 @@ TC3_JNI_METHOD(jobjectArray, TC3_ANNOTATOR_CLASS_NAME, nativeClassifyText)
   const std::string context_utf8 = ToStlString(env, context);
   const CodepointSpan input_indices =
       ConvertIndicesBMPToUTF8(context_utf8, {selection_begin, selection_end});
+  const libtextclassifier3::ClassificationOptions classification_options =
+      FromJavaClassificationOptions(env, options);
   const std::vector<ClassificationResult> classification_result =
       ff_model->ClassifyText(context_utf8, input_indices,
-                             FromJavaClassificationOptions(env, options));
+                             classification_options);
 
-  return ClassificationResultsToJObjectArray(env, classification_result);
+  std::shared_ptr<libtextclassifier3::JniCache> jni_cache(
+      libtextclassifier3::JniCache::Create(env));
+  std::unique_ptr<libtextclassifier3::IntentGenerator> intent_generator(
+      new libtextclassifier3::IntentGenerator(
+          ff_model->ViewModel()->intent_options(), jni_cache, app_context));
+
+  libtextclassifier3::StringPiece selection_text(
+      context_utf8.data() + input_indices.first,
+      input_indices.second - input_indices.first);
+  return ClassificationResultsWithIntentsToJObjectArray(
+      env, intent_generator.get(), &classification_options, selection_text,
+      classification_result);
 }
 
 TC3_JNI_METHOD(jobjectArray, TC3_ANNOTATOR_CLASS_NAME, nativeAnnotate)

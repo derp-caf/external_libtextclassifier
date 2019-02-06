@@ -14,6 +14,7 @@
 // limitations under the License.
 //
 
+include "utils/named-extra.fbs";
 include "utils/zlib/buffer.fbs";
 
 file_identifier "TC3A";
@@ -85,6 +86,9 @@ table ActionSuggestionSpec {
 
   // Score.
   score:float;
+
+  // Extra information.
+  extra:[NamedVariant];
 }
 
 namespace libtextclassifier3.AnnotationActionsSpec_;
@@ -93,7 +97,7 @@ table AnnotationMapping {
   annotation_collection:string;
 
   // The action name to use.
-  action:libtextclassifier3.ActionSuggestionSpec;
+  action:ActionSuggestionSpec;
 
   // Whether to use the score of the annotation as the action score.
   use_annotation_score:bool = true;
@@ -105,7 +109,7 @@ table AnnotationMapping {
 // Configuration for actions based on annotatations.
 namespace libtextclassifier3;
 table AnnotationActionsSpec {
-  annotation_mapping:[libtextclassifier3.AnnotationActionsSpec_.AnnotationMapping];
+  annotation_mapping:[AnnotationActionsSpec_.AnnotationMapping];
 }
 
 // List of regular expression matchers.
@@ -114,16 +118,33 @@ table Rule {
   // The regular expression pattern.
   pattern:string;
 
-  compressed_pattern:libtextclassifier3.CompressedBuffer;
+  compressed_pattern:CompressedBuffer;
 
   // The actions to produce upon triggering.
-  actions:[libtextclassifier3.ActionSuggestionSpec];
+  actions:[ActionSuggestionSpec];
 }
 
 // Rule based actions.
 namespace libtextclassifier3;
 table RulesModel {
-  rule:[libtextclassifier3.RulesModel_.Rule];
+  rule:[RulesModel_.Rule];
+}
+
+// Describes how intents should be generated for a particular action type.
+namespace libtextclassifier3.ActionsIntentFactoryModel_;
+table IntentGenerator {
+  // The action type.
+  action_type:string;
+
+  // The template generator lua code, either as text source or precompiled
+  // bytecode.
+  lua_template_generator:[ubyte];
+}
+
+// Describes how intents for the various action types should be generated.
+namespace libtextclassifier3;
+table ActionsIntentFactoryModel {
+  action:[ActionsIntentFactoryModel_.IntentGenerator];
 }
 
 namespace libtextclassifier3;
@@ -137,15 +158,15 @@ table ActionsModel {
   // A name for the model that can be used e.g. for logging.
   name:string;
 
-  tflite_model_spec:libtextclassifier3.TensorflowLiteModelSpec;
+  tflite_model_spec:TensorflowLiteModelSpec;
 
   // Output classes.
   smart_reply_action_type:string;
 
-  action_type:[libtextclassifier3.ActionTypeOptions];
+  action_type:[ActionTypeOptions];
 
   // Triggering conditions of the model.
-  preconditions:libtextclassifier3.TriggeringPreconditions;
+  preconditions:TriggeringPreconditions;
 
   // Default number of smart reply predictions.
   num_smart_replies:int = 3;
@@ -154,10 +175,13 @@ table ActionsModel {
   max_conversation_history_length:int = 1;
 
   // Configuration for mapping annotations to action suggestions.
-  annotation_actions_spec:libtextclassifier3.AnnotationActionsSpec;
+  annotation_actions_spec:AnnotationActionsSpec;
 
   // Configuration for rules.
-  rules:libtextclassifier3.RulesModel;
+  rules:RulesModel;
+
+  // Configuration for intent generation on Android.
+  android_intent_options:ActionsIntentFactoryModel;
 }
 
 root_type libtextclassifier3.ActionsModel;

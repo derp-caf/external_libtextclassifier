@@ -27,9 +27,9 @@
 #include "utils/tflite/text_encoder_config_generated.h"
 #include "flatbuffers/flatbuffers.h"
 #include "flatbuffers/flexbuffers.h"
-#include "tensorflow/contrib/lite/kernels/kernel_util.h"
-#include "tensorflow/contrib/lite/model.h"
-#include "tensorflow/contrib/lite/string_util.h"
+#include "tensorflow/lite/kernels/kernel_util.h"
+#include "tensorflow/lite/model.h"
+#include "tensorflow/lite/string_util.h"
 
 namespace libtextclassifier3 {
 namespace {

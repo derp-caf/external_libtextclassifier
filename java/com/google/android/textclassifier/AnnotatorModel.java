@@ -73,6 +73,13 @@ public final class AnnotatorModel implements AutoCloseable {
     }
   }
 
+  /** Initializes the contact engine, passing the given serialized config to it. */
+  public void initializeContactEngine(byte[] serializedConfig) {
+    if (!nativeInitializeContactEngine(annotatorPtr, serializedConfig)) {
+      throw new IllegalArgumentException("Couldn't initialize the KG engine");
+    }
+  }
+
   /**
    * Given a string context and current selection, computes the selection suggestion.
    *
@@ -98,7 +105,20 @@ public final class AnnotatorModel implements AutoCloseable {
    */
   public ClassificationResult[] classifyText(
       String context, int selectionBegin, int selectionEnd, ClassificationOptions options) {
-    return nativeClassifyText(annotatorPtr, context, selectionBegin, selectionEnd, options);
+    return classifyText(context, selectionBegin, selectionEnd, options, /*appContext=*/ null);
+  }
+
+  public ClassificationResult[] classifyText(
+      String context,
+      int selectionBegin,
+      int selectionEnd,
+      ClassificationOptions options,
+
+      // Pass through android.content.Context object as Object as we cannot directly depend on
+      // android here.
+      Object appContext) {
+    return nativeClassifyText(
+        annotatorPtr, context, selectionBegin, selectionEnd, options, appContext);
   }
 
   /**
@@ -176,16 +196,34 @@ public final class AnnotatorModel implements AutoCloseable {
     private final float score;
     private final DatetimeResult datetimeResult;
     private final byte[] serializedKnowledgeResult;
+    private final String contactName;
+    private final String contactGivenName;
+    private final String contactNickname;
+    private final String contactEmailAddress;
+    private final String contactPhoneNumber;
+    private final RemoteActionTemplate[] remoteActionTemplates;
 
     public ClassificationResult(
         String collection,
         float score,
         DatetimeResult datetimeResult,
-        byte[] serializedKnowledgeResult) {
+        byte[] serializedKnowledgeResult,
+        String contactName,
+        String contactGivenName,
+        String contactNickname,
+        String contactEmailAddress,
+        String contactPhoneNumber,
+        RemoteActionTemplate[] remoteActionTemplates) {
       this.collection = collection;
       this.score = score;
       this.datetimeResult = datetimeResult;
       this.serializedKnowledgeResult = serializedKnowledgeResult;
+      this.contactName = contactName;
+      this.contactGivenName = contactGivenName;
+      this.contactNickname = contactNickname;
+      this.contactEmailAddress = contactEmailAddress;
+      this.contactPhoneNumber = contactPhoneNumber;
+      this.remoteActionTemplates = remoteActionTemplates;
     }
 
     /** Returns the classified entity type. */
@@ -214,6 +252,30 @@ public final class AnnotatorModel implements AutoCloseable {
 
     byte[] getSerializedKnowledgeResult() {
       return serializedKnowledgeResult;
+    }
+
+    String getContactName() {
+      return contactName;
+    }
+
+    String getContactGivenName() {
+      return contactGivenName;
+    }
+
+    String getContactNickname() {
+      return contactNickname;
+    }
+
+    String getContactEmailAddress() {
+      return contactEmailAddress;
+    }
+
+    String getContactPhoneNumber() {
+      return contactPhoneNumber;
+    }
+
+    public RemoteActionTemplate[] getRemoteActionTemplates() {
+      return remoteActionTemplates;
     }
   }
 
@@ -325,6 +387,8 @@ public final class AnnotatorModel implements AutoCloseable {
 
   private native boolean nativeInitializeKnowledgeEngine(long context, byte[] serializedConfig);
 
+  private native boolean nativeInitializeContactEngine(long context, byte[] serializedConfig);
+
   private native int[] nativeSuggestSelection(
       long context, String text, int selectionBegin, int selectionEnd, SelectionOptions options);
 
@@ -333,7 +397,8 @@ public final class AnnotatorModel implements AutoCloseable {
       String text,
       int selectionBegin,
       int selectionEnd,
-      ClassificationOptions options);
+      ClassificationOptions options,
+      Object appContext);
 
   private native AnnotatedSpan[] nativeAnnotate(
       long context, String text, AnnotationOptions options);

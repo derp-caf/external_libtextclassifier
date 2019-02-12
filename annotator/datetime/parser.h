@@ -56,6 +56,12 @@ class DatetimeParser {
              ModeFlag mode, bool anchor_start_end,
              std::vector<DatetimeParseResultSpan>* results) const;
 
+#ifdef TC3_TEST_ONLY
+  void TestOnlySetGenerateAlternativeInterpretationsWhenAmbiguous(bool value) {
+    generate_alternative_interpretations_when_ambiguous_ = value;
+  }
+#endif  // TC3_TEST_ONLY
+
  protected:
   DatetimeParser(const DatetimeModel* model, const UniLib& unilib,
                  const CalendarLib& calendarlib,
@@ -88,7 +94,7 @@ class DatetimeParser {
                        int64 reference_time_ms_utc,
                        const std::string& reference_timezone,
                        const std::string& reference_locale, int locale_id,
-                       DatetimeParseResult* result,
+                       std::vector<DatetimeParseResult>* results,
                        CodepointSpan* result_span) const;
 
   // Parse and extract information from current match in 'matcher'.
@@ -111,6 +117,7 @@ class DatetimeParser {
   std::unordered_map<std::string, int> locale_string_to_id_;
   std::vector<int> default_locale_ids_;
   bool use_extractors_for_locating_;
+  bool generate_alternative_interpretations_when_ambiguous_;
 };
 
 }  // namespace libtextclassifier3

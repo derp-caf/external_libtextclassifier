@@ -17,6 +17,7 @@
 #ifndef LIBTEXTCLASSIFIER_ACTIONS_ACTIONS_SUGGESTIONS_H_
 #define LIBTEXTCLASSIFIER_ACTIONS_ACTIONS_SUGGESTIONS_H_
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -27,6 +28,7 @@
 #include "utils/memory/mmap.h"
 #include "utils/tflite-model-executor.h"
 #include "utils/utf8/unilib.h"
+#include "utils/variant.h"
 #include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
@@ -62,6 +64,9 @@ struct ActionSuggestion {
 
   // The associated annotations.
   std::vector<ActionSuggestionAnnotation> annotations;
+
+  // Extras information.
+  std::map<std::string, Variant> extra;
 };
 
 // Actions suggestions result containing meta-information and the suggested
@@ -116,6 +121,7 @@ struct Conversation {
 struct ActionSuggestionOptions {
   // Options for annotation of the messages.
   AnnotationOptions annotation_options = AnnotationOptions::Default();
+  bool ignore_min_replies_triggering_threshold = false;
 
   static ActionSuggestionOptions Default() { return ActionSuggestionOptions(); }
 };
@@ -150,6 +156,8 @@ class ActionsSuggestions {
   // Provide an annotator.
   void SetAnnotator(const Annotator* annotator);
 
+  float GetMinRepliesTriggeringThreshold() const;
+
   // Should be in sync with those defined in Android.
   // android/frameworks/base/core/java/android/view/textclassifier/ConversationActions.java
   static const std::string& kViewCalendarType;
@@ -177,10 +185,12 @@ class ActionsSuggestions {
                        const int num_suggestions,
                        tflite::Interpreter* interpreter) const;
   void ReadModelOutput(tflite::Interpreter* interpreter,
+                       const ActionSuggestionOptions& options,
                        ActionsSuggestionsResponse* response) const;
 
   void SuggestActionsFromModel(const Conversation& conversation,
                                const int num_messages,
+                               const ActionSuggestionOptions& options,
                                ActionsSuggestionsResponse* response) const;
 
   void SuggestActionsFromAnnotations(
@@ -206,7 +216,7 @@ class ActionsSuggestions {
 
   // Rules.
   struct CompiledRule {
-    int rule_id;
+    const RulesModel_::Rule* rule;
     std::unique_ptr<UniLib::RegexPattern> pattern;
   };
   std::vector<CompiledRule> rules_;
@@ -217,6 +227,23 @@ class ActionsSuggestions {
 
 // Interprets the buffer as a Model flatbuffer and returns it for reading.
 const ActionsModel* ViewActionsModel(const void* buffer, int size);
+
+// Opens model from given path and runs a function, passing the loaded Model
+// flatbuffer as an argument.
+//
+// This is mainly useful if we don't want to pay the cost for the model
+// initialization because we'll be only reading some flatbuffer values from the
+// file.
+template <typename ReturnType, typename Func>
+ReturnType VisitActionsModel(const std::string& path, Func function) {
+  ScopedMmap mmap(path);
+  if (!mmap.handle().ok()) {
+    function(/*model=*/nullptr);
+  }
+  const ActionsModel* model =
+      ViewActionsModel(mmap.handle().start(), mmap.handle().num_bytes());
+  return function(model);
+}
 
 }  // namespace libtextclassifier3
 

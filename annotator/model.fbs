@@ -173,6 +173,14 @@ table VerificationOptions {
   verify_luhn_checksum:bool = false;
 }
 
+// Behaviour of capturing groups.
+namespace libtextclassifier3.RegexModel_.Pattern_;
+table CapturingGroup {
+  // If true, the span of the capturing group will be used to
+  // extend the selection.
+  extend_selection:bool = true;
+}
+
 // List of regular expression matchers to check.
 namespace libtextclassifier3.RegexModel_;
 table Pattern {
@@ -180,11 +188,10 @@ table Pattern {
   collection_name:string;
 
   // The pattern to check.
-  // Can specify a single capturing group used as match boundaries.
   pattern:string;
 
   // The modes for which to apply the patterns.
-  enabled_modes:libtextclassifier3.ModeFlag = ALL;
+  enabled_modes:ModeFlag = ALL;
 
   // The final score to assign to the results of this pattern.
   target_classification_score:float = 1;
@@ -197,15 +204,17 @@ table Pattern {
   // use the first Find() result and then check that it spans the whole input.
   use_approximate_matching:bool = false;
 
-  compressed_pattern:libtextclassifier3.CompressedBuffer;
+  compressed_pattern:CompressedBuffer;
 
   // Verification to apply on a match.
-  verification_options:libtextclassifier3.VerificationOptions;
+  verification_options:VerificationOptions;
+
+  capturing_group:[Pattern_.CapturingGroup];
 }
 
 namespace libtextclassifier3;
 table RegexModel {
-  patterns:[libtextclassifier3.RegexModel_.Pattern];
+  patterns:[RegexModel_.Pattern];
 }
 
 // List of regex patterns.
@@ -215,14 +224,14 @@ table Regex {
 
   // The ith entry specifies the type of the ith capturing group.
   // This is used to decide how the matched content has to be parsed.
-  groups:[libtextclassifier3.DatetimeGroupType];
+  groups:[DatetimeGroupType];
 
-  compressed_pattern:libtextclassifier3.CompressedBuffer;
+  compressed_pattern:CompressedBuffer;
 }
 
 namespace libtextclassifier3;
 table DatetimeModelPattern {
-  regexes:[libtextclassifier3.DatetimeModelPattern_.Regex];
+  regexes:[DatetimeModelPattern_.Regex];
 
   // List of locale indices in DatetimeModel that represent the locales that
   // these patterns should be used for. If empty, can be used for all locales.
@@ -235,15 +244,15 @@ table DatetimeModelPattern {
   priority_score:float = 0;
 
   // The modes for which to apply the patterns.
-  enabled_modes:libtextclassifier3.ModeFlag = ALL;
+  enabled_modes:ModeFlag = ALL;
 }
 
 namespace libtextclassifier3;
 table DatetimeModelExtractor {
-  extractor:libtextclassifier3.DatetimeExtractorType;
+  extractor:DatetimeExtractorType;
   pattern:string;
   locales:[int];
-  compressed_pattern:libtextclassifier3.CompressedBuffer;
+  compressed_pattern:CompressedBuffer;
 }
 
 namespace libtextclassifier3;
@@ -252,8 +261,8 @@ table DatetimeModel {
   // model. The individual patterns refer back to them using an index.
   locales:[string];
 
-  patterns:[libtextclassifier3.DatetimeModelPattern];
-  extractors:[libtextclassifier3.DatetimeModelExtractor];
+  patterns:[DatetimeModelPattern];
+  extractors:[DatetimeModelExtractor];
 
   // If true, will use the extractors for determining the match location as
   // opposed to using the location where the global pattern matched.
@@ -262,18 +271,22 @@ table DatetimeModel {
   // List of locale ids, rules of whose are always run, after the requested
   // ones.
   default_locales:[int];
+
+  // If true, will generate the alternative interpretations for ambiguous
+  // datetime expressions.
+  generate_alternative_interpretations_when_ambiguous:bool = false;
 }
 
 namespace libtextclassifier3.DatetimeModelLibrary_;
 table Item {
   key:string;
-  value:libtextclassifier3.DatetimeModel;
+  value:DatetimeModel;
 }
 
 // A set of named DateTime models.
 namespace libtextclassifier3;
 table DatetimeModelLibrary {
-  models:[libtextclassifier3.DatetimeModelLibrary_.Item];
+  models:[DatetimeModelLibrary_.Item];
 }
 
 // Options controlling the output of the Tensorflow Lite models.
@@ -283,7 +296,7 @@ table ModelTriggeringOptions {
   min_annotate_confidence:float = 0;
 
   // The modes for which to enable the models.
-  enabled_modes:libtextclassifier3.ModeFlag = ALL;
+  enabled_modes:ModeFlag = ALL;
 }
 
 // Options controlling the output of the classifier.
@@ -310,8 +323,8 @@ table Model {
   // A name for the model that can be used for e.g. logging.
   name:string;
 
-  selection_feature_options:libtextclassifier3.FeatureProcessorOptions;
-  classification_feature_options:libtextclassifier3.FeatureProcessorOptions;
+  selection_feature_options:FeatureProcessorOptions;
+  classification_feature_options:FeatureProcessorOptions;
 
   // Tensorflow Lite models.
   selection_model:[ubyte] (force_align: 16);
@@ -320,18 +333,18 @@ table Model {
   embedding_model:[ubyte] (force_align: 16);
 
   // Options for the different models.
-  selection_options:libtextclassifier3.SelectionModelOptions;
+  selection_options:SelectionModelOptions;
 
-  classification_options:libtextclassifier3.ClassificationModelOptions;
-  regex_model:libtextclassifier3.RegexModel;
-  datetime_model:libtextclassifier3.DatetimeModel;
+  classification_options:ClassificationModelOptions;
+  regex_model:RegexModel;
+  datetime_model:DatetimeModel;
 
   // Options controlling the output of the models.
-  triggering_options:libtextclassifier3.ModelTriggeringOptions;
+  triggering_options:ModelTriggeringOptions;
 
   // Global switch that controls if SuggestSelection(), ClassifyText() and
   // Annotate() will run. If a mode is disabled it returns empty/no-op results.
-  enabled_modes:libtextclassifier3.ModeFlag = ALL;
+  enabled_modes:ModeFlag = ALL;
 
   // If true, will snap the selections that consist only of whitespaces to the
   // containing suggested span. Otherwise, no suggestion is proposed, since the
@@ -340,13 +353,13 @@ table Model {
 
   // Global configuration for the output of SuggestSelection(), ClassifyText()
   // and Annotate().
-  output_options:libtextclassifier3.OutputOptions;
+  output_options:OutputOptions;
 
   // Configures how Intents should be generated on Android.
   // TODO(smillius): Remove deprecated factory options.
-  android_intent_options:libtextclassifier3.AndroidIntentFactoryOptions;
+  android_intent_options:AndroidIntentFactoryOptions;
 
-  intent_options:libtextclassifier3.IntentFactoryModel;
+  intent_options:IntentFactoryModel;
 }
 
 // Role of the codepoints in the range.
@@ -379,7 +392,7 @@ namespace libtextclassifier3;
 table TokenizationCodepointRange {
   start:int;
   end:int;
-  role:libtextclassifier3.TokenizationCodepointRange_.Role;
+  role:TokenizationCodepointRange_.Role;
 
   // Integer identifier of the script this range denotes. Negative values are
   // reserved for Tokenizer's internal use.
@@ -530,20 +543,20 @@ table FeatureProcessorOptions {
 
   // Codepoint ranges that determine how different codepoints are tokenized.
   // The ranges must not overlap.
-  tokenization_codepoint_config:[libtextclassifier3.TokenizationCodepointRange];
+  tokenization_codepoint_config:[TokenizationCodepointRange];
 
-  center_token_selection_method:libtextclassifier3.FeatureProcessorOptions_.CenterTokenSelectionMethod;
+  center_token_selection_method:FeatureProcessorOptions_.CenterTokenSelectionMethod;
 
   // If true, span boundaries will be snapped to containing tokens and not
   // required to exactly match token boundaries.
   snap_label_span_boundaries_to_containing_tokens:bool;
 
   // A set of codepoint ranges supported by the model.
-  supported_codepoint_ranges:[libtextclassifier3.FeatureProcessorOptions_.CodepointRange];
+  supported_codepoint_ranges:[FeatureProcessorOptions_.CodepointRange];
 
   // A set of codepoint ranges to use in the mixed tokenization mode to identify
   // stretches of tokens to re-tokenize using the internal tokenizer.
-  internal_tokenizer_codepoint_ranges:[libtextclassifier3.FeatureProcessorOptions_.CodepointRange];
+  internal_tokenizer_codepoint_ranges:[FeatureProcessorOptions_.CodepointRange];
 
   // Minimum ratio of supported codepoints in the input context. If the ratio
   // is lower than this, the feature computation will fail.
@@ -559,14 +572,14 @@ table FeatureProcessorOptions {
   // to it. So the resulting feature vector has two regions.
   feature_version:int = 0;
 
-  tokenization_type:libtextclassifier3.FeatureProcessorOptions_.TokenizationType = INTERNAL_TOKENIZER;
+  tokenization_type:FeatureProcessorOptions_.TokenizationType = INTERNAL_TOKENIZER;
   icu_preserve_whitespace_tokens:bool = false;
 
   // List of codepoints that will be stripped from beginning and end of
   // predicted spans.
   ignored_span_boundary_codepoints:[int];
 
-  bounds_sensitive_features:libtextclassifier3.FeatureProcessorOptions_.BoundsSensitiveFeatures;
+  bounds_sensitive_features:FeatureProcessorOptions_.BoundsSensitiveFeatures;
 
   // List of allowed charactergrams. The extracted charactergrams are filtered
   // using this list, and charactergrams that are not present are interpreted as

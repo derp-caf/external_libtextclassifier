@@ -103,6 +103,8 @@ DatetimeParser::DatetimeParser(const DatetimeModel* model, const UniLib& unilib,
   }
 
   use_extractors_for_locating_ = model->use_extractors_for_locating();
+  generate_alternative_interpretations_when_ambiguous_ =
+      model->generate_alternative_interpretations_when_ambiguous();
 
   initialized_ = true;
 }
@@ -168,10 +170,9 @@ bool DatetimeParser::Parse(
   }
 
   std::vector<std::pair<DatetimeParseResultSpan, int>> indexed_found_spans;
-  int counter = 0;
-  for (const auto& found_span : found_spans) {
-    indexed_found_spans.push_back({found_span, counter});
-    counter++;
+  indexed_found_spans.reserve(found_spans.size());
+  for (int i = 0; i < found_spans.size(); i++) {
+    indexed_found_spans.push_back({found_spans[i], i});
   }
 
   // Resolve conflicts by always picking the longer span and breaking ties by
@@ -224,21 +225,28 @@ bool DatetimeParser::HandleParseMatch(
   }
 
   DatetimeParseResultSpan parse_result;
+  std::vector<DatetimeParseResult> alternatives;
   if (!ExtractDatetime(rule, matcher, reference_time_ms_utc, reference_timezone,
-                       reference_locale, locale_id, &(parse_result.data),
+                       reference_locale, locale_id, &alternatives,
                        &parse_result.span)) {
     return false;
   }
+
   if (!use_extractors_for_locating_) {
     parse_result.span = {start, end};
   }
+
   if (parse_result.span.first != kInvalidIndex &&
       parse_result.span.second != kInvalidIndex) {
     parse_result.target_classification_score =
         rule.pattern->target_classification_score();
     parse_result.priority_score = rule.pattern->priority_score();
-    result->push_back(parse_result);
+
+    for (DatetimeParseResult& alternative : alternatives) {
+      parse_result.data.push_back(alternative);
+    }
   }
+  result->push_back(parse_result);
   return true;
 }
 
@@ -375,6 +383,49 @@ DatetimeGranularity GetGranularity(const DateParseData& data) {
   return granularity;
 }
 
+void FillInterpretations(const DateParseData& parse,
+                         std::vector<DateParseData>* interpretations) {
+  DatetimeGranularity granularity = GetGranularity(parse);
+
+  // Multiple interpretations of ambiguous datetime expressions are generated
+  // here.
+  if (granularity > DatetimeGranularity::GRANULARITY_DAY && parse.hour <= 12 &&
+      (parse.field_set_mask & DateParseData::Fields::AMPM_FIELD) == 0) {
+    // If it's not clear if the time is AM or PM, generate all variants.
+    interpretations->push_back(parse);
+    interpretations->back().field_set_mask |= DateParseData::Fields::AMPM_FIELD;
+    interpretations->back().ampm = DateParseData::AMPM::AM;
+
+    interpretations->push_back(parse);
+    interpretations->back().field_set_mask |= DateParseData::Fields::AMPM_FIELD;
+    interpretations->back().ampm = DateParseData::AMPM::PM;
+  } else if (((parse.field_set_mask &
+               DateParseData::Fields::RELATION_TYPE_FIELD) != 0) &&
+             ((parse.field_set_mask & DateParseData::Fields::RELATION_FIELD) ==
+              0)) {
+    // If it's not clear if it's this monday next monday or last monday,
+    // generate
+    // all variants.
+    interpretations->push_back(parse);
+    interpretations->back().field_set_mask |=
+        DateParseData::Fields::RELATION_FIELD;
+    interpretations->back().relation = DateParseData::Relation::LAST;
+
+    interpretations->push_back(parse);
+    interpretations->back().field_set_mask |=
+        DateParseData::Fields::RELATION_FIELD;
+    interpretations->back().relation = DateParseData::Relation::NEXT;
+
+    interpretations->push_back(parse);
+    interpretations->back().field_set_mask |=
+        DateParseData::Fields::RELATION_FIELD;
+    interpretations->back().relation = DateParseData::Relation::NEXT_OR_SAME;
+  } else {
+    // Otherwise just generate 1 variant.
+    interpretations->push_back(parse);
+  }
+}
+
 }  // namespace
 
 bool DatetimeParser::ExtractDatetime(const CompiledRule& rule,
@@ -382,7 +433,8 @@ bool DatetimeParser::ExtractDatetime(const CompiledRule& rule,
                                      const int64 reference_time_ms_utc,
                                      const std::string& reference_timezone,
                                      const std::string& reference_locale,
-                                     int locale_id, DatetimeParseResult* result,
+                                     int locale_id,
+                                     std::vector<DatetimeParseResult>* results,
                                      CodepointSpan* result_span) const {
   DateParseData parse;
   DatetimeExtractor extractor(rule, matcher, locale_id, unilib_,
@@ -392,14 +444,24 @@ bool DatetimeParser::ExtractDatetime(const CompiledRule& rule,
     return false;
   }
 
-  result->granularity = GetGranularity(parse);
-
-  if (!calendarlib_.InterpretParseData(
-          parse, reference_time_ms_utc, reference_timezone, reference_locale,
-          result->granularity, &(result->time_ms_utc))) {
-    return false;
+  std::vector<DateParseData> interpretations;
+  if (generate_alternative_interpretations_when_ambiguous_) {
+    FillInterpretations(parse, &interpretations);
+  } else {
+    interpretations.push_back(parse);
   }
 
+  results->reserve(results->size() + interpretations.size());
+  for (const DateParseData& interpretation : interpretations) {
+    DatetimeParseResult result;
+    result.granularity = GetGranularity(interpretation);
+    if (!calendarlib_.InterpretParseData(
+            interpretation, reference_time_ms_utc, reference_timezone,
+            reference_locale, result.granularity, &(result.time_ms_utc))) {
+      return false;
+    }
+    results->push_back(result);
+  }
   return true;
 }
 

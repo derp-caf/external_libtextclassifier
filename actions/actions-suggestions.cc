@@ -17,7 +17,7 @@
 #include "actions/actions-suggestions.h"
 #include "utils/base/logging.h"
 #include "utils/utf8/unicodetext.h"
-#include "tensorflow/contrib/lite/string_util.h"
+#include "tensorflow/lite/string_util.h"
 
 namespace libtextclassifier3 {
 
@@ -192,9 +192,7 @@ bool ActionsSuggestions::InitializeRules(ZlibDecompressor* decompressor) {
     return true;
   }
 
-  const int num_rules = model_->rules()->rule()->size();
-  for (int i = 0; i < num_rules; i++) {
-    const auto* rule = model_->rules()->rule()->Get(i);
+  for (const RulesModel_::Rule* rule : *model_->rules()->rule()) {
     std::unique_ptr<UniLib::RegexPattern> compiled_pattern =
         UncompressMakeRegexPattern(*unilib_, rule->pattern(),
                                    rule->compressed_pattern(), decompressor);
@@ -202,7 +200,7 @@ bool ActionsSuggestions::InitializeRules(ZlibDecompressor* decompressor) {
       TC3_LOG(ERROR) << "Failed to load rule pattern.";
       return false;
     }
-    rules_.push_back({/*rule_id=*/i, std::move(compiled_pattern)});
+    rules_.push_back({rule, std::move(compiled_pattern)});
   }
 
   return true;
@@ -259,7 +257,7 @@ void ActionsSuggestions::SetupModelInput(
 }
 
 void ActionsSuggestions::ReadModelOutput(
-    tflite::Interpreter* interpreter,
+    tflite::Interpreter* interpreter, const ActionSuggestionOptions& options,
     ActionsSuggestionsResponse* response) const {
   // Read sensitivity and triggering score predictions.
   if (model_->tflite_model_spec()->output_triggering_score() >= 0) {
@@ -273,6 +271,7 @@ void ActionsSuggestions::ReadModelOutput(
     }
     response->triggering_score = triggering_score.data()[0];
     response->output_filtered_min_triggering_score =
+        !options.ignore_min_replies_triggering_threshold &&
         (response->triggering_score <
          model_->preconditions()->min_smart_reply_triggering_score());
   }
@@ -336,6 +335,7 @@ void ActionsSuggestions::ReadModelOutput(
 
 void ActionsSuggestions::SuggestActionsFromModel(
     const Conversation& conversation, const int num_messages,
+    const ActionSuggestionOptions& options,
     ActionsSuggestionsResponse* response) const {
   TC3_CHECK_LE(num_messages, conversation.messages.size());
 
@@ -393,7 +393,7 @@ void ActionsSuggestions::SuggestActionsFromModel(
     return;
   }
 
-  ReadModelOutput(interpreter.get(), response);
+  ReadModelOutput(interpreter.get(), options, response);
 }
 
 void ActionsSuggestions::SuggestActionsFromAnnotations(
@@ -442,10 +442,13 @@ void ActionsSuggestions::CreateActionsFromAnnotationResult(
       const float score =
           (mapping->use_annotation_score() ? classification_result.score
                                            : mapping->action()->score());
-      suggestions->actions.push_back({/*response_text=*/"",
-                                      /*type=*/mapping->action()->type()->str(),
-                                      /*score=*/score,
-                                      /*annotations=*/{suggestion_annotation}});
+      suggestions->actions.push_back({
+          /*response_text=*/"",
+          /*type=*/mapping->action()->type()->str(),
+          /*score=*/score,
+          /*annotations=*/{suggestion_annotation},
+          /*extra=*/AsVariantMap(mapping->action()->extra()),
+      });
     }
   }
 }
@@ -457,21 +460,21 @@ void ActionsSuggestions::SuggestActionsFromRules(
   const std::string& message = conversation.messages.back().text;
   const UnicodeText message_unicode(
       UTF8ToUnicodeText(message, /*do_copy=*/false));
-  for (int i = 0; i < rules_.size(); i++) {
+  for (const CompiledRule& rule : rules_) {
     const std::unique_ptr<UniLib::RegexMatcher> matcher =
-        rules_[i].pattern->Matcher(message_unicode);
+        rule.pattern->Matcher(message_unicode);
     int status = UniLib::RegexMatcher::kNoError;
     if (matcher->Find(&status) && status == UniLib::RegexMatcher::kNoError) {
-      const auto actions =
-          model_->rules()->rule()->Get(rules_[i].rule_id)->actions();
-      for (int k = 0; k < actions->size(); k++) {
-        const ActionSuggestionSpec* action = actions->Get(k);
-        suggestions->actions.push_back(
-            {/*response_text=*/(action->response_text() != nullptr
-                                    ? action->response_text()->str()
-                                    : ""),
-             /*type=*/action->type()->str(),
-             /*score=*/action->score()});
+      for (const ActionSuggestionSpec* action : *rule.rule->actions()) {
+        suggestions->actions.push_back({
+            /*response_text=*/(action->response_text() != nullptr
+                                   ? action->response_text()->str()
+                                   : ""),
+            /*type=*/action->type()->str(),
+            /*score=*/action->score(),
+            /*annotations=*/{},
+            /*extra=*/AsVariantMap(action->extra()),
+        });
       }
     }
   }
@@ -515,7 +518,7 @@ ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
 
   SuggestActionsFromRules(conversation, &response);
 
-  SuggestActionsFromModel(conversation, num_messages, &response);
+  SuggestActionsFromModel(conversation, num_messages, options, &response);
 
   // Suppress all predictions if the conversation was deemed sensitive.
   if (model_->preconditions()->suppress_on_sensitive_topic() &&
@@ -534,6 +537,10 @@ ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
     const Conversation& conversation,
     const ActionSuggestionOptions& options) const {
   return SuggestActions(conversation, /*annotator=*/nullptr, options);
+}
+
+float ActionsSuggestions::GetMinRepliesTriggeringThreshold() const {
+  return model_->preconditions()->min_smart_reply_triggering_score();
 }
 
 const ActionsModel* ViewActionsModel(const void* buffer, int size) {

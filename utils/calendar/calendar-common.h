@@ -131,6 +131,9 @@ bool CalendarLibTempl<TCalendar>::ApplyRelationField(
   constexpr int relation_distance_mask =
       DateParseData::Fields::RELATION_DISTANCE_FIELD;
   switch (parse_data.relation) {
+    case DateParseData::Relation::UNSPECIFIED:
+      TC3_LOG(ERROR) << "UNSPECIFIED RelationType.";
+      return false;
     case DateParseData::Relation::NEXT:
       if (parse_data.field_set_mask & relation_type_mask) {
         TC3_CALENDAR_CHECK(AdjustByRelation(parse_data.relation_type,
@@ -226,13 +229,13 @@ bool CalendarLibTempl<TCalendar>::AdjustByRelation(
     TCalendar* calendar) const {
   const int distance_sign = distance < 0 ? -1 : 1;
   switch (relation_type) {
-    case DateParseData::MONDAY:
-    case DateParseData::TUESDAY:
-    case DateParseData::WEDNESDAY:
-    case DateParseData::THURSDAY:
-    case DateParseData::FRIDAY:
-    case DateParseData::SATURDAY:
-    case DateParseData::SUNDAY:
+    case DateParseData::RelationType::MONDAY:
+    case DateParseData::RelationType::TUESDAY:
+    case DateParseData::RelationType::WEDNESDAY:
+    case DateParseData::RelationType::THURSDAY:
+    case DateParseData::RelationType::FRIDAY:
+    case DateParseData::RelationType::SATURDAY:
+    case DateParseData::RelationType::SUNDAY:
       if (!allow_today) {
         // If we're not including the same day as the reference, skip it.
         TC3_CALENDAR_CHECK(calendar->AddDayOfMonth(distance_sign))
@@ -241,25 +244,25 @@ bool CalendarLibTempl<TCalendar>::AdjustByRelation(
       while (distance != 0) {
         int day_of_week;
         TC3_CALENDAR_CHECK(calendar->GetDayOfWeek(&day_of_week))
-        if (day_of_week == relation_type) {
+        if (day_of_week == static_cast<int>(relation_type)) {
           distance += -distance_sign;
           if (distance == 0) break;
         }
         TC3_CALENDAR_CHECK(calendar->AddDayOfMonth(distance_sign))
       }
       return true;
-    case DateParseData::DAY:
+    case DateParseData::RelationType::DAY:
       TC3_CALENDAR_CHECK(calendar->AddDayOfMonth(distance));
       return true;
-    case DateParseData::WEEK:
+    case DateParseData::RelationType::WEEK:
       TC3_CALENDAR_CHECK(calendar->AddDayOfMonth(7 * distance))
       TC3_CALENDAR_CHECK(calendar->SetDayOfWeek(1))
       return true;
-    case DateParseData::MONTH:
+    case DateParseData::RelationType::MONTH:
       TC3_CALENDAR_CHECK(calendar->AddMonth(distance))
       TC3_CALENDAR_CHECK(calendar->SetDayOfMonth(1))
       return true;
-    case DateParseData::YEAR:
+    case DateParseData::RelationType::YEAR:
       TC3_CALENDAR_CHECK(calendar->AddYear(distance))
       TC3_CALENDAR_CHECK(calendar->SetDayOfYear(1))
       return true;

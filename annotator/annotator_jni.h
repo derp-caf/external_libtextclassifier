@@ -42,13 +42,17 @@ TC3_JNI_METHOD(jboolean, TC3_ANNOTATOR_CLASS_NAME,
                nativeInitializeKnowledgeEngine)
 (JNIEnv* env, jobject thiz, jlong ptr, jbyteArray serialized_config);
 
+TC3_JNI_METHOD(jboolean, TC3_ANNOTATOR_CLASS_NAME,
+               nativeInitializeContactEngine)
+(JNIEnv* env, jobject thiz, jlong ptr, jbyteArray serialized_config);
+
 TC3_JNI_METHOD(jintArray, TC3_ANNOTATOR_CLASS_NAME, nativeSuggestSelection)
 (JNIEnv* env, jobject thiz, jlong ptr, jstring context, jint selection_begin,
  jint selection_end, jobject options);
 
 TC3_JNI_METHOD(jobjectArray, TC3_ANNOTATOR_CLASS_NAME, nativeClassifyText)
 (JNIEnv* env, jobject thiz, jlong ptr, jstring context, jint selection_begin,
- jint selection_end, jobject options);
+ jint selection_end, jobject options, jobject app_context);
 
 TC3_JNI_METHOD(jobjectArray, TC3_ANNOTATOR_CLASS_NAME, nativeAnnotate)
 (JNIEnv* env, jobject thiz, jlong ptr, jstring context, jobject options);

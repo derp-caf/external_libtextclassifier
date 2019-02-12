@@ -17,9 +17,9 @@
 #include "utils/tflite/dist_diversification.h"
 
 #include <algorithm>
-#include "tensorflow/contrib/lite/context.h"
-#include "tensorflow/contrib/lite/kernels/kernel_util.h"
-#include "tensorflow/contrib/lite/model.h"
+#include "tensorflow/lite/context.h"
+#include "tensorflow/lite/kernels/kernel_util.h"
+#include "tensorflow/lite/model.h"
 
 namespace libtextclassifier3 {
 namespace {

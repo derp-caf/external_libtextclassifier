@@ -62,7 +62,6 @@ class StringPiece {
 
   // Returns number of bytes of underlying data.
   size_t size() const { return size_; }
-  size_t length() const { return size_; }
 
   // Returns true if this StringPiece does not refer to any characters.
   bool empty() const { return size() == 0; }

@@ -21,13 +21,13 @@
 
 #include <memory>
 
+#include "tensorflow/lite/interpreter.h"
+#include "tensorflow/lite/kernels/register.h"
+#include "tensorflow/lite/model.h"
+#include "tensorflow/lite/op_resolver.h"
+#include "tensorflow/lite/string_util.h"
 #include "utils/base/logging.h"
 #include "utils/tensor-view.h"
-#include "tensorflow/contrib/lite/interpreter.h"
-#include "tensorflow/contrib/lite/kernels/register.h"
-#include "tensorflow/contrib/lite/model.h"
-#include "tensorflow/contrib/lite/op_resolver.h"
-#include "tensorflow/contrib/lite/string_util.h"
 
 namespace libtextclassifier3 {
 

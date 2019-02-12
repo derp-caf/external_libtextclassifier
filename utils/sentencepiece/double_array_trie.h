@@ -20,6 +20,7 @@
 #include <functional>
 #include <vector>
 
+#include "utils/base/endian.h"
 #include "utils/sentencepiece/matcher.h"
 #include "utils/strings/stringpiece.h"
 
@@ -32,6 +33,8 @@ namespace libtextclassifier3 {
 // An intermediate node has an associated label and an offset to it's children.
 // The label is encoded in the least significant byte and must match the input
 // character during matching.
+// We account for endianness when using the node values, as they are serialized
+// (in little endian) as bytes in the flatbuffer model.
 typedef unsigned int TrieNode;
 
 // A memory mappable trie, compatible with Darts::DoubleArray.
@@ -42,28 +45,34 @@ class DoubleArrayTrie : public SentencePieceMatcher {
       : nodes_(nodes), nodes_length_(nodes_length) {}
 
   // Find matches that are prefixes of a string.
-  std::vector<TrieMatch> FindAllPrefixMatches(StringPiece input) const override;
-
+  bool FindAllPrefixMatches(StringPiece input,
+                            std::vector<TrieMatch>* matches) const override;
   // Find the longest prefix match of a string.
-  TrieMatch LongestPrefixMatch(StringPiece input) const override;
+  bool LongestPrefixMatch(StringPiece input,
+                          TrieMatch* longest_match) const override;
 
  private:
   // Returns whether a node as a leaf as a child.
-  bool has_leaf(int i) const { return nodes_[i] & 0x100; }
+  bool has_leaf(unsigned int i) const { return nodes_[i] & 0x100; }
 
   // Available when a node is a leaf.
-  int value(int i) const { return static_cast<int>(nodes_[i] & 0x7fffffff); }
+  int value(unsigned int i) const {
+    return static_cast<int>(LittleEndian::ToHost32(nodes_[i]) & 0x7fffffff);
+  }
 
   // Label associated with a node.
   // A leaf node will have the MSB set and thus return an invalid label.
-  unsigned int label(int i) const { return nodes_[i] & 0x800000ff; }
-
-  // Returns offset to children.
-  unsigned int offset(int i) const {
-    return (nodes_[i] >> 10) << ((nodes_[i] & 0x200) >> 6);
+  unsigned int label(unsigned int i) const {
+    return LittleEndian::ToHost32(nodes_[i]) & 0x800000ff;
   }
 
-  void GatherPrefixMatches(
+  // Returns offset to children.
+  unsigned int offset(unsigned int i) const {
+    const unsigned int node = LittleEndian::ToHost32(nodes_[i]);
+    return (node >> 10) << ((node & 0x200) >> 6);
+  }
+
+  bool GatherPrefixMatches(
       StringPiece input, const std::function<void(TrieMatch)>& update_fn) const;
 
   const TrieNode* nodes_;

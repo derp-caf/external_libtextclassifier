@@ -123,3 +123,12 @@ TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetVersionFromFd)
   }
   return lang_id->GetModelVersion();
 }
+
+TC3_JNI_METHOD(jfloat, TC3_LANG_ID_CLASS_NAME, nativeGetTranslateThreshold)
+(JNIEnv* env, jobject thizz, jlong ptr) {
+  if (!ptr) {
+    return -1.0;
+  }
+  LangId* model = reinterpret_cast<LangId*>(ptr);
+  return model->GetFloatProperty("text_classifier_translate_threshold", -1.0);
+}

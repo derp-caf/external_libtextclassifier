@@ -29,6 +29,7 @@ namespace libtextclassifier3 {
 namespace {
 static const int kEnvIndex = 1;
 static const int kCallbackIdIndex = 2;
+static const int kStateIndex = 3;
 
 static const luaL_Reg defaultlibs[] = {{"_G", luaopen_base},
                                        {LUA_TABLIBNAME, luaopen_table},
@@ -52,7 +53,8 @@ int LuaEnvironment::CallbackDispatch(lua_State *state) {
       lua_touserdata(state, lua_upvalueindex(kEnvIndex)));
   TC3_CHECK_EQ(env->state_, state);
   int callback_id = lua_tointeger(state, lua_upvalueindex(kCallbackIdIndex));
-  return env->HandleCallback(callback_id);
+  void *callback_arg = lua_touserdata(state, lua_upvalueindex(kStateIndex));
+  return env->HandleCallback(callback_id, callback_arg);
 }
 
 LuaEnvironment::LuaEnvironment() { state_ = luaL_newstate(); }
@@ -63,17 +65,19 @@ LuaEnvironment::~LuaEnvironment() {
   }
 }
 
-void LuaEnvironment::PushCallback(int callback_id) {
+void LuaEnvironment::PushCallback(const int callback_id, void *callback_arg) {
   lua_pushlightuserdata(state_, static_cast<void *>(this));
   lua_pushnumber(state_, callback_id);
-  lua_pushcclosure(state_, CallbackDispatch, 2);
+  lua_pushlightuserdata(state_, callback_arg);
+  lua_pushcclosure(state_, CallbackDispatch, 3);
 }
 
 void LuaEnvironment::SetupTableLookupCallback(const char *name,
-                                              int callback_id) {
+                                              const int callback_id,
+                                              void *callback_arg) {
   lua_newtable(state_);
   luaL_newmetatable(state_, name);
-  PushCallback(callback_id);
+  PushCallback(callback_id, callback_arg);
   lua_setfield(state_, -2, "__index");
   lua_setmetatable(state_, -2);
 }
@@ -90,12 +94,25 @@ void LuaEnvironment::PushValue(const Variant &value) {
   } else if (value.HasDouble()) {
     lua_pushnumber(state_, value.DoubleValue());
   } else if (value.HasString()) {
-    lua_pushstring(state_, value.StringValue().data());
+    lua_pushlstring(state_, value.StringValue().data(),
+                    value.StringValue().size());
   } else {
     TC3_LOG(FATAL) << "Unknown value type.";
   }
 }
 
-int LuaEnvironment::HandleCallback(int callback_id) { return LUA_ERRRUN; }
+StringPiece LuaEnvironment::ReadString(const int index) const {
+  size_t length = 0;
+  const char *data = lua_tolstring(state_, index, &length);
+  return StringPiece(data, length);
+}
+
+void LuaEnvironment::PushString(const StringPiece str) {
+  lua_pushlstring(state_, str.data(), str.size());
+}
+
+int LuaEnvironment::HandleCallback(int callback_id, void *callback_arg) {
+  return LUA_ERRRUN;
+}
 
 }  // namespace libtextclassifier3

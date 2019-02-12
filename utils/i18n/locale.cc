@@ -22,7 +22,14 @@ namespace libtextclassifier3 {
 
 namespace {
 
+// BCP 47 code for "Undetermined Language".
+constexpr const char* kUnknownLanguageCode = "und";
+
 bool CheckLanguage(StringPiece language) {
+  if (language.size() == 1 && language.data()[0] == '*') {
+    return true;
+  }
+
   if (language.size() != 2 && language.size() != 3) {
     return false;
   }
@@ -105,6 +112,22 @@ Locale Locale::FromBCP47(const std::string& locale_tag) {
   // NOTE: We don't parse the rest of the BCP47 tag here even if specified.
 
   return Locale(language.ToString(), script.ToString(), region.ToString());
+}
+
+bool Locale::IsUnknown() const {
+  return is_valid_ && language_ == kUnknownLanguageCode;
+}
+
+bool ParseLocales(StringPiece locales_list, std::vector<Locale>* locales) {
+  for (const auto& locale_str : strings::Split(locales_list, ',')) {
+    const Locale locale = Locale::FromBCP47(locale_str.ToString());
+    if (!locale.IsValid()) {
+      TC3_LOG(ERROR) << "Invalid locale " << locale_str.ToString();
+      return false;
+    }
+    locales->push_back(locale);
+  }
+  return true;
 }
 
 }  // namespace libtextclassifier3

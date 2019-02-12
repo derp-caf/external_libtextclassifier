@@ -14,7 +14,9 @@
 // limitations under the License.
 //
 
+include "utils/intents/intent-config.fbs";
 include "utils/named-extra.fbs";
+include "utils/resources.fbs";
 include "utils/zlib/buffer.fbs";
 
 file_identifier "TC3A";
@@ -74,6 +76,18 @@ table TriggeringPreconditions {
 
   // The maximal length of input to consider for prediciton, -1 if unbounded.
   max_input_length:int = -1;
+
+  // Minimal fraction of messages in the input conversation that need to match
+  // a locale that the model can handle.
+  min_locale_match_fraction:float = 0.75;
+
+  handle_missing_locale_as_supported:bool = true;
+  handle_unknown_locale_as_supported:bool = true;
+
+  // Filter input with low-confidence triggers.
+  suppress_on_low_confidence_input:bool = true;
+
+  low_confidence_rules:RulesModel;
 }
 
 namespace libtextclassifier3;
@@ -130,23 +144,6 @@ table RulesModel {
   rule:[RulesModel_.Rule];
 }
 
-// Describes how intents should be generated for a particular action type.
-namespace libtextclassifier3.ActionsIntentFactoryModel_;
-table IntentGenerator {
-  // The action type.
-  action_type:string;
-
-  // The template generator lua code, either as text source or precompiled
-  // bytecode.
-  lua_template_generator:[ubyte];
-}
-
-// Describes how intents for the various action types should be generated.
-namespace libtextclassifier3;
-table ActionsIntentFactoryModel {
-  action:[ActionsIntentFactoryModel_.IntentGenerator];
-}
-
 namespace libtextclassifier3;
 table ActionsModel {
   // Comma-separated list of locales supported by the model as BCP 47 tags.
@@ -181,7 +178,10 @@ table ActionsModel {
   rules:RulesModel;
 
   // Configuration for intent generation on Android.
-  android_intent_options:ActionsIntentFactoryModel;
+  android_intent_options:IntentFactoryModel;
+
+  // Model resources.
+  resources:ResourcePool;
 }
 
 root_type libtextclassifier3.ActionsModel;

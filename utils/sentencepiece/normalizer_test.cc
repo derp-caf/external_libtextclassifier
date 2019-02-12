@@ -40,24 +40,46 @@ TEST(NormalizerTest, NormalizesAsReferenceNormalizer) {
       NormalizerFromSpec(config, /*add_dummy_prefix=*/true,
                          /*remove_extra_whitespaces=*/true,
                          /*escape_whitespaces=*/true);
-
-  EXPECT_EQ(normalizer.Normalize("hello there"), "▁hello▁there");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("hello there", &normalized));
+    EXPECT_EQ(normalized, "▁hello▁there");
+  }
 
   // Redundant whitespace.
-  EXPECT_EQ(normalizer.Normalize("when is  the  world cup?"),
-            "▁when▁is▁the▁world▁cup?");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("when is  the  world cup?", &normalized));
+    EXPECT_EQ(normalized, "▁when▁is▁the▁world▁cup?");
+  }
 
   // Different whitespace.
-  EXPECT_EQ(normalizer.Normalize("general\tkenobi"), "▁general▁kenobi");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("general\tkenobi", &normalized));
+    EXPECT_EQ(normalized, "▁general▁kenobi");
+  }
 
   // NFKC char to multi-char normalization.
-  EXPECT_EQ(normalizer.Normalize("㍿"), "▁株式会社");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("㍿", &normalized));
+    EXPECT_EQ(normalized, "▁株式会社");
+  }
 
   // Half width katakana, character composition happens.
-  EXPECT_EQ(normalizer.Normalize(" ｸﾞｰｸﾞﾙ "), "▁グーグル");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize(" ｸﾞｰｸﾞﾙ ", &normalized));
+    EXPECT_EQ(normalized, "▁グーグル");
+  }
 
   // NFKC char to char normalization.
-  EXPECT_EQ(normalizer.Normalize("①②③"), "▁123");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("①②③", &normalized));
+    EXPECT_EQ(normalized, "▁123");
+  }
 }
 
 TEST(NormalizerTest, NoDummyPrefix) {
@@ -69,23 +91,47 @@ TEST(NormalizerTest, NoDummyPrefix) {
                          /*remove_extra_whitespaces=*/true,
                          /*escape_whitespaces=*/true);
 
-  EXPECT_EQ(normalizer.Normalize("hello there"), "hello▁there");
+  // NFKC char to char normalization.
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("hello there", &normalized));
+    EXPECT_EQ(normalized, "hello▁there");
+  }
 
   // Redundant whitespace.
-  EXPECT_EQ(normalizer.Normalize("when is  the  world cup?"),
-            "when▁is▁the▁world▁cup?");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("when is  the  world cup?", &normalized));
+    EXPECT_EQ(normalized, "when▁is▁the▁world▁cup?");
+  }
 
   // Different whitespace.
-  EXPECT_EQ(normalizer.Normalize("general\tkenobi"), "general▁kenobi");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("general\tkenobi", &normalized));
+    EXPECT_EQ(normalized, "general▁kenobi");
+  }
 
   // NFKC char to multi-char normalization.
-  EXPECT_EQ(normalizer.Normalize("㍿"), "株式会社");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("㍿", &normalized));
+    EXPECT_EQ(normalized, "株式会社");
+  }
 
   // Half width katakana, character composition happens.
-  EXPECT_EQ(normalizer.Normalize(" ｸﾞｰｸﾞﾙ "), "グーグル");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize(" ｸﾞｰｸﾞﾙ ", &normalized));
+    EXPECT_EQ(normalized, "グーグル");
+  }
 
   // NFKC char to char normalization.
-  EXPECT_EQ(normalizer.Normalize("①②③"), "123");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("①②③", &normalized));
+    EXPECT_EQ(normalized, "123");
+  }
 }
 
 TEST(NormalizerTest, NoRemoveExtraWhitespace) {
@@ -97,14 +143,25 @@ TEST(NormalizerTest, NoRemoveExtraWhitespace) {
                          /*remove_extra_whitespaces=*/false,
                          /*escape_whitespaces=*/true);
 
-  EXPECT_EQ(normalizer.Normalize("hello there"), "hello▁there");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("hello there", &normalized));
+    EXPECT_EQ(normalized, "hello▁there");
+  }
 
   // Redundant whitespace.
-  EXPECT_EQ(normalizer.Normalize("when is  the  world cup?"),
-            "when▁is▁▁the▁▁world▁cup?");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("when is  the  world cup?", &normalized));
+    EXPECT_EQ(normalized, "when▁is▁▁the▁▁world▁cup?");
+  }
 
   // Different whitespace.
-  EXPECT_EQ(normalizer.Normalize("general\tkenobi"), "general▁kenobi");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("general\tkenobi", &normalized));
+    EXPECT_EQ(normalized, "general▁kenobi");
+  }
 }
 
 TEST(NormalizerTest, NoEscapeWhitespaces) {
@@ -116,14 +173,25 @@ TEST(NormalizerTest, NoEscapeWhitespaces) {
                          /*remove_extra_whitespaces=*/false,
                          /*escape_whitespaces=*/false);
 
-  EXPECT_EQ(normalizer.Normalize("hello there"), "hello there");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("hello there", &normalized));
+    EXPECT_EQ(normalized, "hello there");
+  }
 
   // Redundant whitespace.
-  EXPECT_EQ(normalizer.Normalize("when is  the  world cup?"),
-            "when is  the  world cup?");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("when is  the  world cup?", &normalized));
+    EXPECT_EQ(normalized, "when is  the  world cup?");
+  }
 
   // Different whitespace.
-  EXPECT_EQ(normalizer.Normalize("general\tkenobi"), "general kenobi");
+  {
+    std::string normalized;
+    EXPECT_TRUE(normalizer.Normalize("general\tkenobi", &normalized));
+    EXPECT_EQ(normalized, "general kenobi");
+  }
 }
 
 }  // namespace

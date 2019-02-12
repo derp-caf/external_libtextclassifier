@@ -34,11 +34,12 @@ class SentencePieceMatcher {
   virtual ~SentencePieceMatcher() {}
 
   // Find matches that are prefixes of a string.
-  virtual std::vector<TrieMatch> FindAllPrefixMatches(
-      StringPiece input) const = 0;
+  virtual bool FindAllPrefixMatches(StringPiece input,
+                                    std::vector<TrieMatch>* matches) const = 0;
 
   // Find the longest prefix match of a string.
-  virtual TrieMatch LongestPrefixMatch(StringPiece input) const = 0;
+  virtual bool LongestPrefixMatch(StringPiece input,
+                                  TrieMatch* longest_match) const = 0;
 };
 
 }  // namespace libtextclassifier3

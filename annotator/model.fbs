@@ -15,6 +15,7 @@
 //
 
 include "utils/intents/intent-config.fbs";
+include "utils/resources.fbs";
 include "utils/zlib/buffer.fbs";
 
 file_identifier "TC2 ";
@@ -360,6 +361,9 @@ table Model {
   android_intent_options:AndroidIntentFactoryOptions;
 
   intent_options:IntentFactoryModel;
+
+  // Model resources.
+  resources:ResourcePool;
 }
 
 // Role of the codepoints in the range.

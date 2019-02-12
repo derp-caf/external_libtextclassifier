@@ -42,19 +42,32 @@ class LuaEnvironment {
   // Provides a callback to Lua with given id, which will be dispatched to
   // `HandleCallback(id)` when called. This is useful when we need to call
   // native C++ code from within Lua code.
-  void PushCallback(int callback_id);
+  // `callback_arg` is any value that should be provided as argument alongside
+  // the callback identifier when the callback is invoked.
+  void PushCallback(const int callback_id, void *callback_arg = nullptr);
 
   // Setup a named table that callsback whenever a member is accessed.
   // This allows to lazily provide required information to the script.
   // `HandleCallback` will be called upon callback invocation with the
   // callback identifier provided.
-  void SetupTableLookupCallback(const char *name, int callback_id);
+  // `callback_arg` is any value that should be provided as argument alongside
+  // the callback identifier when the callback is invoked.
+  void SetupTableLookupCallback(const char *name, const int callback_id,
+                                void *callback_arg = nullptr);
 
   // Called from Lua when invoking a callback either by
   // `PushCallback` or `SetupTableLookupCallback`.
-  virtual int HandleCallback(int callback_id);
+  // `callback_arg` is any value that should be provided as argument alongside
+  // the callback identifier when the callback is invoked.
+  virtual int HandleCallback(const int callback_id, void *callback_arg);
 
   void PushValue(const Variant &value);
+
+  // Read a string from the stack.
+  StringPiece ReadString(const int index) const;
+
+  // Push a string to the stack.
+  void PushString(const StringPiece str);
 
   lua_State *state_;
 

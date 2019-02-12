@@ -18,10 +18,12 @@
 
 namespace libtextclassifier3 {
 
-std::vector<int> Encoder::Encode(StringPiece normalized_text) const {
+bool Encoder::Encode(StringPiece normalized_text,
+                     std::vector<int>* encoded_text) const {
   const int len = normalized_text.size();
   if (len <= 0) {
-    return {start_code_, end_code_};
+    *encoded_text = {start_code_, end_code_};
+    return true;
   }
   // We use `previous_pos` to indicate whether a dynamic programming state was
   // reachable.
@@ -55,7 +57,13 @@ std::vector<int> Encoder::Encode(StringPiece normalized_text) const {
         }
       }
     }
-    for (const auto& match : matcher_->FindAllPrefixMatches(normalized_text)) {
+    std::vector<TrieMatch> matches;
+    if (!matcher_->FindAllPrefixMatches(normalized_text, &matches)) {
+      TC3_LOG(ERROR)
+          << "Couldn't successfully gather prefix sentence piece matches.";
+      return false;
+    }
+    for (const auto& match : matches) {
       TC3_CHECK(match.id >= 0 && match.id < num_pieces_);
       const int pos = i + match.match_length;
       const float candidate_score = segmentation[i].score + scores_[match.id];
@@ -70,18 +78,19 @@ std::vector<int> Encoder::Encode(StringPiece normalized_text) const {
     normalized_text.RemovePrefix(1);
   }
   if (segmentation[len].num_pieces <= 0) {
-    return {start_code_, end_code_};
+    *encoded_text = {start_code_, end_code_};
+    return true;
   }
   const int num_pieces = segmentation[len].num_pieces;
-  std::vector<int> result(num_pieces + 2);
-  result[num_pieces + 1] = end_code_;
+  encoded_text->resize(num_pieces + 2);
+  (*encoded_text)[num_pieces + 1] = end_code_;
   int pos = len;
   for (int i = num_pieces; i > 0; i--) {
-    result[i] = segmentation[pos].piece_id;
+    (*encoded_text)[i] = segmentation[pos].piece_id;
     pos = segmentation[pos].previous_pos;
   }
-  result[0] = start_code_;
-  return result;
+  (*encoded_text)[0] = start_code_;
+  return true;
 }
 
 }  // namespace libtextclassifier3

@@ -47,30 +47,30 @@ namespace libtextclassifier3 {
 // A helper class to create RemoteActionTemplate object from model results.
 class RemoteActionTemplatesHandler {
  public:
-  static std::unique_ptr<RemoteActionTemplatesHandler> Create(JNIEnv* env);
+  static std::unique_ptr<RemoteActionTemplatesHandler> Create(
+      JNIEnv* env, const std::shared_ptr<JniCache>& jni_cache);
 
-  explicit RemoteActionTemplatesHandler(JNIEnv* env)
+  explicit RemoteActionTemplatesHandler(
+      JNIEnv* env, const std::shared_ptr<JniCache>& jni_cache)
       : env_(env),
-        string_class_(nullptr, env),
+        jni_cache_(jni_cache),
         integer_class_(nullptr, env),
         remote_action_template_class_(nullptr, env),
         named_variant_class_(nullptr, env) {}
 
-  jstring AsUTF8String(const Optional<std::string>& optional);
-  jobject AsInteger(const Optional<int>& optional);
-  jobjectArray AsStringArray(const std::vector<std::string>& values);
-  jobject AsNamedVariant(const std::string& name, const Variant& value);
+  jstring AsUTF8String(const Optional<std::string>& optional) const;
+  jobject AsInteger(const Optional<int>& optional) const;
+  jobjectArray AsStringArray(const std::vector<std::string>& values) const;
+  jobject AsNamedVariant(const std::string& name, const Variant& value) const;
   jobjectArray AsNamedVariantArray(
-      const std::map<std::string, Variant>& values);
+      const std::map<std::string, Variant>& values) const;
 
   jobjectArray RemoteActionTemplatesToJObjectArray(
-      const std::vector<RemoteActionTemplate>& remote_actions);
+      const std::vector<RemoteActionTemplate>& remote_actions) const;
 
  private:
   JNIEnv* env_;
-
-  // java.lang.String
-  ScopedLocalRef<jclass> string_class_;
+  std::shared_ptr<JniCache> jni_cache_;
 
   // java.lang.Integer
   ScopedLocalRef<jclass> integer_class_;

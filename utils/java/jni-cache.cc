@@ -38,7 +38,8 @@ JniCache::JniCache(JavaVM* jvm)
       context_class(nullptr, jvm),
       uri_class(nullptr, jvm),
       usermanager_class(nullptr, jvm),
-      bundle_class(nullptr, jvm)
+      bundle_class(nullptr, jvm),
+      resources_class(nullptr, jvm)
 #endif
 {
 }
@@ -218,6 +219,7 @@ std::unique_ptr<JniCache> JniCache::Create(JNIEnv* env) {
   TC3_GET_STATIC_METHOD(uri, parse, "parse",
                         "(Ljava/lang/String;)Landroid/net/Uri;");
   TC3_GET_METHOD(uri, get_scheme, "getScheme", "()Ljava/lang/String;");
+  TC3_GET_METHOD(uri, get_host, "getHost", "()Ljava/lang/String;");
 
   // UserManager.
   TC3_GET_OPTIONAL_CLASS(usermanager, "android/os/UserManager");
@@ -227,6 +229,14 @@ std::unique_ptr<JniCache> JniCache::Create(JNIEnv* env) {
   // Bundle.
   TC3_GET_CLASS(bundle, "android/os/Bundle");
   TC3_GET_METHOD(bundle, get_boolean, "getBoolean", "(Ljava/lang/String;)Z");
+
+  // String resources.
+  TC3_GET_CLASS(resources, "android/content/res/Resources");
+  TC3_GET_STATIC_METHOD(resources, get_system, "getSystem",
+                        "()Landroid/content/res/Resources;");
+  TC3_GET_METHOD(resources, get_identifier, "getIdentifier",
+                 "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I");
+  TC3_GET_METHOD(resources, get_string, "getString", "(I)Ljava/lang/String;");
 #endif
 
   return result;
@@ -261,17 +271,17 @@ bool JniCache::ExceptionCheckAndClear() const {
 }
 
 ScopedLocalRef<jstring> JniCache::ConvertToJavaString(
-    const UnicodeText& text) const {
+    const char* utf8_text, const int utf8_text_size_bytes) const {
   // Create java byte array.
   JNIEnv* jenv = GetEnv();
   const ScopedLocalRef<jbyteArray> text_java_utf8(
-      jenv->NewByteArray(text.size_bytes()), jenv);
+      jenv->NewByteArray(utf8_text_size_bytes), jenv);
   if (!text_java_utf8) {
     return nullptr;
   }
 
-  jenv->SetByteArrayRegion(text_java_utf8.get(), 0, text.size_bytes(),
-                           reinterpret_cast<const jbyte*>(text.data()));
+  jenv->SetByteArrayRegion(text_java_utf8.get(), 0, utf8_text_size_bytes,
+                           reinterpret_cast<const jbyte*>(utf8_text));
 
   // Create the string with a UTF-8 charset.
   return ScopedLocalRef<jstring>(
@@ -279,6 +289,16 @@ ScopedLocalRef<jstring> JniCache::ConvertToJavaString(
           jenv->NewObject(string_class.get(), string_init_bytes_charset,
                           text_java_utf8.get(), string_utf8.get())),
       jenv);
+}
+
+ScopedLocalRef<jstring> JniCache::ConvertToJavaString(
+    StringPiece utf8_text) const {
+  return ConvertToJavaString(utf8_text.data(), utf8_text.size());
+}
+
+ScopedLocalRef<jstring> JniCache::ConvertToJavaString(
+    const UnicodeText& text) const {
+  return ConvertToJavaString(text.data(), text.size_bytes());
 }
 
 }  // namespace libtextclassifier3

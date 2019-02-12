@@ -89,6 +89,7 @@ cc_defaults {
     },
 
     generated_headers: [
+        "libtextclassifier_fbgen_resources_extra",
         "libtextclassifier_fbgen_named_extra",
         "libtextclassifier_fbgen_zlib_buffer",
         "libtextclassifier_fbgen_intent_config",
@@ -120,6 +121,13 @@ cc_defaults {
 // Generate headers with FlatBuffer schema compiler.
 // -----------------
 
+genrule {
+    name: "libtextclassifier_fbgen_resources_extra",
+    tools: ["flatc"],
+    cmd: "$(location flatc) --cpp --no-union-value-namespacing --gen-object-api --keep-prefix -o $(genDir)/utils $(in)",
+    srcs: ["utils/resources.fbs"],
+    out: ["utils/resources_generated.h"],
+}
 genrule {
     name: "libtextclassifier_fbgen_named_extra",
     tools: ["flatc"],
@@ -231,7 +239,10 @@ cc_test {
 
     srcs: ["**/*.cc"],
     // TODO: Do not filter out tflite test once the dependency issue is resolved.
-    exclude_srcs: ["utils/tflite/*_test.cc"],
+    exclude_srcs: [
+        "utils/tflite/*_test.cc",
+        "utils/flatbuffers_test.cc"
+    ],
 
     static_libs: ["libgmock"],
 

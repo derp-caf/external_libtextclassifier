@@ -36,6 +36,7 @@ cc_library_shared {
     name: "libtextclassifier_hash",
     defaults: ["libtextclassifier_hash_defaults"],
     vendor_available: true,
+    double_loadable: true,
 }
 
 cc_library_static {

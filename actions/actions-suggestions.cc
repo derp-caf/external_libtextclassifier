@@ -16,6 +16,8 @@
 
 #include "actions/actions-suggestions.h"
 #include "utils/base/logging.h"
+#include "utils/strings/split.h"
+#include "utils/strings/stringpiece.h"
 #include "utils/utf8/unicodetext.h"
 #include "tensorflow/lite/string_util.h"
 
@@ -39,6 +41,8 @@ const std::string& ActionsSuggestions::kShareLocation =
     *[]() { return new std::string("share_location"); }();
 
 namespace {
+constexpr const char* kAnyMatch = "*";
+
 const ActionsModel* LoadAndVerifyModel(const uint8_t* addr, int size) {
   flatbuffers::Verifier verifier(addr, size);
   if (VerifyActionsModelBuffer(verifier)) {
@@ -168,6 +172,12 @@ bool ActionsSuggestions::ValidateAndInitialize() {
     return false;
   }
 
+  if (model_->locales() &&
+      !ParseLocales(model_->locales()->c_str(), &locales_)) {
+    TC3_LOG(ERROR) << "Could not parse model supported locales.";
+    return false;
+  }
+
   if (model_->tflite_model_spec()) {
     model_executor_ = TfLiteModelExecutor::FromBuffer(
         model_->tflite_model_spec()->tflite_model());
@@ -187,12 +197,30 @@ bool ActionsSuggestions::ValidateAndInitialize() {
 }
 
 bool ActionsSuggestions::InitializeRules(ZlibDecompressor* decompressor) {
-  if (model_->rules() == nullptr) {
-    // No rules specified.
-    return true;
+  if (model_->rules() != nullptr) {
+    if (!InitializeRules(decompressor, model_->rules(), &rules_)) {
+      TC3_LOG(ERROR) << "Could not initialize action rules.";
+      return false;
+    }
   }
 
-  for (const RulesModel_::Rule* rule : *model_->rules()->rule()) {
+  if (model_->preconditions()->suppress_on_low_confidence_input() &&
+      model_->preconditions()->low_confidence_rules() != nullptr) {
+    if (!InitializeRules(decompressor,
+                         model_->preconditions()->low_confidence_rules(),
+                         &low_confidence_rules_)) {
+      TC3_LOG(ERROR) << "Could not initialize low confidence rules.";
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool ActionsSuggestions::InitializeRules(
+    ZlibDecompressor* decompressor, const RulesModel* rules,
+    std::vector<CompiledRule>* compiled_rules) const {
+  for (const RulesModel_::Rule* rule : *rules->rule()) {
     std::unique_ptr<UniLib::RegexPattern> compiled_pattern =
         UncompressMakeRegexPattern(*unilib_, rule->pattern(),
                                    rule->compressed_pattern(), decompressor);
@@ -200,10 +228,69 @@ bool ActionsSuggestions::InitializeRules(ZlibDecompressor* decompressor) {
       TC3_LOG(ERROR) << "Failed to load rule pattern.";
       return false;
     }
-    rules_.push_back({rule, std::move(compiled_pattern)});
+    compiled_rules->push_back({rule, std::move(compiled_pattern)});
   }
 
   return true;
+}
+
+bool ActionsSuggestions::IsLocaleSupportedByModel(const Locale& locale) const {
+  if (!locale.IsValid()) {
+    return false;
+  }
+  if (locale.IsUnknown()) {
+    return model_->preconditions()->handle_unknown_locale_as_supported();
+  }
+  for (const Locale& model_locale : locales_) {
+    if (!model_locale.IsValid()) {
+      continue;
+    }
+    const bool language_matches = model_locale.Language().empty() ||
+                                  model_locale.Language() == kAnyMatch ||
+                                  model_locale.Language() == locale.Language();
+    const bool script_matches =
+        model_locale.Script().empty() || model_locale.Script() == kAnyMatch ||
+        locale.Script().empty() || model_locale.Script() == locale.Script();
+    const bool region_matches =
+        model_locale.Region().empty() || model_locale.Region() == kAnyMatch ||
+        locale.Region().empty() || model_locale.Region() == locale.Region();
+    if (language_matches && script_matches && region_matches) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ActionsSuggestions::IsAnyLocaleSupportedByModel(
+    const std::vector<Locale>& locales) const {
+  if (locales.empty()) {
+    return model_->preconditions()->handle_missing_locale_as_supported();
+  }
+  for (const Locale& locale : locales) {
+    if (IsLocaleSupportedByModel(locale)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ActionsSuggestions::IsLowConfidenceInput(const Conversation& conversation,
+                                              const int num_messages) const {
+  for (int i = 1; i <= num_messages; i++) {
+    const std::string& message =
+        conversation.messages[conversation.messages.size() - i].text;
+    const UnicodeText message_unicode(
+        UTF8ToUnicodeText(message, /*do_copy=*/false));
+    for (const CompiledRule& rule : low_confidence_rules_) {
+      const std::unique_ptr<UniLib::RegexMatcher> matcher =
+          rule.pattern->Matcher(message_unicode);
+      int status = UniLib::RegexMatcher::kNoError;
+      if (matcher->Find(&status) && status == UniLib::RegexMatcher::kNoError) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 void ActionsSuggestions::RankActions(
@@ -432,6 +519,7 @@ void ActionsSuggestions::CreateActionsFromAnnotationResult(
   suggestion_annotation.span = annotation.span;
   suggestion_annotation.entity = classification_result;
   const std::string collection = classification_result.collection;
+  suggestion_annotation.name = collection;
 
   for (const AnnotationActionsSpec_::AnnotationMapping* mapping :
        *model_->annotation_actions_spec()->annotation_mapping()) {
@@ -480,7 +568,7 @@ void ActionsSuggestions::SuggestActionsFromRules(
   }
 }
 
-ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
+ActionsSuggestionsResponse ActionsSuggestions::GatherActionsSuggestions(
     const Conversation& conversation, const Annotator* annotator,
     const ActionSuggestionOptions& options) const {
   ActionsSuggestionsResponse response;
@@ -502,10 +590,20 @@ ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
     return response;
   }
 
+  SuggestActionsFromAnnotations(conversation, options, annotator, &response);
+
   int input_text_length = 0;
+  int num_matching_locales = 0;
   for (int i = conversation.messages.size() - num_messages;
        i < conversation.messages.size(); i++) {
     input_text_length += conversation.messages[i].text.length();
+    std::vector<Locale> message_locales;
+    if (!ParseLocales(conversation.messages[i].locales, &message_locales)) {
+      continue;
+    }
+    if (IsAnyLocaleSupportedByModel(message_locales)) {
+      ++num_matching_locales;
+    }
   }
 
   // Bail out if we are provided with too few or too much input.
@@ -516,7 +614,21 @@ ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
     return response;
   }
 
-  SuggestActionsFromRules(conversation, &response);
+  // Bail out if the text does not look like it can be handled by the model.
+  const float matching_fraction =
+      static_cast<float>(num_matching_locales) / num_messages;
+  if (matching_fraction <
+      model_->preconditions()->min_locale_match_fraction()) {
+    TC3_LOG(INFO) << "Not enough locale matches.";
+    response.output_filtered_locale_mismatch = true;
+    return response;
+  }
+
+  if (IsLowConfidenceInput(conversation, num_messages)) {
+    TC3_LOG(INFO) << "Low confidence input.";
+    response.output_filtered_low_confidence = true;
+    return response;
+  }
 
   SuggestActionsFromModel(conversation, num_messages, options, &response);
 
@@ -526,10 +638,17 @@ ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
     return response;
   }
 
-  SuggestActionsFromAnnotations(conversation, options, annotator, &response);
+  SuggestActionsFromRules(conversation, &response);
 
+  return response;
+}
+
+ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
+    const Conversation& conversation, const Annotator* annotator,
+    const ActionSuggestionOptions& options) const {
+  ActionsSuggestionsResponse response =
+      GatherActionsSuggestions(conversation, annotator, options);
   RankActions(&response);
-
   return response;
 }
 
@@ -539,15 +658,12 @@ ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
   return SuggestActions(conversation, /*annotator=*/nullptr, options);
 }
 
-float ActionsSuggestions::GetMinRepliesTriggeringThreshold() const {
-  return model_->preconditions()->min_smart_reply_triggering_score();
-}
+const ActionsModel* ActionsSuggestions::model() const { return model_; }
 
 const ActionsModel* ViewActionsModel(const void* buffer, int size) {
   if (buffer == nullptr) {
     return nullptr;
   }
-
   return LoadAndVerifyModel(reinterpret_cast<const uint8_t*>(buffer), size);
 }
 

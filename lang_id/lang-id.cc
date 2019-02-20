@@ -151,24 +151,30 @@ class LangIdImpl {
     std::sort(result->predictions.begin(), result->predictions.end(),
               [](const std::pair<string, float> &a,
                  const std::pair<string, float> &b) {
-      if (a.second == b.second) {
-        return a.first.compare(b.first) < 0;
-      } else {
-        return a.second > b.second;
-      }
-    });
+                if (a.second == b.second) {
+                  return a.first.compare(b.first) < 0;
+                } else {
+                  return a.second > b.second;
+                }
+              });
   }
 
   bool is_valid() const { return valid_; }
 
   int GetModelVersion() const { return model_version_; }
 
+  // Returns a property stored in the model file.
+  template <typename T, typename R>
+  R GetProperty(const string &property, T default_value) const {
+    return model_provider_->GetTaskContext()->Get(property, default_value);
+  }
+
  private:
   bool Setup(TaskContext *context) {
     tokenizer_.Setup(context);
     if (!lang_id_brain_interface_.SetupForProcessing(context)) return false;
-    default_threshold_ = context->Get(
-        "reliability_thresh", kDefaultConfidenceThreshold);
+    default_threshold_ =
+        context->Get("reliability_thresh", kDefaultConfidenceThreshold);
 
     // Parse task parameter "per_lang_reliability_thresholds", fill
     // per_lang_thresholds_.
@@ -252,8 +258,7 @@ class LangIdImpl {
 const char LangId::kUnknownLanguageCode[] = "und";
 
 LangId::LangId(std::unique_ptr<ModelProvider> model_provider)
-    : pimpl_(new LangIdImpl(std::move(model_provider))) {
-}
+    : pimpl_(new LangIdImpl(std::move(model_provider))) {}
 
 LangId::~LangId() = default;
 
@@ -269,11 +274,24 @@ void LangId::FindLanguages(const char *data, size_t num_bytes,
   pimpl_->FindLanguages(text, result);
 }
 
-bool LangId::is_valid() const {
-  return pimpl_->is_valid();
-}
+bool LangId::is_valid() const { return pimpl_->is_valid(); }
 
 int LangId::GetModelVersion() const { return pimpl_->GetModelVersion(); }
+
+string LangId::GetStringProperty(const string &property,
+                                 string default_value) const {
+  return pimpl_->GetProperty<const char *, string>(property,
+                                                   default_value.c_str());
+}
+
+float LangId::GetFloatProperty(const string &property,
+                               float default_value) const {
+  return pimpl_->GetProperty<float, float>(property, default_value);
+}
+
+int LangId::GetIntProperty(const string &property, int default_value) const {
+  return pimpl_->GetProperty<int, int>(property, default_value);
+}
 
 }  // namespace lang_id
 }  // namespace mobile

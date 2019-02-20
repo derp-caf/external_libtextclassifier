@@ -105,7 +105,13 @@ public final class AnnotatorModel implements AutoCloseable {
    */
   public ClassificationResult[] classifyText(
       String context, int selectionBegin, int selectionEnd, ClassificationOptions options) {
-    return classifyText(context, selectionBegin, selectionEnd, options, /*appContext=*/ null);
+    return classifyText(
+        context,
+        selectionBegin,
+        selectionEnd,
+        options,
+        /*appContext=*/ null,
+        /*deviceLocale=*/ null);
   }
 
   public ClassificationResult[] classifyText(
@@ -113,12 +119,10 @@ public final class AnnotatorModel implements AutoCloseable {
       int selectionBegin,
       int selectionEnd,
       ClassificationOptions options,
-
-      // Pass through android.content.Context object as Object as we cannot directly depend on
-      // android here.
-      Object appContext) {
+      Object appContext,
+      String deviceLocale) {
     return nativeClassifyText(
-        annotatorPtr, context, selectionBegin, selectionEnd, options, appContext);
+        annotatorPtr, context, selectionBegin, selectionEnd, options, appContext, deviceLocale);
   }
 
   /**
@@ -228,16 +232,6 @@ public final class AnnotatorModel implements AutoCloseable {
 
     /** Returns the classified entity type. */
     public String getCollection() {
-      if (TYPE_DATE.equals(collection) && datetimeResult != null) {
-        switch (datetimeResult.getGranularity()) {
-          case DatetimeResult.GRANULARITY_HOUR:
-          case DatetimeResult.GRANULARITY_MINUTE:
-          case DatetimeResult.GRANULARITY_SECOND:
-            return TYPE_DATE_TIME;
-          default:
-            return TYPE_DATE;
-        }
-      }
       return collection;
     }
 
@@ -398,7 +392,8 @@ public final class AnnotatorModel implements AutoCloseable {
       int selectionBegin,
       int selectionEnd,
       ClassificationOptions options,
-      Object appContext);
+      Object appContext,
+      String deviceLocale);
 
   private native AnnotatedSpan[] nativeAnnotate(
       long context, String text, AnnotationOptions options);

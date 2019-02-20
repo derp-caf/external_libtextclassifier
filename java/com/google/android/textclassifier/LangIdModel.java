@@ -95,6 +95,10 @@ public final class LangIdModel implements AutoCloseable {
     return nativeGetVersion(modelPtr);
   }
 
+  public float getTranslateThreshold() {
+    return nativeGetTranslateThreshold(modelPtr);
+  }
+
   public static int getVersion(int fd) {
     return nativeGetVersionFromFd(fd);
   }
@@ -110,4 +114,6 @@ public final class LangIdModel implements AutoCloseable {
   private native int nativeGetVersion(long nativePtr);
 
   private static native int nativeGetVersionFromFd(int fd);
+
+  private native float nativeGetTranslateThreshold(long nativePtr);
 }

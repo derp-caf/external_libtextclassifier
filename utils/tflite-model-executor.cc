@@ -16,8 +16,8 @@
 
 #include "utils/tflite-model-executor.h"
 
-#include "tensorflow/lite/kernels/register.h"
 #include "utils/base/logging.h"
+#include "tensorflow/lite/kernels/register.h"
 
 // Forward declaration of custom TensorFlow Lite ops for registration.
 namespace tflite {
@@ -110,9 +110,8 @@ void TfLiteModelExecutor::SetInput(const int input_index,
   for (const std::string& s : input_data) {
     buf.AddString(s.data(), s.length());
   }
-  // TODO(b/120230709): Use WriteToTensorAsVector() instead, once available in
-  // AOSP.
-  buf.WriteToTensor(interpreter->tensor(interpreter->inputs()[input_index]));
+  buf.WriteToTensorAsVector(
+      interpreter->tensor(interpreter->inputs()[input_index]));
 }
 
 template <>

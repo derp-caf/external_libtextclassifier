@@ -1,20 +1,3 @@
-/*
- * Copyright (C) 2018 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-// TODO(smillius): Move intent generation code outside of utils.
 
 #ifndef LIBTEXTCLASSIFIER_UTILS_INTENTS_INTENT_GENERATOR_H_
 #define LIBTEXTCLASSIFIER_UTILS_INTENTS_INTENT_GENERATOR_H_
@@ -25,11 +8,15 @@
 #include <string>
 #include <vector>
 
+#include "actions/types.h"
 #include "annotator/types.h"
+#include "utils/i18n/locale.h"
 #include "utils/intents/intent-config_generated.h"
 #include "utils/java/jni-cache.h"
 #include "utils/java/scoped_local_ref.h"
 #include "utils/optional.h"
+#include "utils/resources.h"
+#include "utils/resources_generated.h"
 #include "utils/strings/stringpiece.h"
 
 namespace libtextclassifier3 {
@@ -70,17 +57,31 @@ struct RemoteActionTemplate {
 // Helper class to generate Android intents for text classifier results.
 class IntentGenerator {
  public:
-  explicit IntentGenerator(const IntentFactoryModel* options,
-                           const std::shared_ptr<JniCache>& jni_cache,
-                           const jobject context);
+  static std::unique_ptr<IntentGenerator> CreateIntentGenerator(
+      const IntentFactoryModel* options, const ResourcePool* resources,
+      const std::shared_ptr<JniCache>& jni_cache, const jobject context);
 
   // Generate intents for a classification result.
   std::vector<RemoteActionTemplate> GenerateIntents(
-      const ClassificationResult& classification, int64 reference_time_ms_utc,
-      StringPiece entity_text) const;
+      const jstring device_locale, const ClassificationResult& classification,
+      int64 reference_time_ms_utc, const std::string& text,
+      CodepointSpan selection_indices) const;
+
+  // Generate intents for an action suggestion.
+  std::vector<RemoteActionTemplate> GenerateIntents(
+      const jstring device_locale, const ActionSuggestion& action,
+      int64 reference_time_ms_utc, const Conversation& conversation) const;
 
  private:
+  IntentGenerator(const IntentFactoryModel* options,
+                  const ResourcePool* resources,
+                  const std::shared_ptr<JniCache>& jni_cache,
+                  const jobject context);
+
+  Locale ParseLocale(const jstring device_locale) const;
+
   const IntentFactoryModel* options_;
+  const Resources resources_;
   std::shared_ptr<JniCache> jni_cache_;
   const jobject context_;
   std::map<std::string, std::string> generators_;

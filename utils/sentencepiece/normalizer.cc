@@ -21,16 +21,19 @@
 
 namespace libtextclassifier3 {
 
-std::string SentencePieceNormalizer::Normalize(StringPiece input) const {
-  std::string normalized;
-
+bool SentencePieceNormalizer::Normalize(StringPiece input,
+                                        std::string* normalized_input) const {
   // Ignores heading space.
   if (remove_extra_whitespaces_) {
     while (!input.empty()) {
-      const auto suffix_and_length = NormalizePrefix(input);
+      std::pair<StringPiece, int> suffix_and_length;
+      if (!NormalizePrefix(input, &suffix_and_length)) {
+        TC3_LOG(ERROR) << "Couldn't find match in normalization table.";
+        return false;
+      }
       if (suffix_and_length.second <= 0) {
         TC3_LOG(ERROR) << "Consumed string is empty.";
-        return normalized;
+        return false;
       }
       if (suffix_and_length.first.size() != 1 ||
           suffix_and_length.first[0] != ' ') {
@@ -41,12 +44,13 @@ std::string SentencePieceNormalizer::Normalize(StringPiece input) const {
   }
 
   if (input.empty()) {
-    return normalized;
+    *normalized_input = "";
+    return true;
   }
 
   // Reserves the output buffer to avoid re-allocations.
   const int kReservedSize = input.size() * 3;
-  normalized.reserve(kReservedSize);
+  normalized_input->reserve(kReservedSize);
 
   // Replaces white space with U+2581 (LOWER ONE EIGHT BLOCK)
   // if escape_whitespaces() is set (default = true).
@@ -58,18 +62,22 @@ std::string SentencePieceNormalizer::Normalize(StringPiece input) const {
   // "_world" as one symbol.
   if (add_dummy_prefix_) {
     if (escape_whitespaces_) {
-      normalized.append(kSpaceSymbol.data(), kSpaceSymbol.size());
+      normalized_input->append(kSpaceSymbol.data(), kSpaceSymbol.size());
     } else {
-      normalized.append(" ");
+      normalized_input->append(" ");
     }
   }
 
   bool is_prev_space = remove_extra_whitespaces_;
   while (!input.empty()) {
-    auto p = NormalizePrefix(input);
+    std::pair<StringPiece, int> p;
+    if (!NormalizePrefix(input, &p)) {
+      TC3_LOG(ERROR) << "Couldn't normalize string.";
+      return false;
+    }
     if (p.second <= 0) {
       TC3_LOG(ERROR) << "Consumed string is empty.";
-      return normalized;
+      return false;
     }
 
     StringPiece sp = p.first;
@@ -80,12 +88,12 @@ std::string SentencePieceNormalizer::Normalize(StringPiece input) const {
     }
 
     if (!sp.empty()) {
-      const char *data = sp.data();
+      const char* data = sp.data();
       for (int n = 0; n < sp.size(); ++n) {
         if (escape_whitespaces_ && data[n] == ' ') {
-          normalized.append(kSpaceSymbol.data(), kSpaceSymbol.size());
+          normalized_input->append(kSpaceSymbol.data(), kSpaceSymbol.size());
         } else {
-          normalized += data[n];
+          *normalized_input += data[n];
         }
       }
       // Checks whether the last character of sp is whitespace.
@@ -98,19 +106,22 @@ std::string SentencePieceNormalizer::Normalize(StringPiece input) const {
   // Ignores tailing space.
   if (remove_extra_whitespaces_) {
     const StringPiece space = escape_whitespaces_ ? kSpaceSymbol : " ";
-    while (EndsWith(normalized, space)) {
-      const int length = normalized.size() - space.size();
-      normalized.resize(length);
+    while (EndsWith(*normalized_input, space)) {
+      const int length = normalized_input->size() - space.size();
+      normalized_input->resize(length);
     }
   }
-  return normalized;
+  return true;
 }
 
-std::pair<StringPiece, int> SentencePieceNormalizer::NormalizePrefix(
-    StringPiece input) const {
-  std::pair<StringPiece, int> result;
-  if (input.empty()) return result;
-  const TrieMatch match = charsmap_trie_.LongestPrefixMatch(input);
+bool SentencePieceNormalizer::NormalizePrefix(
+    StringPiece input, std::pair<StringPiece, int>* prefix) const {
+  if (input.empty()) return true;
+  TrieMatch match;
+  if (!charsmap_trie_.LongestPrefixMatch(input, &match)) {
+    TC3_LOG(ERROR) << "Couldn't find match in normalization table.";
+    return false;
+  }
   const bool no_match = match.match_length <= 0;
   if (no_match) {
     const int char_length = ValidUTF8CharLength(input.data(), input.size());
@@ -120,18 +131,21 @@ std::pair<StringPiece, int> SentencePieceNormalizer::NormalizePrefix(
       // which is a valid Unicode of three bytes in utf8,
       // but here we only consume one byte.
       static const char kReplacementChar[] = "\xEF\xBF\xBD";
-      result.first = StringPiece(kReplacementChar, 3);
-      result.second = 1;  // Consumes 1 byte, buts emit 0xFFFD.
+      prefix->first = StringPiece(kReplacementChar, 3);
+      prefix->second = 1;  // Consumes 1 byte, buts emit 0xFFFD.
     } else {
-      result.first = StringPiece(input.data(), char_length);
-      result.second = char_length;
+      prefix->first = StringPiece(input.data(), char_length);
+      prefix->second = char_length;
     }
   } else {
-    TC3_CHECK(match.id >= 0 && match.id < charsmap_normalized_.size());
-    result.first = StringPiece(&charsmap_normalized_.data()[match.id]);
-    result.second = match.match_length;
+    if (match.id < 0 || match.id >= charsmap_normalized_.size()) {
+      TC3_LOG(ERROR) << "Invalid entry in normalization table.";
+      return false;
+    }
+    prefix->first = StringPiece(&charsmap_normalized_.data()[match.id]);
+    prefix->second = match.match_length;
   }
-  return result;
+  return true;
 }
 
 }  // namespace libtextclassifier3

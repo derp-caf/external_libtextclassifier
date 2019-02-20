@@ -41,7 +41,7 @@ class SentencePieceNormalizer {
   //   internal whitespace.
   //
   // escape_whitespaces: Whether to replace whitespace with a meta symbol.
-  SentencePieceNormalizer(const DoubleArrayTrie &charsmap_trie,
+  SentencePieceNormalizer(const DoubleArrayTrie& charsmap_trie,
                           StringPiece charsmap_normalized,
                           bool add_dummy_prefix = true,
                           bool remove_extra_whitespaces = true,
@@ -54,13 +54,14 @@ class SentencePieceNormalizer {
 
   // Normalizes a plain utf8 string into an internal representation for
   // Sentencepiece model.
-  std::string Normalize(StringPiece input) const;
+  bool Normalize(StringPiece input, std::string* normalized_input) const;
 
  private:
   // Normalizes the prefix of `input` and returns the pair of
   // normalized prefix and the length of the prefix of `input` processed in the
   // normalization.
-  std::pair<StringPiece, int> NormalizePrefix(StringPiece input) const;
+  bool NormalizePrefix(StringPiece input,
+                       std::pair<StringPiece, int>* prefix) const;
 
   // Internal trie for efficient longest prefix string matching.
   DoubleArrayTrie charsmap_trie_;

@@ -16,8 +16,8 @@
 
 #include "lang_id/script/approx-script.h"
 
-#include "lang_id/common/lite_base/logging.h"
 #include "lang_id/common/lite_base/integral-types.h"
+#include "lang_id/common/lite_base/logging.h"
 #include "lang_id/common/utf8.h"
 #include "lang_id/script/approx-script-data.h"
 

@@ -591,6 +591,16 @@ CodepointSpan FeatureProcessor::StripBoundaryCodepoints(
   UnicodeText::const_iterator span_end = context_unicode.begin();
   std::advance(span_end, span.second);
 
+  return StripBoundaryCodepoints(span_begin, span_end, span);
+}
+
+CodepointSpan FeatureProcessor::StripBoundaryCodepoints(
+    const UnicodeText::const_iterator& span_begin,
+    const UnicodeText::const_iterator& span_end, CodepointSpan span) const {
+  if (!ValidNonEmptySpan(span) || span_begin == span_end) {
+    return span;
+  }
+
   const int start_offset = CountIgnoredSpanBoundaryCodepoints(
       span_begin, span_end, /*count_from_beginning=*/true);
   const int end_offset = CountIgnoredSpanBoundaryCodepoints(

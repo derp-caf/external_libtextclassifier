@@ -75,7 +75,7 @@ class UnicodeText {
     typedef const_iterator CI;
 
    public:
-    typedef std::input_iterator_tag iterator_category;
+    typedef std::bidirectional_iterator_tag iterator_category;
     typedef char32 value_type;
     typedef int difference_type;
     typedef void pointer;            // (Not needed.)

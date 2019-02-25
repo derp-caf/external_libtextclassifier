@@ -16,8 +16,8 @@
 
 #include "utils/tflite-model-executor.h"
 
+#include "tensorflow/lite/kernels/register.h"
 #include "utils/base/logging.h"
-#include "tensorflow/contrib/lite/kernels/register.h"
 
 // Forward declaration of custom TensorFlow Lite ops for registration.
 namespace tflite {

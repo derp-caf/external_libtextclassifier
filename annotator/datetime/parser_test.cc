@@ -27,6 +27,7 @@
 #include "annotator/datetime/parser.h"
 #include "annotator/model_generated.h"
 #include "annotator/types-test-util.h"
+#include "utils/testing/annotator.h"
 
 using testing::ElementsAreArray;
 
@@ -42,23 +43,23 @@ std::string ReadFile(const std::string& file_name) {
   return std::string(std::istreambuf_iterator<char>(file_stream), {});
 }
 
-std::string FormatMillis(int64 time_ms_utc) {
-  long time_seconds = time_ms_utc / 1000;  // NOLINT
-  // Format time, "ddd yyyy-mm-dd hh:mm:ss zzz"
-  char buffer[512];
-  strftime(buffer, sizeof(buffer), "%a %Y-%m-%d %H:%M:%S %Z",
-           localtime(&time_seconds));
-  return std::string(buffer);
-}
-
 class ParserTest : public testing::Test {
  public:
   void SetUp() override {
-    model_buffer_ = ReadFile(GetModelPath() + "test_model.fb");
+    // Loads default unmodified model. Individual tests can call LoadModel to
+    // make changes.
+    LoadModel([](ModelT* model) {});
+  }
+
+  template <typename Fn>
+  void LoadModel(Fn model_visitor_fn) {
+    std::string model_buffer = ReadFile(GetModelPath() + "test_model.fb");
+    model_buffer_ = ModifyAnnotatorModel(model_buffer, model_visitor_fn);
     classifier_ = Annotator::FromUnownedBuffer(model_buffer_.data(),
                                                model_buffer_.size(), &unilib_);
     TC3_CHECK(classifier_);
     parser_ = classifier_->DatetimeParserForTests();
+    TC3_CHECK(parser_);
   }
 
   bool HasNoResult(const std::string& text, bool anchor_start_end = false,
@@ -73,7 +74,7 @@ class ParserTest : public testing::Test {
   }
 
   bool ParsesCorrectly(const std::string& marked_text,
-                       const int64 expected_ms_utc,
+                       const std::vector<int64>& expected_ms_utcs,
                        DatetimeGranularity expected_granularity,
                        bool anchor_start_end = false,
                        const std::string& timezone = "Europe/Zurich",
@@ -120,23 +121,46 @@ class ParserTest : public testing::Test {
       }
     }
 
-    const std::vector<DatetimeParseResultSpan> expected{
+    std::vector<DatetimeParseResultSpan> expected{
         {{expected_start_index, expected_end_index},
-         {expected_ms_utc, expected_granularity},
+         {},
          /*target_classification_score=*/1.0,
          /*priority_score=*/0.1}};
+    expected[0].data.resize(expected_ms_utcs.size());
+    for (int i = 0; i < expected_ms_utcs.size(); i++) {
+      expected[0].data[i] = {expected_ms_utcs[i], expected_granularity};
+    }
+
     const bool matches =
         testing::Matches(ElementsAreArray(expected))(filtered_results);
     if (!matches) {
-      TC3_LOG(ERROR) << "Expected: " << expected[0] << " which corresponds to: "
-                     << FormatMillis(expected[0].data.time_ms_utc);
-      for (int i = 0; i < filtered_results.size(); ++i) {
-        TC3_LOG(ERROR) << "Actual[" << i << "]: " << filtered_results[i]
-                       << " which corresponds to: "
-                       << FormatMillis(filtered_results[i].data.time_ms_utc);
+      TC3_LOG(ERROR) << "Expected: " << expected[0];
+      if (filtered_results.empty()) {
+        TC3_LOG(ERROR) << "But got no results.";
       }
+      TC3_LOG(ERROR) << "Actual: " << filtered_results[0];
     }
+
     return matches;
+  }
+
+  bool ParsesCorrectly(const std::string& marked_text,
+                       const int64 expected_ms_utc,
+                       DatetimeGranularity expected_granularity,
+                       bool anchor_start_end = false,
+                       const std::string& timezone = "Europe/Zurich",
+                       const std::string& locales = "en-US") {
+    return ParsesCorrectly(marked_text, std::vector<int64>{expected_ms_utc},
+                           expected_granularity, anchor_start_end, timezone,
+                           locales);
+  }
+
+  bool ParsesCorrectlyGerman(const std::string& marked_text,
+                             const std::vector<int64>& expected_ms_utcs,
+                             DatetimeGranularity expected_granularity) {
+    return ParsesCorrectly(marked_text, expected_ms_utcs, expected_granularity,
+                           /*anchor_start_end=*/false,
+                           /*timezone=*/"Europe/Zurich", /*locales=*/"de");
   }
 
   bool ParsesCorrectlyGerman(const std::string& marked_text,
@@ -173,24 +197,32 @@ TEST_F(ParserTest, Parse) {
                               GRANULARITY_SECOND));
   EXPECT_TRUE(ParsesCorrectly("{Jun 09 2011 15:28:14}", 1307626094000,
                               GRANULARITY_SECOND));
+  EXPECT_TRUE(ParsesCorrectly("{Mar 16 08:12:04}", {6419524000, 6462724000},
+                              GRANULARITY_SECOND));
+  EXPECT_TRUE(ParsesCorrectly("{2010-06-26 02:31:29}",
+                              {1277512289000, 1277555489000},
+                              GRANULARITY_SECOND));
+  EXPECT_TRUE(ParsesCorrectly("{2006/01/22 04:11:05}",
+                              {1137899465000, 1137942665000},
+                              GRANULARITY_SECOND));
   EXPECT_TRUE(
-      ParsesCorrectly("{Mar 16 08:12:04}", 6419524000, GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{2010-06-26 02:31:29}", 1277512289000,
+      ParsesCorrectly("{11:42:35}", {38555000, 81755000}, GRANULARITY_SECOND));
+  EXPECT_TRUE(ParsesCorrectly("{23/Apr 11:42:35}", {9715355000, 9758555000},
                               GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{2006/01/22 04:11:05}", 1137899465000,
+  EXPECT_TRUE(ParsesCorrectly("{23/Apr/2015 11:42:35}",
+                              {1429782155000, 1429825355000},
                               GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{11:42:35}", 38555000, GRANULARITY_SECOND));
-  EXPECT_TRUE(
-      ParsesCorrectly("{23/Apr 11:42:35}", 9715355000, GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{23/Apr/2015 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectly("{23-Apr-2015 11:42:35}",
+                              {1429782155000, 1429825355000},
                               GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{23-Apr-2015 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectly("{23 Apr 2015 11:42:35}",
+                              {1429782155000, 1429825355000},
                               GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{23 Apr 2015 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectly("{04/23/15 11:42:35}",
+                              {1429782155000, 1429825355000},
                               GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{04/23/15 11:42:35}", 1429782155000,
-                              GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{04/23/2015 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectly("{04/23/2015 11:42:35}",
+                              {1429782155000, 1429825355000},
                               GRANULARITY_SECOND));
   EXPECT_TRUE(ParsesCorrectly("{9/28/2011 2:23:15 PM}", 1317212595000,
                               GRANULARITY_SECOND));
@@ -205,20 +237,22 @@ TEST_F(ParserTest, Parse) {
       "think order event music. Incommode so intention defective at "
       "convinced. Led income months itself and houses you. After nor "
       "you leave might share court balls. ",
-      1271651775000, GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectly("{january 1 2018 at 4:30}", 1514777400000,
+      {1271651775000, 1271694975000}, GRANULARITY_SECOND));
+  EXPECT_TRUE(ParsesCorrectly("{january 1 2018 at 4:30}",
+                              {1514777400000, 1514820600000},
                               GRANULARITY_MINUTE));
   EXPECT_TRUE(ParsesCorrectly("{january 1 2018 at 4:30 am}", 1514777400000,
                               GRANULARITY_MINUTE));
   EXPECT_TRUE(ParsesCorrectly("{january 1 2018 at 4pm}", 1514818800000,
                               GRANULARITY_HOUR));
 
-  EXPECT_TRUE(ParsesCorrectly("{today at 0:00}", -3600000, GRANULARITY_MINUTE));
-  EXPECT_TRUE(ParsesCorrectly("{today at 0:00}", -57600000, GRANULARITY_MINUTE,
-                              /*anchor_start_end=*/false,
-                              "America/Los_Angeles"));
-  EXPECT_TRUE(
-      ParsesCorrectly("{tomorrow at 4:00}", 97200000, GRANULARITY_MINUTE));
+  EXPECT_TRUE(ParsesCorrectly("{today at 0:00}", {-3600000, 39600000},
+                              GRANULARITY_MINUTE));
+  EXPECT_TRUE(ParsesCorrectly(
+      "{today at 0:00}", {-57600000, -14400000}, GRANULARITY_MINUTE,
+      /*anchor_start_end=*/false, "America/Los_Angeles"));
+  EXPECT_TRUE(ParsesCorrectly("{tomorrow at 4:00}", {97200000, 140400000},
+                              GRANULARITY_MINUTE));
   EXPECT_TRUE(ParsesCorrectly("{tomorrow at 4am}", 97200000, GRANULARITY_HOUR));
   EXPECT_TRUE(
       ParsesCorrectly("{wednesday at 4am}", 529200000, GRANULARITY_HOUR));
@@ -244,39 +278,51 @@ TEST_F(ParserTest, ParseGerman) {
       ParsesCorrectlyGerman("{1 2 2018}", 1517439600000, GRANULARITY_DAY));
   EXPECT_TRUE(ParsesCorrectlyGerman("lorem {1 Januar 2018} ipsum",
                                     1514761200000, GRANULARITY_DAY));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{19/Apr/2010:06:36:15}", 1271651775000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{19/Apr/2010:06:36:15}",
+                                    {1271651775000, 1271694975000},
                                     GRANULARITY_SECOND));
   EXPECT_TRUE(ParsesCorrectlyGerman("{09/März/2004 22:02:40}", 1078866160000,
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{Dez 2, 2010 2:39:58}", 1291253998000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{Dez 2, 2010 2:39:58}",
+                                    {1291253998000, 1291297198000},
                                     GRANULARITY_SECOND));
   EXPECT_TRUE(ParsesCorrectlyGerman("{Juni 09 2011 15:28:14}", 1307626094000,
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{März 16 08:12:04}", 6419524000,
+  EXPECT_TRUE(ParsesCorrectlyGerman(
+      "{März 16 08:12:04}", {6419524000, 6462724000}, GRANULARITY_SECOND));
+  EXPECT_TRUE(ParsesCorrectlyGerman("{2010-06-26 02:31:29}",
+                                    {1277512289000, 1277555489000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{2010-06-26 02:31:29}", 1277512289000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{2006/01/22 04:11:05}",
+                                    {1137899465000, 1137942665000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{2006/01/22 04:11:05}", 1137899465000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{11:42:35}", {38555000, 81755000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(
-      ParsesCorrectlyGerman("{11:42:35}", 38555000, GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{23/Apr 11:42:35}", 9715355000,
+  EXPECT_TRUE(ParsesCorrectlyGerman(
+      "{23/Apr 11:42:35}", {9715355000, 9758555000}, GRANULARITY_SECOND));
+  EXPECT_TRUE(ParsesCorrectlyGerman("{23/Apr/2015:11:42:35}",
+                                    {1429782155000, 1429825355000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{23/Apr/2015:11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{23/Apr/2015 11:42:35}",
+                                    {1429782155000, 1429825355000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{23/Apr/2015 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{23-Apr-2015 11:42:35}",
+                                    {1429782155000, 1429825355000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{23-Apr-2015 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{23 Apr 2015 11:42:35}",
+                                    {1429782155000, 1429825355000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{23 Apr 2015 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{04/23/15 11:42:35}",
+                                    {1429782155000, 1429825355000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{04/23/15 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{04/23/2015 11:42:35}",
+                                    {1429782155000, 1429825355000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{04/23/2015 11:42:35}", 1429782155000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{19/apr/2010:06:36:15}",
+                                    {1271651775000, 1271694975000},
                                     GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{19/apr/2010:06:36:15}", 1271651775000,
-                                    GRANULARITY_SECOND));
-  EXPECT_TRUE(ParsesCorrectlyGerman("{januar 1 2018 um 4:30}", 1514777400000,
+  EXPECT_TRUE(ParsesCorrectlyGerman("{januar 1 2018 um 4:30}",
+                                    {1514777400000, 1514820600000},
                                     GRANULARITY_MINUTE));
   EXPECT_TRUE(ParsesCorrectlyGerman("{januar 1 2018 um 4:30 nachm}",
                                     1514820600000, GRANULARITY_MINUTE));
@@ -284,10 +330,10 @@ TEST_F(ParserTest, ParseGerman) {
                                     GRANULARITY_HOUR));
   EXPECT_TRUE(
       ParsesCorrectlyGerman("{14.03.2017}", 1489446000000, GRANULARITY_DAY));
-  EXPECT_TRUE(
-      ParsesCorrectlyGerman("{morgen 0:00}", 82800000, GRANULARITY_MINUTE));
-  EXPECT_TRUE(
-      ParsesCorrectlyGerman("{morgen um 4:00}", 97200000, GRANULARITY_MINUTE));
+  EXPECT_TRUE(ParsesCorrectlyGerman("{morgen 0:00}", {82800000, 126000000},
+                                    GRANULARITY_MINUTE));
+  EXPECT_TRUE(ParsesCorrectlyGerman("{morgen um 4:00}", {97200000, 140400000},
+                                    GRANULARITY_MINUTE));
   EXPECT_TRUE(
       ParsesCorrectlyGerman("{morgen um 4 vorm}", 97200000, GRANULARITY_HOUR));
 }
@@ -318,6 +364,27 @@ TEST_F(ParserTest, ParseUnknownLanguage) {
                               GRANULARITY_DAY,
                               /*anchor_start_end=*/false,
                               /*timezone=*/"Europe/Zurich", /*locales=*/"xx"));
+}
+
+TEST_F(ParserTest, WhenEnabled_GeneratesAlternatives) {
+  LoadModel([](ModelT* model) {
+    model->datetime_model->generate_alternative_interpretations_when_ambiguous =
+        true;
+  });
+
+  EXPECT_TRUE(ParsesCorrectly("{january 1 2018 at 4:30}",
+                              {1514777400000, 1514820600000},
+                              GRANULARITY_MINUTE));
+}
+
+TEST_F(ParserTest, WhenDisabled_DoesNotGenerateAlternatives) {
+  LoadModel([](ModelT* model) {
+    model->datetime_model->generate_alternative_interpretations_when_ambiguous =
+        false;
+  });
+
+  EXPECT_TRUE(ParsesCorrectly("{january 1 2018 at 4:30}", 1514777400000,
+                              GRANULARITY_MINUTE));
 }
 
 class ParserLocaleTest : public testing::Test {

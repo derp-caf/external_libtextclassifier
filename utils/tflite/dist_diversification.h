@@ -17,7 +17,7 @@
 #ifndef LIBTEXTCLASSIFIER_UTILS_TFLITE_DIST_DIVERSIFICATION_H_
 #define LIBTEXTCLASSIFIER_UTILS_TFLITE_DIST_DIVERSIFICATION_H_
 
-#include "tensorflow/contrib/lite/context.h"
+#include "tensorflow/lite/context.h"
 
 namespace tflite {
 namespace ops {

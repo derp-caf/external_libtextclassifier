@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include "annotator/contact/contact-engine.h"
 #include "annotator/datetime/parser.h"
 #include "annotator/feature-processor.h"
 #include "annotator/knowledge/knowledge-engine.h"
@@ -133,6 +134,9 @@ class Annotator {
   // Initializes the knowledge engine with the given config.
   bool InitializeKnowledgeEngine(const std::string& serialized_config);
 
+  // Initializes the contact engine with the given config.
+  bool InitializeContactEngine(const std::string& serialized_config);
+
   // Runs inference for given a context and current selection (i.e. index
   // of the first and one past last selected characters (utf8 codepoint
   // offsets)). Returns the indices (utf8 codepoint offsets) of the selection
@@ -158,6 +162,8 @@ class Annotator {
       const std::string& context,
       const AnnotationOptions& options = AnnotationOptions::Default()) const;
 
+  const Model* ViewModel() const;
+
   // Exposes the feature processor for tests and evaluations.
   const FeatureProcessor* SelectionFeatureProcessorForTests() const;
   const FeatureProcessor* ClassificationFeatureProcessorForTests() const;
@@ -165,18 +171,11 @@ class Annotator {
   // Exposes the date time parser for tests and evaluations.
   const DatetimeParser* DatetimeParserForTests() const;
 
-  // String collection names for various classes.
-  static const std::string& kOtherCollection;
   static const std::string& kPhoneCollection;
   static const std::string& kAddressCollection;
   static const std::string& kDateCollection;
   static const std::string& kUrlCollection;
-  static const std::string& kFlightCollection;
   static const std::string& kEmailCollection;
-  static const std::string& kIbanCollection;
-  static const std::string& kPaymentCardCollection;
-  static const std::string& kIsbnCollection;
-  static const std::string& kTrackingNumberCollection;
 
  protected:
   struct ScoredChunk {
@@ -258,10 +257,10 @@ class Annotator {
 
   // Classifies the selected text with the date time model.
   // Returns true if there was a match and the result was set.
-  bool DatetimeClassifyText(const std::string& context,
-                            CodepointSpan selection_indices,
-                            const ClassificationOptions& options,
-                            ClassificationResult* classification_result) const;
+  bool DatetimeClassifyText(
+      const std::string& context, CodepointSpan selection_indices,
+      const ClassificationOptions& options,
+      std::vector<ClassificationResult>* classification_results) const;
 
   // Chunks given input text with the selection model and classifies the spans
   // with the classification model.
@@ -324,6 +323,11 @@ class Annotator {
       const ClassificationResult& classification) const;
   bool FilteredForSelection(const AnnotatedSpan& span) const;
 
+  // Computes the selection boundaries from a regular expression match.
+  CodepointSpan ComputeSelectionBoundaries(
+      const UniLib::RegexMatcher* match,
+      const RegexModel_::Pattern* config) const;
+
   const Model* model_;
 
   std::unique_ptr<const ModelExecutor> selection_executor_;
@@ -337,11 +341,8 @@ class Annotator {
 
  private:
   struct CompiledRegexPattern {
-    std::string collection_name;
-    float target_classification_score;
-    float priority_score;
+    const RegexModel_::Pattern* config;
     std::unique_ptr<UniLib::RegexPattern> pattern;
-    const VerificationOptions* verification_options;
   };
 
   std::unique_ptr<ScopedMmap> mmap_;
@@ -354,7 +355,6 @@ class Annotator {
   std::unordered_set<std::string> filtered_collections_selection_;
 
   std::vector<CompiledRegexPattern> regex_patterns_;
-  std::unordered_set<int> regex_approximate_match_pattern_ids_;
 
   // Indices into regex_patterns_ for the different modes.
   std::vector<int> annotation_regex_patterns_, classification_regex_patterns_,
@@ -366,6 +366,7 @@ class Annotator {
   const CalendarLib* calendarlib_;
 
   std::unique_ptr<const KnowledgeEngine> knowledge_engine_;
+  std::unique_ptr<const ContactEngine> contact_engine_;
 };
 
 namespace internal {
@@ -387,6 +388,23 @@ std::vector<Token> CopyCachedTokens(const std::vector<Token>& cached_tokens,
 
 // Interprets the buffer as a Model flatbuffer and returns it for reading.
 const Model* ViewModel(const void* buffer, int size);
+
+// Opens model from given path and runs a function, passing the loaded Model
+// flatbuffer as an argument.
+//
+// This is mainly useful if we don't want to pay the cost for the model
+// initialization because we'll be only reading some flatbuffer values from the
+// file.
+template <typename ReturnType, typename Func>
+ReturnType VisitAnnotatorModel(const std::string& path, Func function) {
+  ScopedMmap mmap(path);
+  if (!mmap.handle().ok()) {
+    function(/*model=*/nullptr);
+  }
+  const Model* model =
+      ViewModel(mmap.handle().start(), mmap.handle().num_bytes());
+  return function(model);
+}
 
 }  // namespace libtextclassifier3
 

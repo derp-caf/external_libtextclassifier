@@ -22,11 +22,11 @@
 #include "gtest/gtest.h"
 #include "third_party/absl/flags/flag.h"
 #include "flatbuffers/flexbuffers.h"
-#include "tensorflow/contrib/lite/interpreter.h"
-#include "tensorflow/contrib/lite/kernels/register.h"
-#include "tensorflow/contrib/lite/kernels/test_util.h"
-#include "tensorflow/contrib/lite/model.h"
-#include "tensorflow/contrib/lite/string_util.h"
+#include "tensorflow/lite/interpreter.h"
+#include "tensorflow/lite/kernels/register.h"
+#include "tensorflow/lite/kernels/test_util.h"
+#include "tensorflow/lite/model.h"
+#include "tensorflow/lite/string_util.h"
 
 namespace libtextclassifier3 {
 namespace {

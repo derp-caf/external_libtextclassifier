@@ -86,16 +86,19 @@ class DatetimeExtractor {
   bool ParseWrittenNumber(const UnicodeText& input, int* parsed_number) const;
   bool ParseYear(const UnicodeText& input, int* parsed_year) const;
   bool ParseMonth(const UnicodeText& input, int* parsed_month) const;
-  bool ParseAMPM(const UnicodeText& input, int* parsed_ampm) const;
+  bool ParseAMPM(const UnicodeText& input,
+                 DateParseData::AMPM* parsed_ampm) const;
   bool ParseRelation(const UnicodeText& input,
                      DateParseData::Relation* parsed_relation) const;
   bool ParseRelationDistance(const UnicodeText& input,
                              int* parsed_distance) const;
-  bool ParseTimeUnit(const UnicodeText& input, int* parsed_time_unit) const;
+  bool ParseTimeUnit(const UnicodeText& input,
+                     DateParseData::TimeUnit* parsed_time_unit) const;
   bool ParseRelationType(
       const UnicodeText& input,
       DateParseData::RelationType* parsed_relation_type) const;
-  bool ParseWeekday(const UnicodeText& input, int* parsed_weekday) const;
+  bool ParseWeekday(const UnicodeText& input,
+                    DateParseData::RelationType* parsed_weekday) const;
 
   const CompiledRule& rule_;
   const UniLib::RegexMatcher& matcher_;

@@ -92,12 +92,6 @@ inline void LiteStrAppend(string *dest, T1 v1, T2 v2, T3 v3, T4 v4) {
   dest->append(LiteStrCat(v4));  // NOLINT
 }
 
-template <typename T1, typename T2, typename T3, typename T4, typename T5>
-inline void LiteStrAppend(string *dest, T1 v1, T2 v2, T3 v3, T4 v4, T5 v5) {
-  LiteStrAppend(dest, v1, v2, v3, v4);
-  dest->append(LiteStrCat(v5));  // NOLINT
-}
-
 }  // namespace mobile
 }  // namespace nlp_saft
 

@@ -73,7 +73,7 @@ enum AndroidSimpleIntentGeneratorConditionType : int {
 // implements the Intent generation logic.
 namespace libtextclassifier3;
 table AndroidIntentFactoryOptions {
-  entity:[libtextclassifier3.AndroidIntentFactoryEntityOptions];
+  entity:[AndroidIntentFactoryEntityOptions];
 }
 
 // Describes how intents should be generated for a particular entity type.
@@ -85,17 +85,17 @@ table AndroidIntentFactoryEntityOptions {
 
   // List of generators for all the different types of intents that should
   // be made available for the entity type.
-  generator:[libtextclassifier3.AndroidIntentGeneratorOptions];
+  generator:[AndroidIntentGeneratorOptions];
 }
 
 // Configures a single Android Intent generator.
 namespace libtextclassifier3;
 table AndroidIntentGeneratorOptions {
   // Strings for UI elements.
-  strings:[libtextclassifier3.AndroidIntentGeneratorStrings];
+  strings:[AndroidIntentGeneratorStrings];
 
   // Generator specific configuration.
-  simple:libtextclassifier3.AndroidSimpleIntentGeneratorOptions;
+  simple:AndroidSimpleIntentGeneratorOptions;
 }
 
 // Language dependent configuration for an Android Intent generator.
@@ -122,7 +122,7 @@ table AndroidSimpleIntentGeneratorExtra {
   name:string;
 
   // The type of the extra to set.
-  type:libtextclassifier3.AndroidSimpleIntentGeneratorExtraType;
+  type:AndroidSimpleIntentGeneratorExtraType;
 
   string_:string;
 
@@ -133,7 +133,7 @@ table AndroidSimpleIntentGeneratorExtra {
 // A condition that needs to be fulfilled for an Intent to get generated.
 namespace libtextclassifier3;
 table AndroidSimpleIntentGeneratorCondition {
-  type:libtextclassifier3.AndroidSimpleIntentGeneratorConditionType;
+  type:AndroidSimpleIntentGeneratorConditionType;
 
   string_:string;
 
@@ -161,15 +161,15 @@ table AndroidSimpleIntentGeneratorOptions {
   type:string;
 
   // The list of all the extras to add to the Intent.
-  extra:[libtextclassifier3.AndroidSimpleIntentGeneratorExtra];
+  extra:[AndroidSimpleIntentGeneratorExtra];
 
   // The list of all the variables that become available for substitution in
   // the action, data, type and extra strings. To e.g. set a field to the value
   // of the first variable, use "%0$s".
-  variable:[libtextclassifier3.AndroidSimpleIntentGeneratorVariableType];
+  variable:[AndroidSimpleIntentGeneratorVariableType];
 
   // The list of all conditions that need to be fulfilled for Intent generation.
-  condition:[libtextclassifier3.AndroidSimpleIntentGeneratorCondition];
+  condition:[AndroidSimpleIntentGeneratorCondition];
 }
 
 // Describes how intents should be generated for a particular entity type.
@@ -187,6 +187,6 @@ table IntentGenerator {
 // Describes how intents for the various entity types should be generated.
 namespace libtextclassifier3;
 table IntentFactoryModel {
-  entities:[libtextclassifier3.IntentFactoryModel_.IntentGenerator];
+  entities:[IntentFactoryModel_.IntentGenerator];
 }
 

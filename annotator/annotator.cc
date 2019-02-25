@@ -21,15 +21,15 @@
 #include <cmath>
 #include <iterator>
 #include <numeric>
+#include "annotator/types.h"
 
+#include "annotator/collections.h"
 #include "utils/base/logging.h"
 #include "utils/checksum.h"
 #include "utils/math/softmax.h"
 #include "utils/utf8/unicodetext.h"
 
 namespace libtextclassifier3 {
-const std::string& Annotator::kOtherCollection =
-    *[]() { return new std::string("other"); }();
 const std::string& Annotator::kPhoneCollection =
     *[]() { return new std::string("phone"); }();
 const std::string& Annotator::kAddressCollection =
@@ -38,18 +38,8 @@ const std::string& Annotator::kDateCollection =
     *[]() { return new std::string("date"); }();
 const std::string& Annotator::kUrlCollection =
     *[]() { return new std::string("url"); }();
-const std::string& Annotator::kFlightCollection =
-    *[]() { return new std::string("flight"); }();
 const std::string& Annotator::kEmailCollection =
     *[]() { return new std::string("email"); }();
-const std::string& Annotator::kIbanCollection =
-    *[]() { return new std::string("iban"); }();
-const std::string& Annotator::kPaymentCardCollection =
-    *[]() { return new std::string("payment_card"); }();
-const std::string& Annotator::kIsbnCollection =
-    *[]() { return new std::string("isbn"); }();
-const std::string& Annotator::kTrackingNumberCollection =
-    *[]() { return new std::string("tracking_number"); }();
 
 namespace {
 const Model* LoadAndVerifyModel(const void* addr, int size) {
@@ -373,15 +363,9 @@ bool Annotator::InitializeRegexModel(ZlibDecompressor* decompressor) {
       selection_regex_patterns_.push_back(regex_pattern_id);
     }
     regex_patterns_.push_back({
-        regex_pattern->collection_name()->str(),
-        regex_pattern->target_classification_score(),
-        regex_pattern->priority_score(),
+        regex_pattern,
         std::move(compiled_pattern),
-        regex_pattern->verification_options(),
     });
-    if (regex_pattern->use_approximate_matching()) {
-      regex_approximate_match_pattern_ids_.insert(regex_pattern_id);
-    }
     ++regex_pattern_id;
   }
 
@@ -397,6 +381,16 @@ bool Annotator::InitializeKnowledgeEngine(
     return false;
   }
   knowledge_engine_ = std::move(knowledge_engine);
+  return true;
+}
+
+bool Annotator::InitializeContactEngine(const std::string& serialized_config) {
+  std::unique_ptr<ContactEngine> contact_engine(new ContactEngine());
+  if (!contact_engine->Initialize(serialized_config)) {
+    TC3_LOG(ERROR) << "Failed to initialize the contact engine.";
+    return false;
+  }
+  contact_engine_ = std::move(contact_engine);
   return true;
 }
 
@@ -571,6 +565,11 @@ CodepointSpan Annotator::SuggestSelection(
     TC3_LOG(ERROR) << "Knowledge suggest selection failed.";
     return original_click_indices;
   }
+  if (contact_engine_ &&
+      !contact_engine_->Chunk(context_unicode, tokens, &candidates)) {
+    TC3_LOG(ERROR) << "Contact suggest selection failed.";
+    return original_click_indices;
+  }
 
   // Sort candidates according to their position in the input, so that the next
   // code can assume that any connected component of overlapping spans forms a
@@ -671,7 +670,7 @@ namespace {
 inline bool ClassifiedAsOther(
     const std::vector<ClassificationResult>& classification) {
   return !classification.empty() &&
-         classification[0].collection == Annotator::kOtherCollection;
+         classification[0].collection == Collections::kOther;
 }
 
 float GetPriorityScore(
@@ -937,7 +936,7 @@ bool Annotator::ModelClassifyText(
   if (model_->classification_options()->max_num_tokens() > 0 &&
       model_->classification_options()->max_num_tokens() <
           selection_num_tokens) {
-    *classification_results = {{kOtherCollection, 1.0}};
+    *classification_results = {{Collections::kOther, 1.0}};
     return true;
   }
 
@@ -977,7 +976,7 @@ bool Annotator::ModelClassifyText(
 
   if (!classification_feature_processor_->HasEnoughSupportedCodepoints(
           tokens, extraction_span)) {
-    *classification_results = {{kOtherCollection, 1.0}};
+    *classification_results = {{Collections::kOther, 1.0}};
     return true;
   }
 
@@ -1031,22 +1030,22 @@ bool Annotator::ModelClassifyText(
 
   // Phone class sanity check.
   if (!classification_results->empty() &&
-      classification_results->begin()->collection == kPhoneCollection) {
+      classification_results->begin()->collection == Collections::kPhone) {
     const int digit_count = CountDigits(context, selection_indices);
     if (digit_count <
             model_->classification_options()->phone_min_num_digits() ||
         digit_count >
             model_->classification_options()->phone_max_num_digits()) {
-      *classification_results = {{kOtherCollection, 1.0}};
+      *classification_results = {{Collections::kOther, 1.0}};
     }
   }
 
   // Address class sanity check.
   if (!classification_results->empty() &&
-      classification_results->begin()->collection == kAddressCollection) {
+      classification_results->begin()->collection == Collections::kAddress) {
     if (selection_num_tokens <
         model_->classification_options()->address_min_num_tokens()) {
-      *classification_results = {{kOtherCollection, 1.0}};
+      *classification_results = {{Collections::kOther, 1.0}};
     }
   }
 
@@ -1068,8 +1067,7 @@ bool Annotator::RegexClassifyText(
         regex_pattern.pattern->Matcher(selection_text_unicode);
     int status = UniLib::RegexMatcher::kNoError;
     bool matches;
-    if (regex_approximate_match_pattern_ids_.find(pattern_id) !=
-        regex_approximate_match_pattern_ids_.end()) {
+    if (regex_pattern.config->use_approximate_matching()) {
       matches = matcher->ApproximatelyMatches(&status);
     } else {
       matches = matcher->Matches(&status);
@@ -1077,11 +1075,12 @@ bool Annotator::RegexClassifyText(
     if (status != UniLib::RegexMatcher::kNoError) {
       return false;
     }
-    if (matches &&
-        VerifyCandidate(regex_pattern.verification_options, selection_text)) {
-      *classification_result = {regex_pattern.collection_name,
-                                regex_pattern.target_classification_score,
-                                regex_pattern.priority_score};
+    if (matches && VerifyCandidate(regex_pattern.config->verification_options(),
+                                   selection_text)) {
+      *classification_result = {
+          regex_pattern.config->collection_name()->str(),
+          regex_pattern.config->target_classification_score(),
+          regex_pattern.config->priority_score()};
       return true;
     }
     if (status != UniLib::RegexMatcher::kNoError) {
@@ -1095,7 +1094,7 @@ bool Annotator::RegexClassifyText(
 bool Annotator::DatetimeClassifyText(
     const std::string& context, CodepointSpan selection_indices,
     const ClassificationOptions& options,
-    ClassificationResult* classification_result) const {
+    std::vector<ClassificationResult>* classification_results) const {
   if (!datetime_parser_) {
     return false;
   }
@@ -1117,9 +1116,11 @@ bool Annotator::DatetimeClassifyText(
     if (std::make_pair(datetime_span.span.first + selection_indices.first,
                        datetime_span.span.second + selection_indices.first) ==
         selection_indices) {
-      *classification_result = {kDateCollection,
-                                datetime_span.target_classification_score};
-      classification_result->datetime_parse_result = datetime_span.data;
+      for (const DatetimeParseResult& parse_result : datetime_span.data) {
+        classification_results->emplace_back(
+            Collections::kDate, datetime_span.target_classification_score);
+        classification_results->back().datetime_parse_result = parse_result;
+      }
       return true;
     }
   }
@@ -1156,7 +1157,18 @@ std::vector<ClassificationResult> Annotator::ClassifyText(
     if (!FilteredForClassification(knowledge_result)) {
       return {knowledge_result};
     } else {
-      return {{kOtherCollection, 1.0}};
+      return {{Collections::kOther, 1.0}};
+    }
+  }
+
+  // Try the contact engine.
+  ClassificationResult contact_result;
+  if (contact_engine_ && contact_engine_->ClassifyText(
+                             context, selection_indices, &contact_result)) {
+    if (!FilteredForClassification(contact_result)) {
+      return {contact_result};
+    } else {
+      return {{Collections::kOther, 1.0}};
     }
   }
 
@@ -1166,18 +1178,25 @@ std::vector<ClassificationResult> Annotator::ClassifyText(
     if (!FilteredForClassification(regex_result)) {
       return {regex_result};
     } else {
-      return {{kOtherCollection, 1.0}};
+      return {{Collections::kOther, 1.0}};
     }
   }
 
   // Try the date model.
-  ClassificationResult datetime_result;
+  std::vector<ClassificationResult> datetime_results;
   if (DatetimeClassifyText(context, selection_indices, options,
-                           &datetime_result)) {
-    if (!FilteredForClassification(datetime_result)) {
-      return {datetime_result};
+                           &datetime_results)) {
+    for (int i = 0; i < datetime_results.size(); i++) {
+      if (FilteredForClassification(datetime_results[i])) {
+        datetime_results.erase(datetime_results.begin() + i);
+        i--;
+      }
+    }
+
+    if (!datetime_results.empty()) {
+      return datetime_results;
     } else {
-      return {{kOtherCollection, 1.0}};
+      return {{Collections::kOther, 1.0}};
     }
   }
 
@@ -1192,7 +1211,7 @@ std::vector<ClassificationResult> Annotator::ClassifyText(
     if (!FilteredForClassification(model_result[0])) {
       return model_result;
     } else {
-      return {{kOtherCollection, 1.0}};
+      return {{Collections::kOther, 1.0}};
     }
   }
 
@@ -1317,7 +1336,9 @@ std::vector<AnnotatedSpan> Annotator::Annotate(
     return {};
   }
 
-  if (!UTF8ToUnicodeText(context, /*do_copy=*/false).is_valid()) {
+  const UnicodeText context_unicode =
+      UTF8ToUnicodeText(context, /*do_copy=*/false);
+  if (!context_unicode.is_valid()) {
     return {};
   }
 
@@ -1351,6 +1372,13 @@ std::vector<AnnotatedSpan> Annotator::Annotate(
     return {};
   }
 
+  // Annotate with the contact engine.
+  if (contact_engine_ &&
+      !contact_engine_->Chunk(context_unicode, tokens, &candidates)) {
+    TC3_LOG(ERROR) << "Couldn't run contact engine Chunk.";
+    return {};
+  }
+
   // Sort candidates according to their position in the input, so that the next
   // code can assume that any connected component of overlapping spans forms a
   // contiguous block.
@@ -1379,6 +1407,47 @@ std::vector<AnnotatedSpan> Annotator::Annotate(
   return result;
 }
 
+CodepointSpan Annotator::ComputeSelectionBoundaries(
+    const UniLib::RegexMatcher* match,
+    const RegexModel_::Pattern* config) const {
+  if (config->capturing_group() == nullptr) {
+    // Use first capturing group to specify the selection.
+    int status = UniLib::RegexMatcher::kNoError;
+    const CodepointSpan result = {match->Start(1, &status),
+                                  match->End(1, &status)};
+    if (status != UniLib::RegexMatcher::kNoError) {
+      return {kInvalidIndex, kInvalidIndex};
+    }
+    return result;
+  }
+
+  CodepointSpan result = {kInvalidIndex, kInvalidIndex};
+  const int num_groups = config->capturing_group()->size();
+  for (int i = 0; i < num_groups; i++) {
+    if (!config->capturing_group()->Get(i)->extend_selection()) {
+      continue;
+    }
+
+    int status = UniLib::RegexMatcher::kNoError;
+    // Check match and adjust bounds.
+    const int group_start = match->Start(i, &status);
+    const int group_end = match->End(i, &status);
+    if (status != UniLib::RegexMatcher::kNoError) {
+      return {kInvalidIndex, kInvalidIndex};
+    }
+    if (group_start == kInvalidIndex || group_end == kInvalidIndex) {
+      continue;
+    }
+    if (result.first == kInvalidIndex) {
+      result = {group_start, group_end};
+    } else {
+      result.first = std::min(result.first, group_start);
+      result.second = std::max(result.second, group_end);
+    }
+  }
+  return result;
+}
+
 bool Annotator::RegexChunk(const UnicodeText& context_unicode,
                            const std::vector<int>& rules,
                            std::vector<AnnotatedSpan>* result) const {
@@ -1393,21 +1462,23 @@ bool Annotator::RegexChunk(const UnicodeText& context_unicode,
 
     int status = UniLib::RegexMatcher::kNoError;
     while (matcher->Find(&status) && status == UniLib::RegexMatcher::kNoError) {
-      if (regex_pattern.verification_options) {
-        if (!VerifyCandidate(regex_pattern.verification_options,
+      if (regex_pattern.config->verification_options()) {
+        if (!VerifyCandidate(regex_pattern.config->verification_options(),
                              matcher->Group(1, &status).ToUTF8String())) {
           continue;
         }
       }
       result->emplace_back();
+
       // Selection/annotation regular expressions need to specify a capturing
       // group specifying the selection.
-      result->back().span = {matcher->Start(1, &status),
-                             matcher->End(1, &status)};
+      result->back().span =
+          ComputeSelectionBoundaries(matcher.get(), regex_pattern.config);
+
       result->back().classification = {
-          {regex_pattern.collection_name,
-           regex_pattern.target_classification_score,
-           regex_pattern.priority_score}};
+          {regex_pattern.config->collection_name()->str(),
+           regex_pattern.config->target_classification_score(),
+           regex_pattern.config->priority_score()}};
     }
   }
   return true;
@@ -1672,17 +1743,21 @@ bool Annotator::DatetimeChunk(const UnicodeText& context_unicode,
     return false;
   }
   for (const DatetimeParseResultSpan& datetime_span : datetime_spans) {
-    AnnotatedSpan annotated_span;
-    annotated_span.span = datetime_span.span;
-    annotated_span.classification = {{kDateCollection,
-                                      datetime_span.target_classification_score,
-                                      datetime_span.priority_score}};
-    annotated_span.classification[0].datetime_parse_result = datetime_span.data;
+    for (const DatetimeParseResult& parse_result : datetime_span.data) {
+      AnnotatedSpan annotated_span;
+      annotated_span.span = datetime_span.span;
+      annotated_span.classification = {
+          {Collections::kDate, datetime_span.target_classification_score,
+           datetime_span.priority_score}};
+      annotated_span.classification[0].datetime_parse_result = parse_result;
 
-    result->push_back(std::move(annotated_span));
+      result->push_back(std::move(annotated_span));
+    }
   }
   return true;
 }
+
+const Model* Annotator::ViewModel() const { return model_; }
 
 const Model* ViewModel(const void* buffer, int size) {
   if (!buffer) {

@@ -19,6 +19,7 @@
 #include <string>
 
 #include "utils/flatbuffers.h"
+#include "utils/flatbuffers_generated.h"
 #include "utils/flatbuffers_test_generated.h"
 #include "gtest/gtest.h"
 #include "flatbuffers/flatbuffers.h"
@@ -52,17 +53,16 @@ TEST(FlatbuffersTest, ReflectionPrimitiveType) {
   EXPECT_TRUE(buffer->Set("a_double_field", 1.0));
 
   // Try to parse with the generated code.
-  flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(flatbuffers::Offset<void>(buffer->Serialize(&builder)));
-  std::unique_ptr<test::ExtraT> extra =
-      LoadAndVerifyMutableFlatbuffer<test::Extra>(builder.GetBufferPointer(),
-                                                  builder.GetSize());
-  EXPECT_TRUE(extra != nullptr);
-  EXPECT_EQ(extra->an_int_field, 42);
-  EXPECT_EQ(extra->a_long_field, 84);
-  EXPECT_EQ(extra->a_bool_field, true);
-  EXPECT_NEAR(extra->a_float_field, 1.f, 1e-4);
-  EXPECT_NEAR(extra->a_double_field, 1.f, 1e-4);
+  std::string serialized_entity_data = buffer->Serialize();
+  std::unique_ptr<test::EntityDataT> entity_data =
+      LoadAndVerifyMutableFlatbuffer<test::EntityData>(
+          serialized_entity_data.data(), serialized_entity_data.size());
+  EXPECT_TRUE(entity_data != nullptr);
+  EXPECT_EQ(entity_data->an_int_field, 42);
+  EXPECT_EQ(entity_data->a_long_field, 84);
+  EXPECT_EQ(entity_data->a_bool_field, true);
+  EXPECT_NEAR(entity_data->a_float_field, 1.f, 1e-4);
+  EXPECT_NEAR(entity_data->a_double_field, 1.f, 1e-4);
 }
 
 TEST(FlatbuffersTest, ReflectionUnknownField) {
@@ -90,6 +90,33 @@ TEST(FlatbuffersTest, ReflectionUnknownField) {
             "this is an unknown field.");
 }
 
+TEST(FlatbuffersTest, ReflectionNestedField) {
+  std::string metadata_buffer = LoadTestMetadata();
+  const reflection::Schema* schema =
+      flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data());
+  ReflectiveFlatbufferBuilder reflective_builder(schema);
+
+  FlatbufferFieldPathT path;
+  path.field.emplace_back(new FlatbufferFieldT);
+  path.field.back()->field_name = "flight_number";
+  path.field.emplace_back(new FlatbufferFieldT);
+  path.field.back()->field_name = "carrier_code";
+  flatbuffers::FlatBufferBuilder path_builder;
+  path_builder.Finish(FlatbufferFieldPath::Pack(path_builder, &path));
+
+  std::unique_ptr<ReflectiveFlatbuffer> buffer = reflective_builder.NewRoot();
+
+  ReflectiveFlatbuffer* parent = nullptr;
+  reflection::Field const* field = nullptr;
+  EXPECT_TRUE(
+      buffer->GetFieldWithParent(flatbuffers::GetRoot<FlatbufferFieldPath>(
+                                     path_builder.GetBufferPointer()),
+                                 &parent, &field));
+  EXPECT_EQ(parent, buffer->Mutable("flight_number"));
+  EXPECT_EQ(field,
+            buffer->Mutable("flight_number")->GetFieldOrNull("carrier_code"));
+}
+
 TEST(FlatbuffersTest, ReflectionRecursive) {
   std::string metadata_buffer = LoadTestMetadata();
   ReflectiveFlatbufferBuilder reflective_builder(
@@ -107,18 +134,118 @@ TEST(FlatbuffersTest, ReflectionRecursive) {
   EXPECT_TRUE(contact_info->Set("score", 1.f));
 
   // Try to parse with the generated code.
-  flatbuffers::FlatBufferBuilder builder;
-  builder.Finish(flatbuffers::Offset<void>(buffer->Serialize(&builder)));
-  std::unique_ptr<test::ExtraT> extra =
-      LoadAndVerifyMutableFlatbuffer<test::Extra>(builder.GetBufferPointer(),
-                                                  builder.GetSize());
-  EXPECT_TRUE(extra != nullptr);
-  EXPECT_EQ(extra->flight_number->carrier_code, "LX");
-  EXPECT_EQ(extra->flight_number->flight_code, 38);
-  EXPECT_EQ(extra->contact_info->first_name, "Barack");
-  EXPECT_EQ(extra->contact_info->last_name, "Obama");
-  EXPECT_EQ(extra->contact_info->phone_number, "1-800-TEST");
-  EXPECT_NEAR(extra->contact_info->score, 1.f, 1e-4);
+  std::string serialized_entity_data = buffer->Serialize();
+  std::unique_ptr<test::EntityDataT> entity_data =
+      LoadAndVerifyMutableFlatbuffer<test::EntityData>(
+          serialized_entity_data.data(), serialized_entity_data.size());
+  EXPECT_TRUE(entity_data != nullptr);
+  EXPECT_EQ(entity_data->flight_number->carrier_code, "LX");
+  EXPECT_EQ(entity_data->flight_number->flight_code, 38);
+  EXPECT_EQ(entity_data->contact_info->first_name, "Barack");
+  EXPECT_EQ(entity_data->contact_info->last_name, "Obama");
+  EXPECT_EQ(entity_data->contact_info->phone_number, "1-800-TEST");
+  EXPECT_NEAR(entity_data->contact_info->score, 1.f, 1e-4);
+}
+
+TEST(FlatbuffersTest, ReflectionRecursivePath) {
+  std::string metadata_buffer = LoadTestMetadata();
+  ReflectiveFlatbufferBuilder reflective_builder(
+      flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
+
+  FlatbufferFieldPathT path;
+  path.field.emplace_back(new FlatbufferFieldT);
+  path.field.back()->field_name = "flight_number";
+  path.field.emplace_back(new FlatbufferFieldT);
+  path.field.back()->field_name = "carrier_code";
+  flatbuffers::FlatBufferBuilder path_builder;
+  path_builder.Finish(FlatbufferFieldPath::Pack(path_builder, &path));
+
+  std::unique_ptr<ReflectiveFlatbuffer> buffer = reflective_builder.NewRoot();
+  // Test setting value using Set function.
+  buffer->Mutable("flight_number")->Set("flight_code", 38);
+  // Test setting value using FlatbufferFieldPath.
+  buffer->Set(flatbuffers::GetRoot<FlatbufferFieldPath>(
+                  path_builder.GetBufferPointer()),
+              "LX");
+
+  // Try to parse with the generated code.
+  std::string serialized_entity_data = buffer->Serialize();
+  std::unique_ptr<test::EntityDataT> entity_data =
+      LoadAndVerifyMutableFlatbuffer<test::EntityData>(
+          serialized_entity_data.data(), serialized_entity_data.size());
+  EXPECT_TRUE(entity_data != nullptr);
+  EXPECT_EQ(entity_data->flight_number->carrier_code, "LX");
+  EXPECT_EQ(entity_data->flight_number->flight_code, 38);
+}
+
+TEST(FlatbuffersTest, ReflectionRecursivePathOffsets) {
+  std::string metadata_buffer = LoadTestMetadata();
+  ReflectiveFlatbufferBuilder reflective_builder(
+      flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
+
+  FlatbufferFieldPathT path;
+  path.field.emplace_back(new FlatbufferFieldT);
+  path.field.back()->field_offset = 14;
+  path.field.emplace_back(new FlatbufferFieldT);
+  path.field.back()->field_offset = 4;
+  flatbuffers::FlatBufferBuilder path_builder;
+  path_builder.Finish(FlatbufferFieldPath::Pack(path_builder, &path));
+
+  std::unique_ptr<ReflectiveFlatbuffer> buffer = reflective_builder.NewRoot();
+  // Test setting value using Set function.
+  buffer->Mutable("flight_number")->Set("flight_code", 38);
+  // Test setting value using FlatbufferFieldPath.
+  buffer->Set(flatbuffers::GetRoot<FlatbufferFieldPath>(
+                  path_builder.GetBufferPointer()),
+              "LX");
+
+  // Try to parse with the generated code.
+  std::string serialized_entity_data = buffer->Serialize();
+  std::unique_ptr<test::EntityDataT> entity_data =
+      LoadAndVerifyMutableFlatbuffer<test::EntityData>(
+          serialized_entity_data.data(), serialized_entity_data.size());
+  EXPECT_TRUE(entity_data != nullptr);
+  EXPECT_EQ(entity_data->flight_number->carrier_code, "LX");
+  EXPECT_EQ(entity_data->flight_number->flight_code, 38);
+}
+
+TEST(FlatbuffersTest, ReflectionMerging) {
+  std::string metadata_buffer = LoadTestMetadata();
+  ReflectiveFlatbufferBuilder reflective_builder(
+      flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
+  std::unique_ptr<ReflectiveFlatbuffer> buffer = reflective_builder.NewRoot();
+  buffer->Set("an_int_field", 42);
+  buffer->Set("a_long_field", 84ll);
+  ReflectiveFlatbuffer* flight_info = buffer->Mutable("flight_number");
+  flight_info->Set("carrier_code", "LX");
+  flight_info->Set("flight_code", 38);
+
+  // Create message to merge.
+  test::EntityDataT additional_entity_data;
+  additional_entity_data.an_int_field = 43;
+  additional_entity_data.flight_number.reset(new test::FlightNumberInfoT);
+  additional_entity_data.flight_number->flight_code = 39;
+  additional_entity_data.contact_info.reset(new test::ContactInfoT);
+  additional_entity_data.contact_info->first_name = "Barack";
+  flatbuffers::FlatBufferBuilder to_merge_builder;
+  to_merge_builder.Finish(
+      test::EntityData::Pack(to_merge_builder, &additional_entity_data));
+
+  // Merge it.
+  EXPECT_TRUE(buffer->MergeFrom(
+      flatbuffers::GetAnyRoot(to_merge_builder.GetBufferPointer())));
+
+  // Try to parse it with the generated code.
+  std::string serialized_entity_data = buffer->Serialize();
+  std::unique_ptr<test::EntityDataT> entity_data =
+      LoadAndVerifyMutableFlatbuffer<test::EntityData>(
+          serialized_entity_data.data(), serialized_entity_data.size());
+  EXPECT_TRUE(entity_data != nullptr);
+  EXPECT_EQ(entity_data->an_int_field, 43);
+  EXPECT_EQ(entity_data->a_long_field, 84);
+  EXPECT_EQ(entity_data->flight_number->carrier_code, "LX");
+  EXPECT_EQ(entity_data->flight_number->flight_code, 39);
+  EXPECT_EQ(entity_data->contact_info->first_name, "Barack");
 }
 
 }  // namespace

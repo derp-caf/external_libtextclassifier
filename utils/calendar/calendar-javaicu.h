@@ -34,6 +34,9 @@ class Calendar {
   explicit Calendar(JniCache* jni_cache);
   bool Initialize(const std::string& time_zone, const std::string& locale,
                   int64 time_ms_utc);
+  bool AddSecond(int value) const;
+  bool AddMinute(int value) const;
+  bool AddHourOfDay(int value) const;
   bool AddDayOfMonth(int value) const;
   bool AddYear(int value) const;
   bool AddMonth(int value) const;
@@ -68,20 +71,24 @@ class CalendarLib {
                           int64 reference_time_ms_utc,
                           const std::string& reference_timezone,
                           const std::string& reference_locale,
-                          DatetimeGranularity granularity,
-                          int64* interpreted_time_ms_utc) const {
+                          int64* interpreted_time_ms_utc,
+                          DatetimeGranularity* granularity) const {
     Calendar calendar(jni_cache_.get());
-    calendar::CalendarLibTempl<Calendar> impl;
-    if (!impl.InterpretParseData(parse_data, reference_time_ms_utc,
-                                 reference_timezone, reference_locale,
-                                 granularity, &calendar)) {
+    if (!impl_.InterpretParseData(parse_data, reference_time_ms_utc,
+                                  reference_timezone, reference_locale,
+                                  &calendar, granularity)) {
       return false;
     }
     return calendar.GetTimeInMillis(interpreted_time_ms_utc);
   }
 
+  DatetimeGranularity GetGranularity(const DateParseData& data) const {
+    return impl_.GetGranularity(data);
+  }
+
  private:
   std::shared_ptr<JniCache> jni_cache_;
+  calendar::CalendarLibTempl<Calendar> impl_;
 };
 
 }  // namespace libtextclassifier3

@@ -14,6 +14,7 @@
 // limitations under the License.
 //
 
+include "utils/flatbuffers.fbs";
 include "utils/intents/intent-config.fbs";
 include "utils/resources.fbs";
 include "utils/zlib/buffer.fbs";
@@ -31,6 +32,18 @@ enum ModeFlag : int {
   ANNOTATION_AND_SELECTION = 5,
   CLASSIFICATION_AND_SELECTION = 6,
   ALL = 7,
+}
+
+// Enum for specifying the annotation usecase. The values are meant to be used
+// as flags, and thus are not mutually exclusive.
+namespace libtextclassifier3;
+enum AnnotationUsecase : int {
+  ANNOTATION_USECASE_NONE = 0,
+  ANNOTATION_USECASE_SMART = 1,
+  ANNOTATION_USECASE_RAW = 2,
+
+  // 32-bit int maximum value (all bits set); since in flatbuffers we use int
+  ANNOTATION_USECASE_ALL = 2147483647,
 }
 
 namespace libtextclassifier3;
@@ -72,7 +85,10 @@ enum DatetimeExtractorType : int {
   DAYS = 34,
   WEEKS = 35,
   MONTHS = 36,
+
+  // TODO(zilka): Make the following 3 values singular for consistency.
   HOURS = 37,
+
   MINUTES = 38,
   SECONDS = 39,
   YEARS = 40,
@@ -180,6 +196,10 @@ table CapturingGroup {
   // If true, the span of the capturing group will be used to
   // extend the selection.
   extend_selection:bool = true;
+
+  // If set, the text of the capturing group will be used to set a field in
+  // the classfication result entity data.
+  entity_field_path:FlatbufferFieldPath;
 }
 
 // List of regular expression matchers to check.
@@ -211,6 +231,9 @@ table Pattern {
   verification_options:VerificationOptions;
 
   capturing_group:[Pattern_.CapturingGroup];
+
+  // Serialized entity data to set for a match.
+  serialized_entity_data:string;
 }
 
 namespace libtextclassifier3;
@@ -246,6 +269,9 @@ table DatetimeModelPattern {
 
   // The modes for which to apply the patterns.
   enabled_modes:ModeFlag = ALL;
+
+  // The annotation usecases for which to apply the patterns.
+  enabled_annotation_usecases:AnnotationUsecase = ANNOTATION_USECASE_ALL;
 }
 
 namespace libtextclassifier3;
@@ -364,6 +390,9 @@ table Model {
 
   // Model resources.
   resources:ResourcePool;
+
+  // Schema data for handling entity data.
+  entity_data_schema:[ubyte];
 }
 
 // Role of the codepoints in the range.

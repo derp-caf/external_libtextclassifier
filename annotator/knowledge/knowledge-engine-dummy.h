@@ -40,6 +40,11 @@ class KnowledgeEngine {
              std::vector<AnnotatedSpan>* result) const {
     return true;
   }
+
+  bool LookUpEntity(const std::string& id,
+                    std::string* serialized_knowledge_result) const {
+    return false;
+  }
 };
 
 }  // namespace libtextclassifier3

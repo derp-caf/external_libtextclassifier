@@ -22,9 +22,11 @@
 #include <vector>
 
 #include "actions/actions_model_generated.h"
+#include "actions/ranker.h"
 #include "actions/types.h"
 #include "annotator/annotator.h"
 #include "annotator/types.h"
+#include "utils/flatbuffers.h"
 #include "utils/i18n/locale.h"
 #include "utils/memory/mmap.h"
 #include "utils/tflite-model-executor.h"
@@ -37,7 +39,7 @@ namespace libtextclassifier3 {
 // Options for suggesting actions.
 struct ActionSuggestionOptions {
   // Options for annotation of the messages.
-  AnnotationOptions annotation_options = AnnotationOptions::Default();
+  AnnotationOptions annotation_options = AnnotationOptions();
 
   bool ignore_min_replies_triggering_threshold = false;
 
@@ -67,15 +69,14 @@ class ActionsSuggestions {
 
   ActionsSuggestionsResponse SuggestActions(
       const Conversation& conversation,
-      const ActionSuggestionOptions& options =
-          ActionSuggestionOptions::Default()) const;
+      const ActionSuggestionOptions& options = ActionSuggestionOptions()) const;
 
   ActionsSuggestionsResponse SuggestActions(
       const Conversation& conversation, const Annotator* annotator,
-      const ActionSuggestionOptions& options =
-          ActionSuggestionOptions::Default()) const;
+      const ActionSuggestionOptions& options = ActionSuggestionOptions()) const;
 
   const ActionsModel* model() const;
+  const reflection::Schema* entity_data_schema() const;
 
   // Should be in sync with those defined in Android.
   // android/frameworks/base/core/java/android/view/textclassifier/ConversationActions.java
@@ -124,19 +125,23 @@ class ActionsSuggestions {
       const Annotator* annotator,
       ActionsSuggestionsResponse* suggestions) const;
 
-  void CreateActionsFromAnnotationResult(
-      const int message_index, const AnnotatedSpan& annotation,
+  void CreateActionsFromAnnotation(
+      const int message_index, const ActionSuggestionAnnotation& annotation,
       ActionsSuggestionsResponse* suggestions) const;
 
-  void SuggestActionsFromRules(const Conversation& conversation,
+  // Deduplicates equivalent annotations - annotations that have the same type
+  // and same span text.
+  // Returns the indices of the deduplicated annotations.
+  std::vector<int> DeduplicateAnnotations(
+      const std::vector<ActionSuggestionAnnotation>& annotations) const;
+
+  bool SuggestActionsFromRules(const Conversation& conversation,
                                ActionsSuggestionsResponse* suggestions) const;
 
-  // Ranks and deduplicates actions suggestions.
-  void RankActions(ActionsSuggestionsResponse* suggestions) const;
-
-  ActionsSuggestionsResponse GatherActionsSuggestions(
-      const Conversation& conversation, const Annotator* annotator,
-      const ActionSuggestionOptions& options) const;
+  bool GatherActionsSuggestions(const Conversation& conversation,
+                                const Annotator* annotator,
+                                const ActionSuggestionOptions& options,
+                                ActionsSuggestionsResponse* response) const;
 
   // Checks whether a locale matches any of the model locales.
   bool IsLocaleSupportedByModel(const Locale& locale) const;
@@ -145,6 +150,9 @@ class ActionsSuggestions {
   // Checks whether the input triggers the low confidence checks.
   bool IsLowConfidenceInput(const Conversation& conversation,
                             const int num_messages) const;
+
+  // Returns whether a regex rule provides entity data from a match.
+  bool HasEntityData(const RulesModel_::Rule* rule) const;
 
   const ActionsModel* model_;
   std::unique_ptr<libtextclassifier3::ScopedMmap> mmap_;
@@ -160,6 +168,11 @@ class ActionsSuggestions {
 
   // Locales supported by the model.
   std::vector<Locale> locales_;
+
+  // Builder for creating extra data.
+  const reflection::Schema* entity_data_schema_;
+  std::unique_ptr<ReflectiveFlatbufferBuilder> entity_data_builder_;
+  std::unique_ptr<ActionsSuggestionsRanker> ranker_;
 };
 
 // Interprets the buffer as a Model flatbuffer and returns it for reading.

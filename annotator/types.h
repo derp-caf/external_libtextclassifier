@@ -27,8 +27,10 @@
 #include <utility>
 #include <vector>
 
+#include "annotator/entity-data_generated.h"
 #include "utils/base/integral_types.h"
 #include "utils/base/logging.h"
+#include "utils/flatbuffers.h"
 #include "utils/variant.h"
 
 namespace libtextclassifier3 {
@@ -164,9 +166,7 @@ enum DatetimeGranularity {
 };
 
 struct DatetimeParseResult {
-  // The absolute time in milliseconds since the epoch in UTC. This is derived
-  // from the reference time and the fields specified in the text - so it may
-  // be imperfect where the time was ambiguous. (e.g. "at 7:30" may be am or pm)
+  // The absolute time in milliseconds since the epoch in UTC.
   int64 time_ms_utc;
 
   // The precision of the estimate then in to calculating the milliseconds
@@ -212,13 +212,19 @@ struct ClassificationResult {
   DatetimeParseResult datetime_parse_result;
   std::string serialized_knowledge_result;
   std::string contact_name, contact_given_name, contact_nickname,
-      contact_email_address, contact_phone_number;
+      contact_email_address, contact_phone_number, contact_id;
+  std::string app_name, app_package_name;
 
   // Internal score used for conflict resolution.
   float priority_score;
 
-  // Extra information.
-  std::map<std::string, Variant> extra;
+
+  // Entity data information.
+  std::string serialized_entity_data;
+  const EntityData* entity_data() {
+    return LoadAndVerifyFlatbuffer<EntityData>(serialized_entity_data.data(),
+                                               serialized_entity_data.size());
+  }
 
   explicit ClassificationResult() : score(-1.0f), priority_score(-1.0) {}
 
@@ -306,7 +312,10 @@ struct DateParseData {
     DAY = 8,
     WEEK = 9,
     MONTH = 10,
-    YEAR = 11
+    YEAR = 11,
+    HOUR = 12,
+    MINUTE = 13,
+    SECOND = 14,
   };
 
   enum Fields {
@@ -389,6 +398,10 @@ struct DateParseData {
     this->relation_distance = relation_distance;
   }
 };
+
+// Pretty-printing function for DateParseData.
+logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
+                                         const DateParseData& data);
 
 }  // namespace libtextclassifier3
 

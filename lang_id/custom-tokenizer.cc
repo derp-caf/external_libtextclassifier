@@ -146,6 +146,9 @@ void TokenizerForLangId::Tokenize(StringPiece text,
       num_bytes = utils::OneCharLen(curr);
       if (IsTokenSeparator(num_bytes, curr)) {
         curr += num_bytes;
+        if (curr >= end) {
+          break;
+        }
         num_bytes = utils::OneCharLen(curr);
         break;
       }

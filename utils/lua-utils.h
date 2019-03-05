@@ -17,6 +17,9 @@
 #ifndef LIBTEXTCLASSIFIER_UTILS_LUA_UTILS_H_
 #define LIBTEXTCLASSIFIER_UTILS_LUA_UTILS_H_
 
+#include <functional>
+#include <vector>
+
 #include "utils/strings/stringpiece.h"
 #include "utils/variant.h"
 
@@ -30,36 +33,49 @@ extern "C" {
 
 namespace libtextclassifier3 {
 
+static constexpr const char *kLengthKey = "__len";
+static constexpr const char *kPairsKey = "__pairs";
+static constexpr const char *kIndexKey = "__index";
+
 class LuaEnvironment {
  public:
   virtual ~LuaEnvironment();
   LuaEnvironment();
 
+  // Compile a lua snippet into binary bytecode.
+  // NOTE: The compiled bytecode might not be compatible across Lua versions
+  // and platforms.
+  bool Compile(StringPiece snippet, std::string *bytecode);
+
  protected:
+  typedef int (*CallbackHandler)(lua_State *);
+
   // Loads default libraries.
   void LoadDefaultLibraries();
 
   // Provides a callback to Lua with given id, which will be dispatched to
   // `HandleCallback(id)` when called. This is useful when we need to call
   // native C++ code from within Lua code.
-  // `callback_arg` is any value that should be provided as argument alongside
-  // the callback identifier when the callback is invoked.
-  void PushCallback(const int callback_id, void *callback_arg = nullptr);
+  // `args` are any values that should be provided as argument alongside the
+  // callback identifier when the callback is invoked.
+  void PushCallback(const int callback_id, const std::vector<void *> &args = {},
+                    const CallbackHandler handler = &CallbackDispatch);
 
   // Setup a named table that callsback whenever a member is accessed.
   // This allows to lazily provide required information to the script.
   // `HandleCallback` will be called upon callback invocation with the
   // callback identifier provided.
-  // `callback_arg` is any value that should be provided as argument alongside
-  // the callback identifier when the callback is invoked.
+  // `args` are any values that should be provided as argument alongside the
+  // callback identifier when the callback is invoked.
   void SetupTableLookupCallback(const char *name, const int callback_id,
-                                void *callback_arg = nullptr);
+                                const std::vector<void *> &args = {});
 
   // Called from Lua when invoking a callback either by
   // `PushCallback` or `SetupTableLookupCallback`.
-  // `callback_arg` is any value that should be provided as argument alongside
-  // the callback identifier when the callback is invoked.
-  virtual int HandleCallback(const int callback_id, void *callback_arg);
+  // `args` are any values that should be provided as argument alongside the
+  // callback identifier when the callback is invoked.
+  virtual int HandleCallback(const int callback_id,
+                             const std::vector<void *> &args);
 
   void PushValue(const Variant &value);
 
@@ -69,11 +85,25 @@ class LuaEnvironment {
   // Push a string to the stack.
   void PushString(const StringPiece str);
 
+  // Run a closure in protected mode.
+  // `func`: closure to run in protected mode.
+  // `num_lua_args`: number of arguments from the lua stack to process.
+  // `num_results`: number of result values pushed on the stack.
+  int RunProtected(const std::function<int()> &func, const int num_args = 0,
+                   const int num_results = 0);
+
+  // Get the stack index of a callback argument.
+  static int GetArgIndex(const int arg_index);
+
   lua_State *state_;
 
  private:
   static int CallbackDispatch(lua_State *state);
+  static int LengthCallbackDispatch(lua_State *state);
+  static int PairsCallbackDispatch(lua_State *state);
 };
+
+bool Compile(StringPiece snippet, std::string *bytecode);
 
 }  // namespace libtextclassifier3
 

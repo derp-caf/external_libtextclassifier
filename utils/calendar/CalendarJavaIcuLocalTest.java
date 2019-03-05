@@ -29,7 +29,7 @@ public class CalendarJavaIcuLocalTest {
 
   @Before
   public void setUp() throws Exception {
-    System.loadLibrary("calendar-javaicu-test-lib");
+    System.loadLibrary("calendar-javaicu_test-lib");
   }
 
   private native boolean testsMain();

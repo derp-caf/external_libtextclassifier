@@ -29,7 +29,7 @@ public class UniLibJavaIcuTest {
 
   @Before
   public void setUp() throws Exception {
-    System.loadLibrary("unilib-javaicu-test-lib");
+    System.loadLibrary("unilib-javaicu_test-jni");
   }
 
   private native boolean testsMain();

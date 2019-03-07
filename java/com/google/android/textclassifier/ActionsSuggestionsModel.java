@@ -73,7 +73,25 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
         actionsModelPtr,
         conversation,
         options,
-        (annotator != null ? annotator.getNativeAnnotator() : 0));
+        (annotator != null ? annotator.getNativeAnnotator() : 0),
+        /* appContext= */ null,
+        /* deviceLocale= */ null,
+        /* generateAndroidIntents= */ false);
+  }
+
+  public ActionSuggestion[] suggestActionsWithIntents(
+      Conversation conversation,
+      ActionSuggestionOptions options,
+      Object appContext,
+      String deviceLocale) {
+    return nativeSuggestActions(
+        actionsModelPtr,
+        conversation,
+        options,
+        (annotator != null ? annotator.getNativeAnnotator() : 0),
+        appContext,
+        deviceLocale,
+        /* generateAndroidIntents= */ true);
   }
 
   /** Frees up the allocated memory. */
@@ -114,11 +132,17 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
     private final String responseText;
     private final String actionType;
     private final float score;
+    private final RemoteActionTemplate[] remoteActionTemplates;
 
-    public ActionSuggestion(String responseText, String actionType, float score) {
+    public ActionSuggestion(
+        String responseText,
+        String actionType,
+        float score,
+        RemoteActionTemplate[] remoteActionTemplates) {
       this.responseText = responseText;
       this.actionType = actionType;
       this.score = score;
+      this.remoteActionTemplates = remoteActionTemplates;
     }
 
     public String getResponseText() {
@@ -132,6 +156,10 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
     /** Confidence score between 0 and 1 */
     public float getScore() {
       return score;
+    }
+
+    public RemoteActionTemplate[] getRemoteActionTemplates() {
+      return remoteActionTemplates;
     }
   }
 
@@ -187,14 +215,22 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
 
   /** Represents options for the SuggestActions call. */
   public static final class ActionSuggestionOptions {
+    private final long referenceTimeMsUtc;
     private final AnnotatorModel.AnnotationOptions annotationOptions;
 
     public ActionSuggestionOptions() {
+      this.referenceTimeMsUtc = 0;
       this.annotationOptions = null;
     }
 
-    public ActionSuggestionOptions(AnnotatorModel.AnnotationOptions annotationOptions) {
+    public ActionSuggestionOptions(
+        long referenceTimeMsUtc, AnnotatorModel.AnnotationOptions annotationOptions) {
+      this.referenceTimeMsUtc = referenceTimeMsUtc;
       this.annotationOptions = annotationOptions;
+    }
+
+    public long getReferenceTimeMsUtc() {
+      return referenceTimeMsUtc;
     }
 
     public AnnotatorModel.AnnotationOptions getAnnotationOptions() {
@@ -213,7 +249,13 @@ public final class ActionsSuggestionsModel implements AutoCloseable {
   private static native String nativeGetName(int fd);
 
   private native ActionSuggestion[] nativeSuggestActions(
-      long context, Conversation conversation, ActionSuggestionOptions options, long annotatorPtr);
+      long context,
+      Conversation conversation,
+      ActionSuggestionOptions options,
+      long annotatorPtr,
+      Object appContext,
+      String deviceLocale,
+      boolean generateAndroidIntents);
 
   private native void nativeCloseActionsModel(long context);
 

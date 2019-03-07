@@ -58,8 +58,18 @@ TEST_F(ActionsSuggestionsTest, SuggestActions) {
   std::unique_ptr<ActionsSuggestions> actions_suggestions = LoadTestModel();
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions(
-          {{{/*user_id=*/1, "Where are you?"}}});
+          {{{/*user_id=*/1, "Where are you?", /*time_diff_secs=*/0,
+             /*annotations=*/{}, /*locales=*/"en"}}});
   EXPECT_EQ(response.actions.size(), 4);
+}
+
+TEST_F(ActionsSuggestionsTest, SuggestNoActionsForUnknownLocale) {
+  std::unique_ptr<ActionsSuggestions> actions_suggestions = LoadTestModel();
+  const ActionsSuggestionsResponse& response =
+      actions_suggestions->SuggestActions(
+          {{{/*user_id=*/1, "Where are you?", /*time_diff_secs=*/0,
+             /*annotations=*/{}, /*locales=*/"zz"}}});
+  EXPECT_THAT(response.actions, testing::IsEmpty());
 }
 
 TEST_F(ActionsSuggestionsTest, SuggestActionsFromAnnotations) {
@@ -70,7 +80,8 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsFromAnnotations) {
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions({{{/*user_id=*/1, "are you at home?",
                                              /*time_diff_secs=*/0,
-                                             /*annotations=*/{annotation}}}});
+                                             /*annotations=*/{annotation},
+                                             /*locales=*/"en"}}});
   EXPECT_EQ(response.actions.size(), 5);
   EXPECT_EQ(response.actions.front().type, "view_map");
   EXPECT_EQ(response.actions.front().score, 1.0);
@@ -94,7 +105,9 @@ void TestSuggestActionsWithThreshold(
   ASSERT_TRUE(actions_suggestions);
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions(
-          {{{/*user_id=*/1, "Where are you?"}}});
+          {{{/*user_id=*/1, "I have the low-ground. Where are you?",
+             /*time_diff_secs=*/0,
+             /*annotations=*/{}, /*locales=*/"en"}}});
   EXPECT_EQ(response.actions.size(), expected_size);
 }
 
@@ -133,6 +146,22 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsWithMinInputLength) {
       &unilib_);
 }
 
+#ifdef TC3_UNILIB_ICU
+TEST_F(ActionsSuggestionsTest, SuggestActionsLowConfidence) {
+  TestSuggestActionsWithThreshold(
+      [](ActionsModelT* actions_model) {
+        actions_model->preconditions->suppress_on_low_confidence_input = true;
+        actions_model->preconditions->low_confidence_rules.reset(
+            new RulesModelT);
+        actions_model->preconditions->low_confidence_rules->rule.emplace_back(
+            new RulesModel_::RuleT);
+        actions_model->preconditions->low_confidence_rules->rule.back()
+            ->pattern = "low-ground";
+      },
+      &unilib_);
+}
+#endif
+
 TEST_F(ActionsSuggestionsTest, SuppressActionsFromAnnotationsOnSensitiveTopic) {
   const std::string actions_model_string =
       ReadFile(GetModelPath() + kModelFileName);
@@ -156,11 +185,12 @@ TEST_F(ActionsSuggestionsTest, SuppressActionsFromAnnotationsOnSensitiveTopic) {
   AnnotatedSpan annotation;
   annotation.span = {11, 15};
   annotation.classification = {
-      ClassificationResult(Collections::kAddress, 1.0)};
+      ClassificationResult(Collections::Address(), 1.0)};
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions({{{/*user_id=*/1, "are you at home?",
                                              /*time_diff_secs=*/0,
-                                             /*annotations=*/{annotation}}}});
+                                             /*annotations=*/{annotation},
+                                             /*locales=*/"en"}}});
   EXPECT_THAT(response.actions, testing::IsEmpty());
 }
 
@@ -183,13 +213,15 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsWithLongerConversation) {
   AnnotatedSpan annotation;
   annotation.span = {11, 15};
   annotation.classification = {
-      ClassificationResult(Collections::kAddress, 1.0)};
+      ClassificationResult(Collections::Address(), 1.0)};
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions(
-          {{{/*user_id=*/0, "hi, how are you?", /*reference_time=*/10000},
+          {{{/*user_id=*/0, "hi, how are you?", /*reference_time=*/10000,
+             /*annotations=*/{}, /*locales=*/"en"},
             {/*user_id=*/1, "good! are you at home?",
              /*reference_time=*/15000,
-             /*annotations=*/{annotation}}}});
+             /*annotations=*/{annotation},
+             /*locales=*/"en"}}});
   EXPECT_EQ(response.actions.size(), 1);
   EXPECT_EQ(response.actions.back().type, "view_map");
   EXPECT_EQ(response.actions.back().score, 1.0);
@@ -199,21 +231,27 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromClassificationResult) {
   std::unique_ptr<ActionsSuggestions> actions_suggestions = LoadTestModel();
   AnnotatedSpan annotation;
   annotation.span = {13, 16};
-  annotation.classification = {ClassificationResult(Collections::kPhone, 1.0)};
+  annotation.classification = {ClassificationResult(Collections::Phone(), 1.0)};
 
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions({{{/*user_id=*/1, "can you call 911?",
                                              /*time_diff_secs=*/0,
-                                             /*annotations=*/{annotation}}}});
+                                             /*annotations=*/{annotation},
+                                             /*locales=*/"en"}}});
 
   EXPECT_EQ(response.actions.size(),
-            5 /* smart replies + actions from annotations*/);
+            6 /* smart replies + actions from annotations*/);
   EXPECT_EQ(response.actions[0].type, "call_phone");
   EXPECT_EQ(response.actions[0].score, 1.0);
   EXPECT_EQ(response.actions[0].annotations.size(), 1);
   EXPECT_EQ(response.actions[0].annotations[0].message_index, 0);
   EXPECT_EQ(response.actions[0].annotations[0].span, annotation.span);
   EXPECT_EQ(response.actions[1].type, "send_sms");
+  EXPECT_EQ(response.actions[1].score, 1.0);
+  EXPECT_EQ(response.actions[1].annotations.size(), 1);
+  EXPECT_EQ(response.actions[1].annotations[0].message_index, 0);
+  EXPECT_EQ(response.actions[1].annotations[0].span, annotation.span);
+  EXPECT_EQ(response.actions[2].type, "add_contact");
   EXPECT_EQ(response.actions[1].score, 1.0);
   EXPECT_EQ(response.actions[1].annotations.size(), 1);
   EXPECT_EQ(response.actions[1].annotations[0].message_index, 0);
@@ -258,7 +296,9 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromRules) {
           builder.GetSize(), &unilib_);
 
   const ActionsSuggestionsResponse& response =
-      actions_suggestions->SuggestActions({{{/*user_id=*/1, "hello there"}}});
+      actions_suggestions->SuggestActions(
+          {{{/*user_id=*/1, "hello there", /*time_diff_secs=*/0,
+             /*annotations=*/{}, /*locales=*/"en"}}});
   EXPECT_GE(response.actions.size(), 1);
   EXPECT_EQ(response.actions[0].response_text, "General Kenobi!");
   EXPECT_EQ(response.actions[0].extra.size(), 1);
@@ -268,7 +308,8 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromRules) {
 TEST_F(ActionsSuggestionsTest, DeduplicateActions) {
   std::unique_ptr<ActionsSuggestions> actions_suggestions = LoadTestModel();
   ActionsSuggestionsResponse response = actions_suggestions->SuggestActions(
-      {{{/*user_id=*/1, "Where are you?"}}});
+      {{{/*user_id=*/1, "Where are you?", /*time_diff_secs=*/0,
+         /*annotations=*/{}, /*locales=*/"en"}}});
   EXPECT_EQ(response.actions.size(), 4);
 
   // Check that the location sharing model triggered.
@@ -307,7 +348,8 @@ TEST_F(ActionsSuggestionsTest, DeduplicateActions) {
       builder.GetSize(), &unilib_);
 
   response = actions_suggestions->SuggestActions(
-      {{{/*user_id=*/1, "Where are you?"}}});
+      {{{/*user_id=*/1, "Where are you?", /*time_diff_secs=*/0,
+         /*annotations=*/{}, /*locales=*/"en"}}});
   EXPECT_EQ(response.actions.size(), 5);
 }
 #endif

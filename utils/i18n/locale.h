@@ -18,8 +18,10 @@
 #define LIBTEXTCLASSIFIER_UTILS_I18N_LOCALE_H_
 
 #include <string>
+#include <vector>
 
 #include "utils/base/integral_types.h"
+#include "utils/strings/stringpiece.h"
 
 namespace libtextclassifier3 {
 
@@ -43,6 +45,7 @@ class Locale {
   std::string Region() const { return region_; }
 
   bool IsValid() const { return is_valid_; }
+  bool IsUnknown() const;
 
  private:
   Locale(const std::string& language, const std::string& script,
@@ -57,6 +60,9 @@ class Locale {
   std::string region_;
   bool is_valid_;
 };
+
+// Parses a comma-separated list of BCP47 tags.
+bool ParseLocales(StringPiece locales_list, std::vector<Locale>* locales);
 
 }  // namespace libtextclassifier3
 

@@ -70,6 +70,10 @@ class StringPiece {
             memcmp(start_, prefix.data(), prefix.size()) == 0);
   }
 
+  bool Equals(StringPiece other) const {
+    return size() == other.size() && memcmp(start_, other.data(), size_) == 0;
+  }
+
   // Removes the first `n` characters from the string piece. Note that the
   // underlying string is not changed, only the view.
   void RemovePrefix(int n) {

@@ -190,6 +190,11 @@ class FeatureProcessor {
   CodepointSpan StripBoundaryCodepoints(const UnicodeText& context_unicode,
                                         CodepointSpan span) const;
 
+  // Same as above but takes a pair of iterators for the span, for efficiency.
+  CodepointSpan StripBoundaryCodepoints(
+      const UnicodeText::const_iterator& span_begin,
+      const UnicodeText::const_iterator& span_end, CodepointSpan span) const;
+
  protected:
   // Represents a codepoint range [start, end).
   struct CodepointRange {

@@ -43,7 +43,8 @@ TC3_JNI_METHOD(jlong, TC3_ACTIONS_CLASS_NAME,
 
 TC3_JNI_METHOD(jobjectArray, TC3_ACTIONS_CLASS_NAME, nativeSuggestActions)
 (JNIEnv* env, jobject thiz, jlong ptr, jobject jconversation, jobject joptions,
- jlong annotatorPtr);
+ jlong annotatorPtr, jobject app_context, jstring device_locale,
+ jboolean generate_intents);
 
 TC3_JNI_METHOD(void, TC3_ACTIONS_CLASS_NAME, nativeCloseActionsModel)
 (JNIEnv* env, jobject thiz, jlong ptr);

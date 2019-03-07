@@ -310,8 +310,12 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   for (int i = 0; i < num_strings; ++i) {
     const auto& strref = tflite::GetString(&input_text, i);
-    const std::vector<int> encoded = encoder_op->encoder->Encode(
-        encoder_op->normalizer->Normalize(StringPiece(strref.str, strref.len)));
+    std::string normalized;
+    TF_LITE_ENSURE(context,
+                   encoder_op->normalizer->Normalize(
+                       StringPiece(strref.str, strref.len), &normalized));
+    std::vector<int> encoded;
+    TF_LITE_ENSURE(context, encoder_op->encoder->Encode(normalized, &encoded));
     encoded_total.insert(encoded_total.end(), encoded.begin(), encoded.end());
     encoded_offsets.push_back(encoded_total.size());
     for (int i = 0; i < encoded.size(); i++) {

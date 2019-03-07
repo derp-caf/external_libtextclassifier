@@ -55,7 +55,8 @@ class Encoder {
   // Segment the input so that the total score of the pieces used is maximized.
   // This is a simplified implementation of the general Viterbi algorithm,
   // assuming independence between individual pieces.
-  std::vector<int> Encode(StringPiece normalized_text) const;
+  bool Encode(StringPiece normalized_text,
+              std::vector<int>* encoded_text) const;
 
  private:
   // State in the dynamic programming algorithm.

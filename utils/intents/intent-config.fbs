@@ -175,9 +175,9 @@ table AndroidSimpleIntentGeneratorOptions {
 // Describes how intents should be generated for a particular entity type.
 namespace libtextclassifier3.IntentFactoryModel_;
 table IntentGenerator {
-  // The entity type as defined by on the TextClassifier ENTITY_TYPE constants
-  // e.g. "address", "phone", etc.
-  entity_type:string;
+  // The type of the intent generator, e.g. the entity type as defined by
+  // on the TextClassifier ENTITY_TYPE constants e.g. "address", "phone", etc.
+  type:string;
 
   // The template generator lua code, either as text source or precompiled
   // bytecode.
@@ -187,6 +187,6 @@ table IntentGenerator {
 // Describes how intents for the various entity types should be generated.
 namespace libtextclassifier3;
 table IntentFactoryModel {
-  entities:[IntentFactoryModel_.IntentGenerator];
+  generator:[IntentFactoryModel_.IntentGenerator];
 }
 

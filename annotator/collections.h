@@ -24,18 +24,81 @@ namespace libtextclassifier3 {
 // String collection names for various classes.
 class Collections {
  public:
-  static const std::string& kOther;
-  static const std::string& kPhone;
-  static const std::string& kAddress;
-  static const std::string& kDate;
-  static const std::string& kUrl;
-  static const std::string& kFlight;
-  static const std::string& kEmail;
-  static const std::string& kIban;
-  static const std::string& kPaymentCard;
-  static const std::string& kIsbn;
-  static const std::string& kTrackingNumber;
-  static const std::string& kContact;
+  static const std::string& Address() {
+    static const std::string& value =
+        *[]() { return new std::string("address"); }();
+    return value;
+  }
+  static const std::string& Contact() {
+    static const std::string& value =
+        *[]() { return new std::string("contact"); }();
+    return value;
+  }
+  static const std::string& Date() {
+    static const std::string& value =
+        *[]() { return new std::string("date"); }();
+    return value;
+  }
+  static const std::string& DateTime() {
+    static const std::string& value =
+        *[]() { return new std::string("datetime"); }();
+    return value;
+  }
+  static const std::string& Dictionary() {
+    static const std::string& value =
+        *[]() { return new std::string("dictionary"); }();
+    return value;
+  }
+  static const std::string& Email() {
+    static const std::string& value =
+        *[]() { return new std::string("email"); }();
+    return value;
+  }
+  static const std::string& Entity() {
+    static const std::string& value =
+        *[]() { return new std::string("entity"); }();
+    return value;
+  }
+  static const std::string& Flight() {
+    static const std::string& value =
+        *[]() { return new std::string("flight"); }();
+    return value;
+  }
+  static const std::string& Iban() {
+    static const std::string& value =
+        *[]() { return new std::string("iban"); }();
+    return value;
+  }
+  static const std::string& Isbn() {
+    static const std::string& value =
+        *[]() { return new std::string("isbn"); }();
+    return value;
+  }
+  static const std::string& Other() {
+    static const std::string& value =
+        *[]() { return new std::string("other"); }();
+    return value;
+  }
+  static const std::string& PaymentCard() {
+    static const std::string& value =
+        *[]() { return new std::string("payment_card"); }();
+    return value;
+  }
+  static const std::string& Phone() {
+    static const std::string& value =
+        *[]() { return new std::string("phone"); }();
+    return value;
+  }
+  static const std::string& TrackingNumber() {
+    static const std::string& value =
+        *[]() { return new std::string("tracking_number"); }();
+    return value;
+  }
+  static const std::string& Url() {
+    static const std::string& value =
+        *[]() { return new std::string("url"); }();
+    return value;
+  }
 };
 
 }  // namespace libtextclassifier3

@@ -119,6 +119,11 @@ class LangId {
   // specify a version number).
   int GetModelVersion() const;
 
+  // Returns a typed property stored in the model file.
+  string GetStringProperty(const string &property, string default_value) const;
+  float GetFloatProperty(const string &property, float default_value) const;
+  int GetIntProperty(const string &property, int default_value) const;
+
  private:
   // Pimpl ("pointer to implementation") pattern, to hide all internals from our
   // clients.

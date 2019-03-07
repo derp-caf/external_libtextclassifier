@@ -88,20 +88,20 @@ void SortedStringsTable::GatherPrefixMatches(
   }
 }
 
-std::vector<TrieMatch> SortedStringsTable::FindAllPrefixMatches(
-    StringPiece input) const {
-  std::vector<TrieMatch> result;
+bool SortedStringsTable::FindAllPrefixMatches(
+    StringPiece input, std::vector<TrieMatch>* matches) const {
   GatherPrefixMatches(
-      input, [&result](const TrieMatch match) { result.push_back(match); });
-  return result;
+      input, [matches](const TrieMatch match) { matches->push_back(match); });
+  return true;
 }
 
-TrieMatch SortedStringsTable::LongestPrefixMatch(StringPiece input) const {
-  TrieMatch longest_match;
-  GatherPrefixMatches(input, [&longest_match](const TrieMatch match) {
-    longest_match = match;
+bool SortedStringsTable::LongestPrefixMatch(StringPiece input,
+                                            TrieMatch* longest_match) const {
+  *longest_match = TrieMatch();
+  GatherPrefixMatches(input, [longest_match](const TrieMatch match) {
+    *longest_match = match;
   });
-  return longest_match;
+  return true;
 }
 
 }  // namespace libtextclassifier3

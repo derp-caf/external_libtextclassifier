@@ -38,12 +38,20 @@ TEST(EncoderTest, SimpleTokenization) {
   const Encoder encoder(matcher.get(),
                         /*num_pieces=*/4, scores);
 
-  EXPECT_THAT(encoder.Encode("hellothere"), ElementsAre(0, 3, 5, 1));
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("hellothere", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 3, 5, 1));
+  }
 
   // Make probability of hello very low:
   // hello gets now tokenized as hell + o.
   scores[1] = -100.0;
-  EXPECT_THAT(encoder.Encode("hellothere"), ElementsAre(0, 2, 4, 5, 1));
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("hellothere", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 2, 4, 5, 1));
+  }
 }
 
 TEST(EncoderTest, HandlesEdgeCases) {
@@ -54,10 +62,26 @@ TEST(EncoderTest, HandlesEdgeCases) {
       /*num_pieces=*/4, offsets, StringPiece(pieces, 18)));
   const Encoder encoder(matcher.get(),
                         /*num_pieces=*/4, scores);
-  EXPECT_THAT(encoder.Encode("hellhello"), ElementsAre(0, 2, 3, 1));
-  EXPECT_THAT(encoder.Encode("hellohell"), ElementsAre(0, 3, 2, 1));
-  EXPECT_THAT(encoder.Encode(""), ElementsAre(0, 1));
-  EXPECT_THAT(encoder.Encode("hellathere"), ElementsAre(0, 1));
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("hellhello", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 2, 3, 1));
+  }
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("hellohell", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 3, 2, 1));
+  }
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 1));
+  }
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("hellathere", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 1));
+  }
 }
 
 TEST(EncoderTest, HandlesOutOfDictionary) {
@@ -71,11 +95,27 @@ TEST(EncoderTest, HandlesOutOfDictionary) {
                         /*start_code=*/0, /*end_code=*/1,
                         /*encoding_offset=*/3, /*unknown_code=*/2,
                         /*unknown_score=*/-100.0);
-  EXPECT_THAT(encoder.Encode("hellhello"), ElementsAre(0, 3, 4, 1));
-  EXPECT_THAT(encoder.Encode("hellohell"), ElementsAre(0, 4, 3, 1));
-  EXPECT_THAT(encoder.Encode(""), ElementsAre(0, 1));
-  EXPECT_THAT(encoder.Encode("hellathere"),
-              ElementsAre(0, /*hell*/ 3, /*unknown*/ 2, /*there*/ 6, 1));
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("hellhello", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 3, 4, 1));
+  }
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("hellohell", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 4, 3, 1));
+  }
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("", &encoded_text));
+    EXPECT_THAT(encoded_text, ElementsAre(0, 1));
+  }
+  {
+    std::vector<int> encoded_text;
+    EXPECT_TRUE(encoder.Encode("hellathere", &encoded_text));
+    EXPECT_THAT(encoded_text,
+                ElementsAre(0, /*hell*/ 3, /*unknown*/ 2, /*there*/ 6, 1));
+  }
 }
 
 }  // namespace

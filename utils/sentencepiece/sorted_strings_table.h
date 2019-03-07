@@ -45,10 +45,11 @@ class SortedStringsTable : public SentencePieceMatcher {
         use_linear_scan_threshold_(use_linear_scan_threshold) {}
 
   // Find matches that are prefixes of a string.
-  std::vector<TrieMatch> FindAllPrefixMatches(StringPiece input) const override;
-
+  bool FindAllPrefixMatches(StringPiece input,
+                            std::vector<TrieMatch>* matches) const override;
   // Find the longest prefix match of a string.
-  TrieMatch LongestPrefixMatch(StringPiece input) const override;
+  bool LongestPrefixMatch(StringPiece input,
+                          TrieMatch* longest_match) const override;
 
  private:
   void GatherPrefixMatches(

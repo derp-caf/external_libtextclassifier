@@ -70,10 +70,10 @@ TEST_F(AnnotatorTest, EmbeddingExecutorLoadingFails) {
   EXPECT_FALSE(classifier);
 }
 
-INSTANTIATE_TEST_CASE_P(ClickContext, AnnotatorTest,
-                        Values("test_model_cc.fb"));
-INSTANTIATE_TEST_CASE_P(BoundsSensitive, AnnotatorTest,
-                        Values("test_model.fb"));
+INSTANTIATE_TEST_SUITE_P(ClickContext, AnnotatorTest,
+                         Values("test_model_cc.fb"));
+INSTANTIATE_TEST_SUITE_P(BoundsSensitive, AnnotatorTest,
+                         Values("test_model.fb"));
 
 TEST_P(AnnotatorTest, ClassifyText) {
   std::unique_ptr<Annotator> classifier =
@@ -993,11 +993,11 @@ TEST_P(AnnotatorTest, ClassifyTextDate) {
   options.reference_timezone = "America/Los_Angeles";
   result = classifier->ClassifyText("2018/01/01 10:30:20", {0, 19}, options);
   ASSERT_EQ(result.size(), 2);  // Has 2 interpretations - a.m. or p.m.
-  EXPECT_THAT(result[0].collection, "date");
+  EXPECT_THAT(result[0].collection, "datetime");
   EXPECT_EQ(result[0].datetime_parse_result.time_ms_utc, 1514831420000);
   EXPECT_EQ(result[0].datetime_parse_result.granularity,
             DatetimeGranularity::GRANULARITY_SECOND);
-  EXPECT_THAT(result[1].collection, "date");
+  EXPECT_THAT(result[1].collection, "datetime");
   EXPECT_EQ(result[1].datetime_parse_result.time_ms_utc, 1514874620000);
   EXPECT_EQ(result[1].datetime_parse_result.granularity,
             DatetimeGranularity::GRANULARITY_SECOND);
@@ -1006,7 +1006,7 @@ TEST_P(AnnotatorTest, ClassifyTextDate) {
   options.reference_timezone = "America/Los_Angeles";
   result = classifier->ClassifyText("2018/01/01 22:00", {0, 16}, options);
   ASSERT_EQ(result.size(), 1);  // Has only 1 interpretation - 10 p.m.
-  EXPECT_THAT(result[0].collection, "date");
+  EXPECT_THAT(result[0].collection, "datetime");
   EXPECT_EQ(result[0].datetime_parse_result.time_ms_utc, 1514872800000);
   EXPECT_EQ(result[0].datetime_parse_result.granularity,
             DatetimeGranularity::GRANULARITY_MINUTE);

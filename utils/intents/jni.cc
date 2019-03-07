@@ -32,14 +32,14 @@ namespace libtextclassifier3 {
   TC3_CHECK(handler->FIELD) << "Error finding method: " << NAME;
 
 std::unique_ptr<RemoteActionTemplatesHandler>
-RemoteActionTemplatesHandler::Create(JNIEnv* env) {
+RemoteActionTemplatesHandler::Create(
+    JNIEnv* env, const std::shared_ptr<JniCache>& jni_cache) {
   if (env == nullptr) {
     return nullptr;
   }
   std::unique_ptr<RemoteActionTemplatesHandler> handler(
-      new RemoteActionTemplatesHandler(env));
+      new RemoteActionTemplatesHandler(env, jni_cache));
 
-  TC3_GET_CLASS(string_class_, "java/lang/String");
   TC3_GET_CLASS(integer_class_, "java/lang/Integer");
   TC3_GET_METHOD(integer_class_, integer_init_, "<init>", "(I)V");
 
@@ -72,12 +72,15 @@ RemoteActionTemplatesHandler::Create(JNIEnv* env) {
 }
 
 jstring RemoteActionTemplatesHandler::AsUTF8String(
-    const Optional<std::string>& optional) {
-  return (optional.has_value() ? env_->NewStringUTF(optional.value().c_str())
-                               : nullptr);
+    const Optional<std::string>& optional) const {
+  if (!optional.has_value()) {
+    return nullptr;
+  }
+  return jni_cache_->ConvertToJavaString(optional.value()).release();
 }
 
-jobject RemoteActionTemplatesHandler::AsInteger(const Optional<int>& optional) {
+jobject RemoteActionTemplatesHandler::AsInteger(
+    const Optional<int>& optional) const {
   return (optional.has_value()
               ? env_->NewObject(integer_class_.get(), integer_init_,
                                 optional.value())
@@ -85,55 +88,59 @@ jobject RemoteActionTemplatesHandler::AsInteger(const Optional<int>& optional) {
 }
 
 jobjectArray RemoteActionTemplatesHandler::AsStringArray(
-    const std::vector<std::string>& values) {
+    const std::vector<std::string>& values) const {
   if (values.empty()) {
     return nullptr;
   }
-  jobjectArray result =
-      env_->NewObjectArray(values.size(), string_class_.get(), nullptr);
+  jobjectArray result = env_->NewObjectArray(
+      values.size(), jni_cache_->string_class.get(), nullptr);
   if (result == nullptr) {
     return nullptr;
   }
   for (int k = 0; k < values.size(); k++) {
-    env_->SetObjectArrayElement(result, k,
-                                env_->NewStringUTF(values[k].c_str()));
+    ScopedLocalRef<jstring> value_str =
+        jni_cache_->ConvertToJavaString(values[k]);
+    env_->SetObjectArrayElement(result, k, value_str.get());
   }
   return result;
 }
 
-jobject RemoteActionTemplatesHandler::AsNamedVariant(const std::string& name,
-                                                     const Variant& value) {
-  jstring jname = env_->NewStringUTF(name.c_str());
-  if (jname == nullptr) {
+jobject RemoteActionTemplatesHandler::AsNamedVariant(
+    const std::string& name_str, const Variant& value) const {
+  ScopedLocalRef<jstring> name = jni_cache_->ConvertToJavaString(name_str);
+  if (name == nullptr) {
     return nullptr;
   }
   switch (value.GetType()) {
     case VariantValue_::Type_INT_VALUE:
       return env_->NewObject(named_variant_class_.get(),
-                             named_variant_from_int_, jname, value.IntValue());
+                             named_variant_from_int_, name.get(),
+                             value.IntValue());
     case VariantValue_::Type_INT64_VALUE:
       return env_->NewObject(named_variant_class_.get(),
-                             named_variant_from_long_, jname,
+                             named_variant_from_long_, name.get(),
                              value.Int64Value());
     case VariantValue_::Type_FLOAT_VALUE:
       return env_->NewObject(named_variant_class_.get(),
-                             named_variant_from_float_, jname,
+                             named_variant_from_float_, name.get(),
                              value.FloatValue());
     case VariantValue_::Type_DOUBLE_VALUE:
       return env_->NewObject(named_variant_class_.get(),
-                             named_variant_from_double_, jname,
+                             named_variant_from_double_, name.get(),
                              value.DoubleValue());
     case VariantValue_::Type_BOOL_VALUE:
       return env_->NewObject(named_variant_class_.get(),
-                             named_variant_from_bool_, jname,
+                             named_variant_from_bool_, name.get(),
                              value.BoolValue());
     case VariantValue_::Type_STRING_VALUE: {
-      jstring jstring = env_->NewStringUTF(value.StringValue().c_str());
-      if (jstring == nullptr) {
+      ScopedLocalRef<jstring> value_jstring =
+          jni_cache_->ConvertToJavaString(value.StringValue());
+      if (value_jstring == nullptr) {
         return nullptr;
       }
       return env_->NewObject(named_variant_class_.get(),
-                             named_variant_from_string_, jname, jstring);
+                             named_variant_from_string_, name.get(),
+                             value_jstring.get());
     }
     default:
       return nullptr;
@@ -141,7 +148,7 @@ jobject RemoteActionTemplatesHandler::AsNamedVariant(const std::string& name,
 }
 
 jobjectArray RemoteActionTemplatesHandler::AsNamedVariantArray(
-    const std::map<std::string, Variant>& values) {
+    const std::map<std::string, Variant>& values) const {
   if (values.empty()) {
     return nullptr;
   }
@@ -165,7 +172,7 @@ jobjectArray RemoteActionTemplatesHandler::AsNamedVariantArray(
 }
 
 jobjectArray RemoteActionTemplatesHandler::RemoteActionTemplatesToJObjectArray(
-    const std::vector<RemoteActionTemplate>& remote_actions) {
+    const std::vector<RemoteActionTemplate>& remote_actions) const {
   const jobjectArray results = env_->NewObjectArray(
       remote_actions.size(), remote_action_template_class_.get(), nullptr);
   if (results == nullptr) {

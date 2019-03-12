@@ -29,6 +29,11 @@ class Collections {
         *[]() { return new std::string("address"); }();
     return value;
   }
+  static const std::string& App() {
+    static const std::string& value =
+        *[]() { return new std::string("app"); }();
+    return value;
+  }
   static const std::string& Contact() {
     static const std::string& value =
         *[]() { return new std::string("contact"); }();

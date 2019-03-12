@@ -63,10 +63,12 @@ class ParserTest : public testing::Test {
   }
 
   bool HasNoResult(const std::string& text, bool anchor_start_end = false,
-                   const std::string& timezone = "Europe/Zurich") {
+                   const std::string& timezone = "Europe/Zurich",
+                   AnnotationUsecase annotation_usecase =
+                       AnnotationUsecase_ANNOTATION_USECASE_SMART) {
     std::vector<DatetimeParseResultSpan> results;
     if (!parser_->Parse(text, 0, timezone, /*locales=*/"", ModeFlag_ANNOTATION,
-                        anchor_start_end, &results)) {
+                        annotation_usecase, anchor_start_end, &results)) {
       TC3_LOG(ERROR) << text;
       TC3_CHECK(false);
     }
@@ -78,7 +80,9 @@ class ParserTest : public testing::Test {
                        DatetimeGranularity expected_granularity,
                        bool anchor_start_end = false,
                        const std::string& timezone = "Europe/Zurich",
-                       const std::string& locales = "en-US") {
+                       const std::string& locales = "en-US",
+                       AnnotationUsecase annotation_usecase =
+                           AnnotationUsecase_ANNOTATION_USECASE_SMART) {
     const UnicodeText marked_text_unicode =
         UTF8ToUnicodeText(marked_text, /*do_copy=*/false);
     auto brace_open_it =
@@ -98,7 +102,7 @@ class ParserTest : public testing::Test {
     std::vector<DatetimeParseResultSpan> results;
 
     if (!parser_->Parse(text, 0, timezone, locales, ModeFlag_ANNOTATION,
-                        anchor_start_end, &results)) {
+                        annotation_usecase, anchor_start_end, &results)) {
       TC3_LOG(ERROR) << text;
       TC3_CHECK(false);
     }
@@ -149,10 +153,12 @@ class ParserTest : public testing::Test {
                        DatetimeGranularity expected_granularity,
                        bool anchor_start_end = false,
                        const std::string& timezone = "Europe/Zurich",
-                       const std::string& locales = "en-US") {
+                       const std::string& locales = "en-US",
+                       AnnotationUsecase annotation_usecase =
+                           AnnotationUsecase_ANNOTATION_USECASE_SMART) {
     return ParsesCorrectly(marked_text, std::vector<int64>{expected_ms_utc},
                            expected_granularity, anchor_start_end, timezone,
-                           locales);
+                           locales, annotation_usecase);
   }
 
   bool ParsesCorrectlyGerman(const std::string& marked_text,
@@ -258,6 +264,10 @@ TEST_F(ParserTest, Parse) {
       ParsesCorrectly("{wednesday at 4am}", 529200000, GRANULARITY_HOUR));
   EXPECT_TRUE(ParsesCorrectly("last seen {today at 9:01 PM}", 72060000,
                               GRANULARITY_MINUTE));
+  EXPECT_TRUE(ParsesCorrectly("set an alarm for {7am tomorrow}", 108000000,
+                              GRANULARITY_HOUR));
+  EXPECT_TRUE(
+      ParsesCorrectly("set an alarm for {7 a.m}", 21600000, GRANULARITY_HOUR));
 }
 
 TEST_F(ParserTest, ParseWithAnchor) {
@@ -269,6 +279,43 @@ TEST_F(ParserTest, ParseWithAnchor) {
                               GRANULARITY_DAY, /*anchor_start_end=*/false));
   EXPECT_TRUE(HasNoResult("lorem 1 january 2018 ipsum",
                           /*anchor_start_end=*/true));
+}
+
+TEST_F(ParserTest, ParseWithRawUsecase) {
+  // Annotated for RAW usecase.
+  EXPECT_TRUE(ParsesCorrectly(
+      "{tomorrow}", 82800000, GRANULARITY_DAY, /*anchor_start_end=*/false,
+      /*timezone=*/"Europe/Zurich", /*locales=*/"en-US",
+      /*annotation_usecase=*/AnnotationUsecase_ANNOTATION_USECASE_RAW));
+
+  EXPECT_TRUE(ParsesCorrectly(
+      "call me {in two hours}", 7200000, GRANULARITY_HOUR,
+      /*anchor_start_end=*/false,
+      /*timezone=*/"Europe/Zurich", /*locales=*/"en-US",
+      /*annotation_usecase=*/AnnotationUsecase_ANNOTATION_USECASE_RAW));
+
+  EXPECT_TRUE(ParsesCorrectly(
+      "call me {next month}", 2674800000, GRANULARITY_MONTH,
+      /*anchor_start_end=*/false,
+      /*timezone=*/"Europe/Zurich", /*locales=*/"en-US",
+      /*annotation_usecase=*/AnnotationUsecase_ANNOTATION_USECASE_RAW));
+  EXPECT_TRUE(ParsesCorrectly(
+      "what's the time {now}", -3600000, GRANULARITY_DAY,
+      /*anchor_start_end=*/false,
+      /*timezone=*/"Europe/Zurich", /*locales=*/"en-US",
+      /*annotation_usecase=*/AnnotationUsecase_ANNOTATION_USECASE_RAW));
+
+  EXPECT_TRUE(ParsesCorrectly(
+      "call me on {Saturday}", 169200000, GRANULARITY_DAY,
+      /*anchor_start_end=*/false,
+      /*timezone=*/"Europe/Zurich", /*locales=*/"en-US",
+      /*annotation_usecase=*/AnnotationUsecase_ANNOTATION_USECASE_RAW));
+
+  // Not annotated for Smart usecase.
+  EXPECT_TRUE(HasNoResult(
+      "{tomorrow}", /*anchor_start_end=*/false,
+      /*timezone=*/"Europe/Zurich",
+      /*annotation_usecase=*/AnnotationUsecase_ANNOTATION_USECASE_SMART));
 }
 
 TEST_F(ParserTest, ParseGerman) {
@@ -366,7 +413,7 @@ TEST_F(ParserTest, ParseUnknownLanguage) {
                               /*timezone=*/"Europe/Zurich", /*locales=*/"xx"));
 }
 
-TEST_F(ParserTest, WhenEnabled_GeneratesAlternatives) {
+TEST_F(ParserTest, WhenAlternativesEnabledGeneratesAlternatives) {
   LoadModel([](ModelT* model) {
     model->datetime_model->generate_alternative_interpretations_when_ambiguous =
         true;
@@ -375,9 +422,12 @@ TEST_F(ParserTest, WhenEnabled_GeneratesAlternatives) {
   EXPECT_TRUE(ParsesCorrectly("{january 1 2018 at 4:30}",
                               {1514777400000, 1514820600000},
                               GRANULARITY_MINUTE));
+  EXPECT_TRUE(ParsesCorrectly("{monday 3pm}", 396000000, GRANULARITY_HOUR));
+  EXPECT_TRUE(ParsesCorrectly("{monday 3:00}", {352800000, 396000000},
+                              GRANULARITY_MINUTE));
 }
 
-TEST_F(ParserTest, WhenDisabled_DoesNotGenerateAlternatives) {
+TEST_F(ParserTest, WhenAlternativesDisabledDoesNotGenerateAlternatives) {
   LoadModel([](ModelT* model) {
     model->datetime_model->generate_alternative_interpretations_when_ambiguous =
         false;
@@ -443,9 +493,10 @@ void ParserLocaleTest::SetUp() {
 bool ParserLocaleTest::HasResult(const std::string& input,
                                  const std::string& locales) {
   std::vector<DatetimeParseResultSpan> results;
-  EXPECT_TRUE(parser_->Parse(input, /*reference_time_ms_utc=*/0,
-                             /*reference_timezone=*/"", locales,
-                             ModeFlag_ANNOTATION, false, &results));
+  EXPECT_TRUE(parser_->Parse(
+      input, /*reference_time_ms_utc=*/0,
+      /*reference_timezone=*/"", locales, ModeFlag_ANNOTATION,
+      AnnotationUsecase_ANNOTATION_USECASE_SMART, false, &results));
   return results.size() == 1;
 }
 

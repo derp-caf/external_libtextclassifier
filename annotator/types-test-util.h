@@ -44,6 +44,13 @@ inline std::ostream& operator<<(std::ostream& stream,
   return stream << tmp_stream.message;
 }
 
+inline std::ostream& operator<<(std::ostream& stream,
+                                const DateParseData& value) {
+  logging::LoggingStringStream tmp_stream;
+  tmp_stream << value;
+  return stream << tmp_stream.message;
+}
+
 }  // namespace libtextclassifier3
 
 #endif  // LIBTEXTCLASSIFIER_ANNOTATOR_TYPES_TEST_UTIL_H_

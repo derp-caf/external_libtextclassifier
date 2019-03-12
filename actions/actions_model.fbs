@@ -14,8 +14,8 @@
 // limitations under the License.
 //
 
+include "utils/flatbuffers.fbs";
 include "utils/intents/intent-config.fbs";
-include "utils/named-extra.fbs";
 include "utils/resources.fbs";
 include "utils/zlib/buffer.fbs";
 
@@ -101,8 +101,8 @@ table ActionSuggestionSpec {
   // Score.
   score:float;
 
-  // Extra information.
-  extra:[NamedVariant];
+  // Serialized entity information.
+  serialized_entity_data:string;
 }
 
 namespace libtextclassifier3.AnnotationActionsSpec_;
@@ -124,6 +124,45 @@ table AnnotationMapping {
 namespace libtextclassifier3;
 table AnnotationActionsSpec {
   annotation_mapping:[AnnotationActionsSpec_.AnnotationMapping];
+
+  // Whether to deduplicate annotations by type and text prior to generating
+  // actions.
+  deduplicate_annotations:bool = true;
+}
+
+// Ranking options.
+namespace libtextclassifier3;
+table RankingOptions {
+  // When true, actions suggestions are deduplicated by `type`, `response_text`
+  // and associated annotations, keeping the higher scoring actions.
+  deduplicate_suggestions:bool = true;
+
+  // Optional script to run for ranking and filtering the action suggestions.
+  // The following global variables are available to the script:
+  // * input: (optionally deduplicated) action suggestions, via the `actions`
+  // global
+  // * output: indices of the actions to keep in the provided order.
+  lua_ranking_script:string;
+}
+
+// Entity data to set from capturing groups.
+namespace libtextclassifier3.RulesModel_.Rule_.RuleActionSpec_;
+table CapturingGroup {
+  // The id of group.
+  group_id:int;
+
+  // If set, the text of the capturing group will be used to set a field
+  // in the action entity data.
+  entity_field:FlatbufferFieldPath;
+}
+
+// The actions to produce upon triggering.
+namespace libtextclassifier3.RulesModel_.Rule_;
+table RuleActionSpec {
+  // The action.
+  action:ActionSuggestionSpec;
+
+  capturing_group:[RuleActionSpec_.CapturingGroup];
 }
 
 // List of regular expression matchers.
@@ -133,9 +172,7 @@ table Rule {
   pattern:string;
 
   compressed_pattern:CompressedBuffer;
-
-  // The actions to produce upon triggering.
-  actions:[ActionSuggestionSpec];
+  actions:[Rule_.RuleActionSpec];
 }
 
 // Rule based actions.
@@ -182,6 +219,12 @@ table ActionsModel {
 
   // Model resources.
   resources:ResourcePool;
+
+  // Schema data for handling entity data.
+  actions_entity_data_schema:[ubyte];
+
+  // Action ranking options.
+  ranking_options:RankingOptions;
 }
 
 root_type libtextclassifier3.ActionsModel;

@@ -28,7 +28,7 @@ table ContactInfo {
   score: float;
 }
 
-table Extra {
+table EntityData {
   an_int_field: int;
   a_long_field: int64;
   a_bool_field: bool;
@@ -38,4 +38,4 @@ table Extra {
   contact_info: ContactInfo;
 }
 
-root_type libtextclassifier3.test.Extra;
+root_type libtextclassifier3.test.EntityData;

@@ -76,7 +76,14 @@ public final class AnnotatorModel implements AutoCloseable {
   /** Initializes the contact engine, passing the given serialized config to it. */
   public void initializeContactEngine(byte[] serializedConfig) {
     if (!nativeInitializeContactEngine(annotatorPtr, serializedConfig)) {
-      throw new IllegalArgumentException("Couldn't initialize the KG engine");
+      throw new IllegalArgumentException("Couldn't initialize the contact engine");
+    }
+  }
+
+  /** Initializes the installed app engine, passing the given serialized config to it. */
+  public void initializeInstalledAppEngine(byte[] serializedConfig) {
+    if (!nativeInitializeInstalledAppEngine(annotatorPtr, serializedConfig)) {
+      throw new IllegalArgumentException("Couldn't initialize the installed app engine");
     }
   }
 
@@ -133,6 +140,14 @@ public final class AnnotatorModel implements AutoCloseable {
     return nativeAnnotate(annotatorPtr, text, options);
   }
 
+  /**
+   * Looks up a knowledge entity by its identifier. Returns null if the entity is not found or on
+   * error.
+   */
+  public byte[] lookUpKnowledgeEntity(String id) {
+    return nativeLookUpKnowledgeEntity(annotatorPtr, id);
+  }
+
   /** Frees up the allocated memory. */
   @Override
   public void close() {
@@ -169,18 +184,18 @@ public final class AnnotatorModel implements AutoCloseable {
   /** Information about a parsed time/date. */
   public static final class DatetimeResult {
 
-    static final int GRANULARITY_YEAR = 0;
-    static final int GRANULARITY_MONTH = 1;
-    static final int GRANULARITY_WEEK = 2;
-    static final int GRANULARITY_DAY = 3;
-    static final int GRANULARITY_HOUR = 4;
-    static final int GRANULARITY_MINUTE = 5;
-    static final int GRANULARITY_SECOND = 6;
+    public static final int GRANULARITY_YEAR = 0;
+    public static final int GRANULARITY_MONTH = 1;
+    public static final int GRANULARITY_WEEK = 2;
+    public static final int GRANULARITY_DAY = 3;
+    public static final int GRANULARITY_HOUR = 4;
+    public static final int GRANULARITY_MINUTE = 5;
+    public static final int GRANULARITY_SECOND = 6;
 
     private final long timeMsUtc;
     private final int granularity;
 
-    DatetimeResult(long timeMsUtc, int granularity) {
+    public DatetimeResult(long timeMsUtc, int granularity) {
       this.timeMsUtc = timeMsUtc;
       this.granularity = granularity;
     }
@@ -205,6 +220,9 @@ public final class AnnotatorModel implements AutoCloseable {
     private final String contactNickname;
     private final String contactEmailAddress;
     private final String contactPhoneNumber;
+    private final String contactId;
+    private final String appName;
+    private final String appPackageName;
     private final RemoteActionTemplate[] remoteActionTemplates;
 
     public ClassificationResult(
@@ -217,6 +235,9 @@ public final class AnnotatorModel implements AutoCloseable {
         String contactNickname,
         String contactEmailAddress,
         String contactPhoneNumber,
+        String contactId,
+        String appName,
+        String appPackageName,
         RemoteActionTemplate[] remoteActionTemplates) {
       this.collection = collection;
       this.score = score;
@@ -227,6 +248,9 @@ public final class AnnotatorModel implements AutoCloseable {
       this.contactNickname = contactNickname;
       this.contactEmailAddress = contactEmailAddress;
       this.contactPhoneNumber = contactPhoneNumber;
+      this.contactId = contactId;
+      this.appName = appName;
+      this.appPackageName = appPackageName;
       this.remoteActionTemplates = remoteActionTemplates;
     }
 
@@ -244,28 +268,40 @@ public final class AnnotatorModel implements AutoCloseable {
       return datetimeResult;
     }
 
-    byte[] getSerializedKnowledgeResult() {
+    public byte[] getSerializedKnowledgeResult() {
       return serializedKnowledgeResult;
     }
 
-    String getContactName() {
+    public String getContactName() {
       return contactName;
     }
 
-    String getContactGivenName() {
+    public String getContactGivenName() {
       return contactGivenName;
     }
 
-    String getContactNickname() {
+    public String getContactNickname() {
       return contactNickname;
     }
 
-    String getContactEmailAddress() {
+    public String getContactEmailAddress() {
       return contactEmailAddress;
     }
 
-    String getContactPhoneNumber() {
+    public String getContactPhoneNumber() {
       return contactPhoneNumber;
+    }
+
+    public String getContactId() {
+      return contactId;
+    }
+
+    public String getAppName() {
+      return appName;
+    }
+
+    public String getAppPackageName() {
+      return appPackageName;
     }
 
     public RemoteActionTemplate[] getRemoteActionTemplates() {
@@ -383,6 +419,8 @@ public final class AnnotatorModel implements AutoCloseable {
 
   private native boolean nativeInitializeContactEngine(long context, byte[] serializedConfig);
 
+  private native boolean nativeInitializeInstalledAppEngine(long context, byte[] serializedConfig);
+
   private native int[] nativeSuggestSelection(
       long context, String text, int selectionBegin, int selectionEnd, SelectionOptions options);
 
@@ -397,6 +435,8 @@ public final class AnnotatorModel implements AutoCloseable {
 
   private native AnnotatedSpan[] nativeAnnotate(
       long context, String text, AnnotationOptions options);
+
+  private native byte[] nativeLookUpKnowledgeEntity(long context, String id);
 
   private native void nativeCloseAnnotator(long context);
 }

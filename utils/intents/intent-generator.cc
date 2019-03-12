@@ -16,6 +16,9 @@
 
 #include "utils/intents/intent-generator.h"
 
+#include <vector>
+
+#include "actions/types.h"
 #include "annotator/types.h"
 #include "utils/base/logging.h"
 #include "utils/hash/farmhash.h"
@@ -25,6 +28,7 @@
 #include "utils/strings/stringpiece.h"
 #include "utils/utf8/unicodetext.h"
 #include "utils/variant.h"
+#include "flatbuffers/reflection_generated.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,17 +51,8 @@ static constexpr const char* kUrlHostKey = "url_host";
 static constexpr const char* kUrlEncodeKey = "urlencode";
 static constexpr const char* kPackageNameKey = "package_name";
 static constexpr const char* kDeviceLocaleKey = "device_locale";
-
-std::string ExtractUtf8Substring(const std::string& text,
-                                 const CodepointSpan& span) {
-  const UnicodeText text_unicode = UTF8ToUnicodeText(text,
-                                                     /*do_copy=*/false);
-  auto span_begin = text_unicode.begin();
-  std::advance(span_begin, span.first);
-  auto span_end = text_unicode.begin();
-  std::advance(span_end, span.second);
-  return UnicodeText::UTF8Substring(span_begin, span_end);
-}
+static constexpr const char* kCollectionKey = "collection";
+static constexpr const char* kNameKey = "name";
 
 // An Android specific Lua environment with JNI backed callbacks.
 class JniLuaEnvironment : public LuaEnvironment {
@@ -67,7 +62,8 @@ class JniLuaEnvironment : public LuaEnvironment {
       const jobject context, const Locale& device_locale,
       const StringPiece entity_text, const int64 event_time_ms_utc,
       const int64 reference_time_ms_utc,
-      const std::map<std::string, Variant>& extra);
+      const std::string& serialized_entity_data,
+      const reflection::Schema* entity_data_schema);
 
   // Runs an intent generator snippet.
   std::vector<RemoteActionTemplate> RunIntentGenerator(
@@ -79,16 +75,17 @@ class JniLuaEnvironment : public LuaEnvironment {
                     const StringPiece entity_text,
                     const int64 event_time_ms_utc,
                     const int64 reference_time_ms_utc,
-                    const std::map<std::string, Variant>& extra);
+                    const std::string& serialized_entity_data,
+                    const reflection::Schema* entity_data_schema);
 
   // Environment setup.
   bool PrepareEnvironment();
   virtual void SetupExternalHook();
 
-  // Callback handlers.
-  int HandleCallback(int callback_id, void*) override;
+  int HandleCallback(const int callback_id,
+                     const std::vector<void*>& args) override;
   int HandleExternalCallback();
-  int HandleExtrasLookup();
+  int HandleEntityDataLookup(const std::vector<void*>& args);
   int HandleAndroidCallback();
   int HandleUserRestrictionsCallback();
   int HandleUrlEncode();
@@ -116,21 +113,29 @@ class JniLuaEnvironment : public LuaEnvironment {
   bool RetrieveSystemResources();
 
   // Parse the url string by using Uri.parse from Java.
-  ScopedLocalRef<jobject> ParseUri(StringPiece& url) const;
+  ScopedLocalRef<jobject> ParseUri(StringPiece url) const;
+
+  // Read remote action templates from lua generator.
+  int ReadRemoteActionTemplates(std::vector<RemoteActionTemplate>* result);
+
+  // Push a field from the entity data to lua.
+  int PushEntityDataField(const reflection::Object* type,
+                          const flatbuffers::Table* table, StringPiece key);
 
   // Builtins.
   enum CallbackId {
     CALLBACK_ID_EXTERNAL = 0,
-    CALLBACK_ID_EXTRAS = 1,
+    CALLBACK_ID_ENTITY_DATA = 1,
     CALLBACK_ID_ANDROID = 2,
     CALLBACK_ID_USER_PERMISSIONS = 3,
     CALLBACK_ID_URL_ENCODE = 4,
     CALLBACK_ID_URL_SCHEMA = 5,
-    CALLBACK_ID_ANDROID_STRING_RESOURCES = 6,
-    CALLBACK_ID_HASH = 7,
-    CALLBACK_ID_ANNOTATION = 8,
-    CALLBACK_ID_ANNOTATION_EXTRAS = 9,
-    CALLBACK_ID_URL_HOST = 10,
+    CALLBACK_ID_URL_HOST = 6,
+    CALLBACK_ID_ANDROID_STRING_RESOURCES = 7,
+    CALLBACK_ID_HASH = 8,
+    CALLBACK_ID_ANNOTATION = 9,
+    CALLBACK_ID_ANNOTATION_ENTITY_DATA = 10,
+    CALLBACK_ID_ANNOTATIONS_ITER = 12
   };
 
   const Resources& resources_;
@@ -141,7 +146,10 @@ class JniLuaEnvironment : public LuaEnvironment {
   const StringPiece entity_text_;
   const int64 event_time_ms_utc_;
   const int64 reference_time_ms_utc_;
-  const std::map<std::string, Variant>& extra_;
+
+  // Entity data and reflection schema data.
+  const flatbuffers::Table* const entity_data_;
+  const reflection::Schema* const entity_data_schema_;
 
   ScopedGlobalRef<jobject> usermanager_;
   // Whether we previously attempted to retrieve the UserManager before.
@@ -161,30 +169,40 @@ class JniLuaEnvironment : public LuaEnvironment {
 class ActionsJniLuaEnvironment : public JniLuaEnvironment {
  public:
   static std::unique_ptr<ActionsJniLuaEnvironment>
-  CreateActionsJniLuaEnvironment(const Resources& resources,
-                                 const JniCache* jni_cache,
-                                 const jobject context,
-                                 const Locale& device_locale,
-                                 const Conversation& conversation,
-                                 const ActionSuggestion& action,
-                                 const int64 reference_time_ms_utc);
+  CreateActionsJniLuaEnvironment(
+      const Resources& resources, const JniCache* jni_cache,
+      const jobject context, const Locale& device_locale,
+      const Conversation& conversation, const ActionSuggestion& action,
+      const int64 reference_time_ms_utc,
+      const reflection::Schema* entity_data_schema,
+      const reflection::Schema* annotations_entity_data_schema);
 
  protected:
-  ActionsJniLuaEnvironment(const Resources& resources,
-                           const JniCache* jni_cache, const jobject context,
-                           const Locale& device_locale,
-                           const Conversation& conversation,
-                           const ActionSuggestion& action,
-                           const int64 reference_time_ms_utc);
+  ActionsJniLuaEnvironment(
+      const Resources& resources, const JniCache* jni_cache,
+      const jobject context, const Locale& device_locale,
+      const Conversation& conversation, const ActionSuggestion& action,
+      const int64 reference_time_ms_utc,
+      const reflection::Schema* entity_data_schema,
+      const reflection::Schema* annotations_entity_data_schema);
 
   void SetupExternalHook() override;
 
-  int HandleCallback(int callback_id, void* callback_arg) override;
+  // Callback handlers. Return value is the number of results pushed.
+  int HandleCallback(const int callback_id,
+                     const std::vector<void*>& args) override;
   int HandleAnnotationCallback();
-  int HandleAnnotationExtrasCallback(void* callback_arg);
+  int HandleAnnotationsIterCallback(const std::vector<void*>& args);
+  int HandleAnnotationEntityDataCallback(const std::vector<void*>& args);
+
+  // Push an annotation reference on the stack.
+  void PushAnnotation(const int annotation_id);
 
   const Conversation& conversation_;
   const ActionSuggestion& action_;
+
+  // Reflection schema data.
+  const reflection::Schema* const annotations_entity_data_schema_;
 };
 
 std::unique_ptr<JniLuaEnvironment> JniLuaEnvironment::CreateJniLuaEnvironment(
@@ -192,13 +210,15 @@ std::unique_ptr<JniLuaEnvironment> JniLuaEnvironment::CreateJniLuaEnvironment(
     const jobject context, const Locale& device_locale,
     const StringPiece entity_text, const int64 event_time_ms_utc,
     const int64 reference_time_ms_utc,
-    const std::map<std::string, Variant>& extra) {
+    const std::string& serialized_entity_data,
+    const reflection::Schema* entity_data_schema) {
   if (jni_cache == nullptr) {
     return nullptr;
   }
   auto lua_env = std::unique_ptr<JniLuaEnvironment>(new JniLuaEnvironment(
       resources, jni_cache, context, device_locale, entity_text,
-      event_time_ms_utc, reference_time_ms_utc, extra));
+      event_time_ms_utc, reference_time_ms_utc, serialized_entity_data,
+      entity_data_schema));
   if (!lua_env->PrepareEnvironment()) {
     return nullptr;
   }
@@ -210,7 +230,8 @@ JniLuaEnvironment::JniLuaEnvironment(
     const jobject context, const Locale& device_locale,
     const StringPiece entity_text, const int64 event_time_ms_utc,
     const int64 reference_time_ms_utc,
-    const std::map<std::string, Variant>& extra)
+    const std::string& serialized_entity_data,
+    const reflection::Schema* entity_data_schema)
     : resources_(resources),
       jenv_(jni_cache ? jni_cache->GetEnv() : nullptr),
       jni_cache_(jni_cache),
@@ -219,7 +240,10 @@ JniLuaEnvironment::JniLuaEnvironment(
       entity_text_(entity_text),
       event_time_ms_utc_(event_time_ms_utc),
       reference_time_ms_utc_(reference_time_ms_utc),
-      extra_(extra),
+      entity_data_(
+          flatbuffers::GetAnyRoot(reinterpret_cast<const unsigned char*>(
+              serialized_entity_data.data()))),
+      entity_data_schema_(entity_data_schema),
       usermanager_(/*object=*/nullptr,
                    /*jvm=*/(jni_cache ? jni_cache->jvm : nullptr)),
       usermanager_retrieved_(false),
@@ -240,23 +264,25 @@ bool JniLuaEnvironment::PrepareEnvironment() {
     TC3_LOG(ERROR) << "Could not allocate constant strings references.";
     return false;
   }
-  LoadDefaultLibraries();
-  SetupExternalHook();
-  lua_setglobal(state_, "external");
-  return true;
+  return (RunProtected([this] {
+            LoadDefaultLibraries();
+            SetupExternalHook();
+            lua_setglobal(state_, "external");
+            return LUA_OK;
+          }) == LUA_OK);
 }
 
 void JniLuaEnvironment::SetupExternalHook() {
   // This exposes an `external` object with the following fields:
-  //   * extras: the bundle with all information about a classification.
+  //   * entity: the bundle with all information about a classification.
   //   * android: callbacks into specific android provided methods.
   //   * android.user_restrictions: callbacks to check user permissions.
   //   * android.R: callbacks to retrieve string resources.
   SetupTableLookupCallback("external", CALLBACK_ID_EXTERNAL);
 
-  // extras
-  PushString("extras");
-  SetupTableLookupCallback("extras", CALLBACK_ID_EXTRAS);
+  // entity
+  PushString("entity");
+  SetupTableLookupCallback("entity", CALLBACK_ID_ENTITY_DATA);
   lua_settable(state_, /*idx=*/-3);
 
   // android
@@ -277,12 +303,13 @@ void JniLuaEnvironment::SetupExternalHook() {
   lua_settable(state_, /*idx=*/-3);
 }
 
-int JniLuaEnvironment::HandleCallback(int callback_id, void*) {
+int JniLuaEnvironment::HandleCallback(const int callback_id,
+                                      const std::vector<void*>& args) {
   switch (callback_id) {
     case CALLBACK_ID_EXTERNAL:
       return HandleExternalCallback();
-    case CALLBACK_ID_EXTRAS:
-      return HandleExtrasLookup();
+    case CALLBACK_ID_ENTITY_DATA:
+      return HandleEntityDataLookup(args);
     case CALLBACK_ID_ANDROID:
       return HandleAndroidCallback();
     case CALLBACK_ID_USER_PERMISSIONS:
@@ -300,7 +327,7 @@ int JniLuaEnvironment::HandleCallback(int callback_id, void*) {
     default:
       TC3_LOG(ERROR) << "Unhandled callback: " << callback_id;
       lua_error(state_);
-      return LUA_ERRRUN;
+      return 0;
   }
 }
 
@@ -308,33 +335,115 @@ int JniLuaEnvironment::HandleExternalCallback() {
   const StringPiece key = ReadString(/*index=*/-1);
   if (key.Equals(kReferenceTimeUsecKey)) {
     lua_pushinteger(state_, reference_time_ms_utc_);
-    return LUA_YIELD;
+    return 1;
   } else if (key.Equals(kHashKey)) {
     PushCallback(CALLBACK_ID_HASH);
-    return LUA_YIELD;
+    return 1;
   } else {
     TC3_LOG(ERROR) << "Undefined external access " << key.ToString();
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 }
 
-int JniLuaEnvironment::HandleExtrasLookup() {
-  const StringPiece key = ReadString(/*index=*/-1);
-  if (key.Equals(kTextKey)) {
-    PushString(entity_text_);
-  } else if (key.Equals(kTimeUsecKey)) {
-    lua_pushinteger(state_, event_time_ms_utc_);
-  } else {
-    const auto it = extra_.find(key.ToString());
-    if (it == extra_.end()) {
-      TC3_LOG(ERROR) << "Undefined extra lookup " << key.ToString();
-      lua_error(state_);
-      return LUA_ERRRUN;
-    }
-    PushValue(it->second);
+int JniLuaEnvironment::PushEntityDataField(const reflection::Object* type,
+                                           const flatbuffers::Table* table,
+                                           StringPiece key) {
+  const reflection::Field* field =
+      type->fields()->LookupByKey(key.ToString().data());
+  if (field == nullptr) {
+    TC3_LOG(ERROR) << "Field: " << key.ToString() << " not found.";
+    lua_error(state_);
+    return 0;
   }
-  return LUA_YIELD;
+
+  // Provide primitive fields directly.
+  const reflection::BaseType field_type = field->type()->base_type();
+  switch (field_type) {
+    case reflection::Bool:
+      lua_pushboolean(state_, table->GetField<uint8_t>(
+                                  field->offset(), field->default_integer()));
+      break;
+    case reflection::Int:
+      lua_pushinteger(state_, table->GetField<int32>(field->offset(),
+                                                     field->default_integer()));
+      break;
+    case reflection::Long:
+      lua_pushinteger(state_, table->GetField<int64>(field->offset(),
+                                                     field->default_integer()));
+      break;
+    case reflection::Float:
+      lua_pushnumber(state_, table->GetField<float>(field->offset(),
+                                                    field->default_real()));
+      break;
+    case reflection::Double:
+      lua_pushnumber(state_, table->GetField<double>(field->offset(),
+                                                     field->default_real()));
+      break;
+    case reflection::String: {
+      const flatbuffers::String* string_value =
+          table->GetPointer<const flatbuffers::String*>(field->offset());
+      if (string_value != nullptr) {
+        PushString(StringPiece(string_value->data(), string_value->Length()));
+      } else {
+        PushString("");
+      }
+      break;
+    }
+    case reflection::Obj: {
+      void* field_table = table->GetPointer<void*>(field->offset());
+      if (field_table == nullptr) {
+        TC3_LOG(ERROR) << "Field was not set in entity data.";
+        lua_error(state_);
+        return 0;
+      }
+      void* field_type =
+          reinterpret_cast<void*>(const_cast<reflection::Object*>(
+              entity_data_schema_->objects()->Get(field->type()->index())));
+      SetupTableLookupCallback(field->name()->c_str(), CALLBACK_ID_ENTITY_DATA,
+                               {field_type, field_table});
+      break;
+    }
+    default:
+      TC3_LOG(ERROR) << "Unsupported type: " << field_type;
+      lua_error(state_);
+      return 0;
+  }
+  return 1;
+}
+
+int JniLuaEnvironment::HandleEntityDataLookup(const std::vector<void*>& args) {
+  const StringPiece key = ReadString(/*index=*/2);
+
+
+  if (args.empty()) {
+    if (key.Equals(kTextKey)) {
+      PushString(entity_text_);
+    } else if (key.Equals(kTimeUsecKey)) {
+      lua_pushinteger(state_, event_time_ms_utc_);
+    } else {
+      if (entity_data_schema_ == nullptr) {
+        TC3_LOG(ERROR) << "No schema defined for entity data.";
+        lua_error(state_);
+        return LUA_ERRRUN;
+      }
+      return PushEntityDataField(/*type=*/entity_data_schema_->root_table(),
+                                 /*table=*/entity_data_, key);
+    }
+    return LUA_YIELD;
+  }
+
+  // Expect type information and flatbuffer table for a lookup.
+  if (args.size() != 2) {
+    TC3_LOG(ERROR) << "Unexpected number of arguments for entity data lookup.";
+    lua_error(state_);
+    return LUA_ERRRUN;
+  }
+  const reflection::Object* type =
+      reinterpret_cast<reflection::Object*>(args[0]);
+  const flatbuffers::Table* table =
+      reinterpret_cast<flatbuffers::Table*>(args[1]);
+  return PushEntityDataField(type, table, key);
 }
 
 int JniLuaEnvironment::HandleAndroidCallback() {
@@ -348,12 +457,12 @@ int JniLuaEnvironment::HandleAndroidCallback() {
     lua_setfield(state_, -2, "region");
     PushString(device_locale_.Script());
     lua_setfield(state_, -2, "script");
-    return LUA_YIELD;
+    return 1;
   } else if (key.Equals(kPackageNameKey)) {
     if (context_ == nullptr) {
       TC3_LOG(ERROR) << "Context invalid.";
       lua_error(state_);
-      return LUA_ERRRUN;
+      return 0;
     }
     ScopedLocalRef<jstring> package_name_str(
         static_cast<jstring>(jenv_->CallObjectMethod(
@@ -361,23 +470,23 @@ int JniLuaEnvironment::HandleAndroidCallback() {
     if (jni_cache_->ExceptionCheckAndClear()) {
       TC3_LOG(ERROR) << "Error calling Context.getPackageName";
       lua_error(state_);
-      return LUA_ERRRUN;
+      return 0;
     }
     PushString(ToStlString(jenv_, package_name_str.get()));
-    return LUA_YIELD;
+    return 1;
   } else if (key.Equals(kUrlEncodeKey)) {
     PushCallback(CALLBACK_ID_URL_ENCODE);
-    return LUA_YIELD;
+    return 1;
   } else if (key.Equals(kUrlHostKey)) {
     PushCallback(CALLBACK_ID_URL_HOST);
-    return LUA_YIELD;
+    return 1;
   } else if (key.Equals(kUrlSchemaKey)) {
     PushCallback(CALLBACK_ID_URL_SCHEMA);
-    return LUA_YIELD;
+    return 1;
   } else {
     TC3_LOG(ERROR) << "Undefined android reference " << key.ToString();
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 }
 
@@ -388,14 +497,14 @@ int JniLuaEnvironment::HandleUserRestrictionsCallback() {
     // getUserRestrictions only for API level >= 18, so we just return false
     // normally here.
     lua_pushboolean(state_, false);
-    return LUA_YIELD;
+    return 1;
   }
 
   // Get user manager if not previously retrieved.
   if (!RetrieveUserManager()) {
     TC3_LOG(ERROR) << "Error retrieving user manager.";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 
   ScopedLocalRef<jobject> bundle(jenv_->CallObjectMethod(
@@ -403,21 +512,21 @@ int JniLuaEnvironment::HandleUserRestrictionsCallback() {
   if (jni_cache_->ExceptionCheckAndClear() || bundle == nullptr) {
     TC3_LOG(ERROR) << "Error calling getUserRestrictions";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 
   const StringPiece key_str = ReadString(/*index=*/-1);
   if (key_str.empty()) {
     TC3_LOG(ERROR) << "Expected string, got null.";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 
   ScopedLocalRef<jstring> key = jni_cache_->ConvertToJavaString(key_str);
   if (jni_cache_->ExceptionCheckAndClear() || key == nullptr) {
     TC3_LOG(ERROR) << "Expected string, got null.";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
   const bool permission = jenv_->CallBooleanMethod(
       bundle.get(), jni_cache_->bundle_get_boolean, key.get());
@@ -427,7 +536,7 @@ int JniLuaEnvironment::HandleUserRestrictionsCallback() {
   } else {
     lua_pushboolean(state_, permission);
   }
-  return LUA_YIELD;
+  return 1;
 }
 
 int JniLuaEnvironment::HandleUrlEncode() {
@@ -435,7 +544,7 @@ int JniLuaEnvironment::HandleUrlEncode() {
   if (input.empty()) {
     TC3_LOG(ERROR) << "Expected string, got null.";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 
   // Call Java URL encoder.
@@ -443,7 +552,7 @@ int JniLuaEnvironment::HandleUrlEncode() {
   if (jni_cache_->ExceptionCheckAndClear() || input_str == nullptr) {
     TC3_LOG(ERROR) << "Expected string, got null.";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
   ScopedLocalRef<jstring> encoded_str(
       static_cast<jstring>(jenv_->CallStaticObjectMethod(
@@ -452,13 +561,13 @@ int JniLuaEnvironment::HandleUrlEncode() {
   if (jni_cache_->ExceptionCheckAndClear()) {
     TC3_LOG(ERROR) << "Error calling UrlEncoder.encode";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
   PushString(ToStlString(jenv_, encoded_str.get()));
-  return LUA_YIELD;
+  return 1;
 }
 
-ScopedLocalRef<jobject> JniLuaEnvironment::ParseUri(StringPiece& url) const {
+ScopedLocalRef<jobject> JniLuaEnvironment::ParseUri(StringPiece url) const {
   if (url.empty()) {
     return nullptr;
   }
@@ -485,7 +594,7 @@ int JniLuaEnvironment::HandleUrlSchema() {
   ScopedLocalRef<jobject> parsed_uri = ParseUri(url);
   if (parsed_uri == nullptr) {
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 
   ScopedLocalRef<jstring> scheme_str(static_cast<jstring>(
@@ -493,14 +602,14 @@ int JniLuaEnvironment::HandleUrlSchema() {
   if (jni_cache_->ExceptionCheckAndClear()) {
     TC3_LOG(ERROR) << "Error calling Uri.getScheme";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
   if (scheme_str == nullptr) {
     lua_pushnil(state_);
   } else {
     PushString(ToStlString(jenv_, scheme_str.get()));
   }
-  return LUA_YIELD;
+  return 1;
 }
 
 int JniLuaEnvironment::HandleUrlHost() {
@@ -509,7 +618,7 @@ int JniLuaEnvironment::HandleUrlHost() {
   ScopedLocalRef<jobject> parsed_uri = ParseUri(url);
   if (parsed_uri == nullptr) {
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 
   ScopedLocalRef<jstring> host_str(static_cast<jstring>(
@@ -517,20 +626,20 @@ int JniLuaEnvironment::HandleUrlHost() {
   if (jni_cache_->ExceptionCheckAndClear()) {
     TC3_LOG(ERROR) << "Error calling Uri.getHost";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
   if (host_str == nullptr) {
     lua_pushnil(state_);
   } else {
     PushString(ToStlString(jenv_, host_str.get()));
   }
-  return LUA_YIELD;
+  return 1;
 }
 
 int JniLuaEnvironment::HandleHash() {
   const StringPiece input = ReadString(/*index=*/-1);
   lua_pushinteger(state_, tc3farmhash::Hash32(input.data(), input.length()));
-  return LUA_YIELD;
+  return 1;
 }
 
 bool JniLuaEnvironment::LookupModelStringResource() {
@@ -554,14 +663,14 @@ bool JniLuaEnvironment::LookupModelStringResource() {
 int JniLuaEnvironment::HandleAndroidStringResources() {
   // Check whether the requested resource can be served from the model data.
   if (LookupModelStringResource()) {
-    return LUA_YIELD;
+    return 1;
   }
 
   // Get system resources if not previously retrieved.
   if (!RetrieveSystemResources()) {
     TC3_LOG(ERROR) << "Error retrieving system resources.";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
 
   int resource_id;
@@ -574,14 +683,14 @@ int JniLuaEnvironment::HandleAndroidStringResources() {
       if (resource_name_str.empty()) {
         TC3_LOG(ERROR) << "No resource name provided.";
         lua_error(state_);
-        return LUA_ERRRUN;
+        return 0;
       }
       ScopedLocalRef<jstring> resource_name =
           jni_cache_->ConvertToJavaString(resource_name_str);
       if (resource_name == nullptr) {
         TC3_LOG(ERROR) << "Invalid resource name.";
         lua_error(state_);
-        return LUA_ERRRUN;
+        return 0;
       }
       resource_id = jenv_->CallIntMethod(
           system_resources_.get(), jni_cache_->resources_get_identifier,
@@ -589,19 +698,19 @@ int JniLuaEnvironment::HandleAndroidStringResources() {
       if (jni_cache_->ExceptionCheckAndClear()) {
         TC3_LOG(ERROR) << "Error calling getIdentifier.";
         lua_error(state_);
-        return LUA_ERRRUN;
+        return 0;
       }
       break;
     }
     default:
       TC3_LOG(ERROR) << "Unexpected type for resource lookup.";
       lua_error(state_);
-      return LUA_ERRRUN;
+      return 0;
   }
   if (resource_id == 0) {
     TC3_LOG(ERROR) << "Resource not found.";
     lua_pushnil(state_);
-    return LUA_YIELD;
+    return 1;
   }
   ScopedLocalRef<jstring> resource_str(static_cast<jstring>(
       jenv_->CallObjectMethod(system_resources_.get(),
@@ -609,14 +718,14 @@ int JniLuaEnvironment::HandleAndroidStringResources() {
   if (jni_cache_->ExceptionCheckAndClear()) {
     TC3_LOG(ERROR) << "Error calling getString.";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
   if (resource_str == nullptr) {
     lua_pushnil(state_);
   } else {
     PushString(ToStlString(jenv_, resource_str.get()));
   }
-  return LUA_YIELD;
+  return 1;
 }
 
 bool JniLuaEnvironment::RetrieveSystemResources() {
@@ -660,8 +769,10 @@ RemoteActionTemplate JniLuaEnvironment::ReadRemoteActionTemplateResult() {
   lua_pushnil(state_);
   while (lua_next(state_, /*idx=*/-2)) {
     const StringPiece key = ReadString(/*index=*/-2);
-    if (key.Equals("title")) {
-      result.title = ReadString(/*index=*/-1).ToString();
+    if (key.Equals("title_without_entity")) {
+      result.title_without_entity = ReadString(/*index=*/-1).ToString();
+    } else if (key.Equals("title_with_entity")) {
+      result.title_with_entity = ReadString(/*index=*/-1).ToString();
     } else if (key.Equals("description")) {
       result.description = ReadString(/*index=*/-1).ToString();
     } else if (key.Equals("action")) {
@@ -760,14 +871,16 @@ ActionsJniLuaEnvironment::CreateActionsJniLuaEnvironment(
     const Resources& resources, const JniCache* jni_cache,
     const jobject context, const Locale& device_locale,
     const Conversation& conversation, const ActionSuggestion& action,
-    int64 reference_time_ms_utc) {
+    int64 reference_time_ms_utc, const reflection::Schema* entity_data_schema,
+    const reflection::Schema* annotations_entity_data_schema) {
   if (jni_cache == nullptr) {
     return nullptr;
   }
   std::unique_ptr<ActionsJniLuaEnvironment> lua_env(
       new ActionsJniLuaEnvironment(resources, jni_cache, context, device_locale,
-                                   conversation, action,
-                                   reference_time_ms_utc));
+                                   conversation, action, reference_time_ms_utc,
+                                   entity_data_schema,
+                                   annotations_entity_data_schema));
   if (!lua_env->PrepareEnvironment()) {
     return nullptr;
   }
@@ -778,15 +891,18 @@ ActionsJniLuaEnvironment::ActionsJniLuaEnvironment(
     const Resources& resources, const JniCache* jni_cache,
     const jobject context, const Locale& device_locale,
     const Conversation& conversation, const ActionSuggestion& action,
-    int64 reference_time_ms_utc)
+    int64 reference_time_ms_utc, const reflection::Schema* entity_data_schema,
+    const reflection::Schema* annotations_entity_data_schema)
     : JniLuaEnvironment(
           resources, jni_cache, context, device_locale, /*entity_text=*/"",
           conversation.messages.empty()
               ? 0
               : conversation.messages.back().reference_time_ms_utc,
-          reference_time_ms_utc, action.extra),
+          reference_time_ms_utc, action.serialized_entity_data,
+          entity_data_schema),
       conversation_(conversation),
-      action_(action) {}
+      action_(action),
+      annotations_entity_data_schema_(annotations_entity_data_schema) {}
 
 void ActionsJniLuaEnvironment::SetupExternalHook() {
   JniLuaEnvironment::SetupExternalHook();
@@ -798,76 +914,99 @@ void ActionsJniLuaEnvironment::SetupExternalHook() {
   lua_settable(state_, /*idx=*/-3);
 }
 
-int ActionsJniLuaEnvironment::HandleCallback(int callback_id,
-                                             void* callback_arg) {
+int ActionsJniLuaEnvironment::HandleCallback(const int callback_id,
+                                             const std::vector<void*>& args) {
   switch (callback_id) {
     case CALLBACK_ID_ANNOTATION:
       return HandleAnnotationCallback();
-    case CALLBACK_ID_ANNOTATION_EXTRAS:
-      return HandleAnnotationExtrasCallback(callback_arg);
+    case CALLBACK_ID_ANNOTATIONS_ITER:
+      return HandleAnnotationsIterCallback(args);
+    case CALLBACK_ID_ANNOTATION_ENTITY_DATA:
+      return HandleAnnotationEntityDataCallback(args);
     default:
-      return JniLuaEnvironment::HandleCallback(callback_id, callback_arg);
+      return JniLuaEnvironment::HandleCallback(callback_id, args);
   }
 }
 
-int ActionsJniLuaEnvironment::HandleAnnotationCallback() {
-  if (action_.annotations.empty()) {
-    TC3_LOG(ERROR) << "No annotations provided.";
-    lua_error(state_);
-    return LUA_ERRRUN;
+int ActionsJniLuaEnvironment::HandleAnnotationsIterCallback(
+    const std::vector<void*>& args) {
+  int64 it = reinterpret_cast<int64>(args[0]);
+  if (it >= action_.annotations.size()) {
+    return 0;
   }
 
+  // Update iterator value.
+  lua_pushlightuserdata(state_, reinterpret_cast<void*>(it + 1));
+  lua_replace(state_, GetArgIndex(0));
+
+  // Key.
+  PushString(action_.annotations[it].name);
+
+  // Value.
+  PushAnnotation(it);
+  return 2;
+}
+
+int ActionsJniLuaEnvironment::HandleAnnotationCallback() {
   // We can directly access an annotation by index (lua is 1-based), or
   // by name.
   int64 annotation_id = -1;
   switch (lua_type(state_, -1)) {
     case LUA_TNUMBER:
       annotation_id = static_cast<int>(lua_tonumber(state_, /*idx=*/-1)) - 1;
-      TC3_LOG(ERROR) << "Annotation lookup by id: " << annotation_id;
       break;
     case LUA_TSTRING: {
-      const StringPiece annotation_name = ReadString(/*index=*/-1);
+      const StringPiece key = ReadString(/*index=*/-1);
 
-      TC3_LOG(ERROR) << "Annotation lookup: " << annotation_name.ToString();
+      // The number of annotations.
+      if (key.Equals(kLengthKey)) {
+        lua_pushinteger(state_, action_.annotations.size());
+        return 1;
+      }
+
+      // Iteration.
+      if (key.Equals(kPairsKey)) {
+        PushCallback(CALLBACK_ID_ANNOTATIONS_ITER, /*args=*/{/*iterator=*/0});
+        return 1;
+      }
 
       for (int i = 0; i < action_.annotations.size(); i++) {
-        if (annotation_name.Equals(action_.annotations[i].name)) {
+        if (key.Equals(action_.annotations[i].name)) {
           annotation_id = i;
           break;
         }
       }
       if (annotation_id < 0) {
-        TC3_LOG(ERROR) << "Annotation " << annotation_name.ToString()
-                       << " not found.";
+        TC3_LOG(ERROR) << "Annotation " << key.ToString() << " not found.";
         lua_error(state_);
-        return LUA_ERRRUN;
+        return 0;
       }
       break;
     }
     default:
       TC3_LOG(ERROR) << "Unexpected type for annotation lookup.";
       lua_error(state_);
-      return LUA_ERRRUN;
+      return 0;
+  }
+
+  if (annotation_id >= action_.annotations.size()) {
+    TC3_LOG(ERROR) << "Invalid annotation index.";
+    lua_error(state_);
+    return 0;
   }
 
   // Provide callback table for this annotation.
-  lua_newtable(state_);
-  PushString(action_.annotations[annotation_id].entity.collection);
-  lua_setfield(state_, /*idx=*/-2, "collection");
-  PushString("extras");
-  SetupTableLookupCallback("extras", CALLBACK_ID_ANNOTATION_EXTRAS,
-                           reinterpret_cast<void*>(annotation_id));
-  lua_settable(state_, /*idx=*/-3);
-  return LUA_YIELD;
+  PushAnnotation(annotation_id);
+  return 1;
 }
 
-int ActionsJniLuaEnvironment::HandleAnnotationExtrasCallback(
-    void* callback_arg) {
-  const int64 annotation_id = reinterpret_cast<int64>(callback_arg);
+int ActionsJniLuaEnvironment::HandleAnnotationEntityDataCallback(
+    const std::vector<void*>& args) {
+  const int64 annotation_id = reinterpret_cast<int64>(args[0]);
   if (annotation_id < 0 || annotation_id >= action_.annotations.size()) {
     TC3_LOG(ERROR) << "Invalid annotation lookup.";
     lua_error(state_);
-    return LUA_ERRRUN;
+    return 0;
   }
   const ActionSuggestionAnnotation& annotation =
       action_.annotations[annotation_id];
@@ -875,38 +1014,79 @@ int ActionsJniLuaEnvironment::HandleAnnotationExtrasCallback(
   if (key.Equals(kTextKey)) {
     if (annotation.message_index == kInvalidIndex) {
       lua_pushnil(state_);
-      return LUA_YIELD;
+      return 1;
     }
     // Extract text from message.
     if (annotation.message_index < 0 ||
         annotation.message_index >= conversation_.messages.size()) {
       TC3_LOG(ERROR) << "Invalid message reference.";
       lua_error(state_);
-      return LUA_ERRRUN;
+      return 0;
     }
-    PushString(ExtractUtf8Substring(
-        conversation_.messages[annotation.message_index].text,
-        annotation.span));
+    PushString(annotation.text);
   } else if (key.Equals(kTimeUsecKey)) {
     lua_pushinteger(state_,
                     annotation.entity.datetime_parse_result.time_ms_utc);
   } else {
-    const auto it = annotation.entity.extra.find(key.ToString());
-    if (it == extra_.end()) {
-      TC3_LOG(ERROR) << "Undefined extra lookup " << key.ToString();
+    if (annotations_entity_data_schema_ == nullptr) {
+      TC3_LOG(ERROR) << "No annotations entity data schema defined.";
       lua_error(state_);
-      return LUA_ERRRUN;
+      return 0;
     }
-    PushValue(it->second);
+    return PushEntityDataField(
+        /*type=*/annotations_entity_data_schema_->root_table(),
+        /*table=*/
+        flatbuffers::GetAnyRoot(reinterpret_cast<const unsigned char*>(
+            annotation.entity.serialized_entity_data.data())),
+        key);
   }
-  return LUA_YIELD;
+  return 1;
 }
 
-}  // namespace
+void ActionsJniLuaEnvironment::PushAnnotation(const int annotation_id) {
+  const ActionSuggestionAnnotation& annotation =
+      action_.annotations[annotation_id];
+  lua_newtable(state_);
+  PushString(annotation.entity.collection);
+  lua_setfield(state_, /*idx=*/-2, kCollectionKey);
+  PushString(annotation.name);
+  lua_setfield(state_, /*idx=*/-2, kNameKey);
+  PushString("entity");
+  SetupTableLookupCallback("entity", CALLBACK_ID_ANNOTATION_ENTITY_DATA,
+                           {reinterpret_cast<void*>(annotation_id)});
+  lua_settable(state_, /*idx=*/-3);
+}
+
+int JniLuaEnvironment::ReadRemoteActionTemplates(
+    std::vector<RemoteActionTemplate>* result) {
+  // Read result.
+  if (lua_type(state_, /*idx=*/-1) != LUA_TTABLE) {
+    TC3_LOG(ERROR) << "Unexpected result for snippet: " << lua_type(state_, -1);
+    lua_error(state_);
+    return LUA_ERRRUN;
+  }
+
+  // Read remote action templates array.
+  lua_pushnil(state_);
+  while (lua_next(state_, /*idx=*/-2)) {
+    if (lua_type(state_, /*idx=*/-1) != LUA_TTABLE) {
+      TC3_LOG(ERROR) << "Expected intent table, got: "
+                     << lua_type(state_, /*idx=*/-1);
+      lua_pop(state_, 1);
+      continue;
+    }
+    result->push_back(ReadRemoteActionTemplateResult());
+  }
+  lua_pop(state_, /*n=*/1);
+  return LUA_OK;
+}
 
 std::vector<RemoteActionTemplate> JniLuaEnvironment::RunIntentGenerator(
     const std::string& generator_snippet) {
-  int status = luaL_loadstring(state_, generator_snippet.data());
+  int status;
+  status = luaL_loadbuffer(state_, generator_snippet.data(),
+                           generator_snippet.size(),
+                           /*name=*/nullptr);
   if (status != LUA_OK) {
     TC3_LOG(ERROR) << "Couldn't load generator snippet: " << status;
     return {};
@@ -916,26 +1096,13 @@ std::vector<RemoteActionTemplate> JniLuaEnvironment::RunIntentGenerator(
     TC3_LOG(ERROR) << "Couldn't run generator snippet: " << status;
     return {};
   }
-  // Read result.
-  if (lua_gettop(state_) != 1 || lua_type(state_, /*idx=*/1) != LUA_TTABLE) {
-    TC3_LOG(ERROR) << "Unexpected result for snippet.";
+  std::vector<RemoteActionTemplate> result;
+  if (RunProtected(
+          [this, &result] { return ReadRemoteActionTemplates(&result); },
+          /*num_args=*/1) != LUA_OK) {
+    TC3_LOG(ERROR) << "Could not read results.";
     return {};
   }
-
-  // Read remote action templates array.
-  std::vector<RemoteActionTemplate> result;
-  lua_pushnil(state_);
-  while (lua_next(state_, /*idx=*/-2)) {
-    if (lua_type(state_, /*idx=*/-1) != LUA_TTABLE) {
-      TC3_LOG(ERROR) << "Expected intent table, got: "
-                     << lua_type(state_, /*idx=*/-1);
-      lua_pop(state_, 1);
-      continue;
-    }
-    result.push_back(ReadRemoteActionTemplateResult());
-  }
-  lua_pop(state_, /*n=*/1);
-
   // Check that we correctly cleaned-up the state.
   const int stack_size = lua_gettop(state_);
   if (stack_size > 0) {
@@ -943,13 +1110,16 @@ std::vector<RemoteActionTemplate> JniLuaEnvironment::RunIntentGenerator(
     lua_settop(state_, 0);
     return {};
   }
-
   return result;
 }
 
+}  // namespace
+
 std::unique_ptr<IntentGenerator> IntentGenerator::CreateIntentGenerator(
     const IntentFactoryModel* options, const ResourcePool* resources,
-    const std::shared_ptr<JniCache>& jni_cache, const jobject context) {
+    const std::shared_ptr<JniCache>& jni_cache, const jobject context,
+    const reflection::Schema* annotations_entity_data_schema,
+    const reflection::Schema* actions_entity_data_schema) {
   // Normally this check would be performed by the Java compiler and we wouldn't
   // need to worry about it here. But we can't depend on Android's SDK in Java,
   // so we check the instance type here.
@@ -959,18 +1129,22 @@ std::unique_ptr<IntentGenerator> IntentGenerator::CreateIntentGenerator(
     return nullptr;
   }
 
-  return std::unique_ptr<IntentGenerator>(
-      new IntentGenerator(options, resources, jni_cache, context));
+  return std::unique_ptr<IntentGenerator>(new IntentGenerator(
+      options, resources, jni_cache, context, annotations_entity_data_schema,
+      actions_entity_data_schema));
 }
 
-IntentGenerator::IntentGenerator(const IntentFactoryModel* options,
-                                 const ResourcePool* resources,
-                                 const std::shared_ptr<JniCache>& jni_cache,
-                                 const jobject context)
+IntentGenerator::IntentGenerator(
+    const IntentFactoryModel* options, const ResourcePool* resources,
+    const std::shared_ptr<JniCache>& jni_cache, const jobject context,
+    const reflection::Schema* annotations_entity_data_schema,
+    const reflection::Schema* actions_entity_data_schema)
     : options_(options),
       resources_(Resources(resources)),
       jni_cache_(jni_cache),
-      context_(context) {
+      context_(context),
+      annotations_entity_data_schema_(annotations_entity_data_schema),
+      actions_entity_data_schema_(actions_entity_data_schema) {
   if (options == nullptr || options->generator() == nullptr) {
     return;
   }
@@ -1013,13 +1187,16 @@ std::vector<RemoteActionTemplate> IntentGenerator::GenerateIntents(
     return {};
   }
 
-  const std::string entity_text = ExtractUtf8Substring(text, selection_indices);
+  const std::string entity_text =
+      UTF8ToUnicodeText(text, /*do_copy=*/false)
+          .UTF8Substring(selection_indices.first, selection_indices.second);
 
   std::unique_ptr<JniLuaEnvironment> interpreter =
       JniLuaEnvironment::CreateJniLuaEnvironment(
           resources_, jni_cache_.get(), context_, ParseLocale(device_locale),
           entity_text, classification.datetime_parse_result.time_ms_utc,
-          reference_time_ms_utc, classification.extra);
+          reference_time_ms_utc, classification.serialized_entity_data,
+          annotations_entity_data_schema_);
 
   if (interpreter == nullptr) {
     TC3_LOG(ERROR) << "Could not create Lua interpreter.";
@@ -1046,7 +1223,8 @@ std::vector<RemoteActionTemplate> IntentGenerator::GenerateIntents(
   std::unique_ptr<ActionsJniLuaEnvironment> interpreter =
       ActionsJniLuaEnvironment::CreateActionsJniLuaEnvironment(
           resources_, jni_cache_.get(), context_, ParseLocale(device_locale),
-          conversation, action, reference_time_ms_utc);
+          conversation, action, reference_time_ms_utc,
+          actions_entity_data_schema_, annotations_entity_data_schema_);
 
   if (interpreter == nullptr) {
     TC3_LOG(ERROR) << "Could not create Lua interpreter.";

@@ -80,4 +80,26 @@ logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
                 << ", " << best_class << ", " << best_score << ")";
 }
 
+logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
+                                         const DateParseData& data) {
+  // TODO(zilka): Add human-readable form of field_set_mask and the enum fields.
+  stream = stream << "DateParseData {\n";
+  stream = stream << "  field_set_mask: " << data.field_set_mask << "\n";
+  stream = stream << "  year: " << data.year << "\n";
+  stream = stream << "  month: " << data.month << "\n";
+  stream = stream << "  day_of_month: " << data.day_of_month << "\n";
+  stream = stream << "  hour: " << data.hour << "\n";
+  stream = stream << "  minute: " << data.minute << "\n";
+  stream = stream << "  second: " << data.second << "\n";
+  stream = stream << "  ampm: " << static_cast<int>(data.ampm) << "\n";
+  stream = stream << "  zone_offset: " << data.zone_offset << "\n";
+  stream = stream << "  dst_offset: " << data.dst_offset << "\n";
+  stream = stream << "  relation: " << static_cast<int>(data.relation) << "\n";
+  stream = stream << "  relation_type: " << static_cast<int>(data.relation_type)
+                  << "\n";
+  stream = stream << "  relation_distance: " << data.relation_distance << "\n";
+  stream = stream << "}";
+  return stream;
+}
+
 }  // namespace libtextclassifier3

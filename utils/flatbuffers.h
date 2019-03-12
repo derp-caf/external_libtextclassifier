@@ -114,6 +114,13 @@ class ReflectiveFlatbuffer {
   // Gets the field information for a field name, returns nullptr if the
   // field was not defined.
   const reflection::Field* GetFieldOrNull(const StringPiece field_name) const;
+  const reflection::Field* GetFieldOrNull(const FlatbufferField* field) const;
+  const reflection::Field* GetFieldByOffsetOrNull(const int field_offset) const;
+
+  // Gets a nested field and the message it is defined on.
+  bool GetFieldWithParent(const FlatbufferFieldPath* field_path,
+                          ReflectiveFlatbuffer** parent,
+                          reflection::Field const** field);
 
   // Checks whether a variant value type agrees with a field type.
   bool IsMatchingType(const reflection::Field* field,
@@ -150,6 +157,16 @@ class ReflectiveFlatbuffer {
     return true;
   }
 
+  template <typename T>
+  bool Set(const FlatbufferFieldPath* path, T value) {
+    ReflectiveFlatbuffer* parent;
+    const reflection::Field* field;
+    if (!GetFieldWithParent(path, &parent, &field)) {
+      return false;
+    }
+    return parent->Set<T>(field, value);
+  }
+
   // Gets the reflective flatbuffer for a table field.
   // Returns nullptr if the field was not found, or the field type was not a
   // table.
@@ -159,6 +176,13 @@ class ReflectiveFlatbuffer {
   // Serializes the flatbuffer.
   flatbuffers::uoffset_t Serialize(
       flatbuffers::FlatBufferBuilder* builder) const;
+  std::string Serialize() const;
+
+  // Merges the fields from the given flatbuffer table into this flatbuffer.
+  // Scalar fields will be overwritten, if present in `from`.
+  // Embedded messages will be merged.
+  bool MergeFrom(const flatbuffers::Table* from);
+  bool MergeFromSerializedFlatbuffer(StringPiece from);
 
  private:
   const reflection::Schema* const schema_;

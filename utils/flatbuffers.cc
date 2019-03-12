@@ -17,7 +17,7 @@
 #include "utils/flatbuffers.h"
 
 #include <vector>
-#include "utils/named-extra_generated.h"
+#include "utils/variant.h"
 
 namespace libtextclassifier3 {
 
@@ -28,6 +28,10 @@ const char* FlatbufferFileIdentifier<Model>() {
 
 std::unique_ptr<ReflectiveFlatbuffer> ReflectiveFlatbufferBuilder::NewRoot()
     const {
+  if (!schema_->root_table()) {
+    TC3_LOG(ERROR) << "No root table specified.";
+    return nullptr;
+  }
   return std::unique_ptr<ReflectiveFlatbuffer>(
       new ReflectiveFlatbuffer(schema_, schema_->root_table()));
 }
@@ -46,6 +50,51 @@ std::unique_ptr<ReflectiveFlatbuffer> ReflectiveFlatbufferBuilder::NewTable(
 const reflection::Field* ReflectiveFlatbuffer::GetFieldOrNull(
     const StringPiece field_name) const {
   return type_->fields()->LookupByKey(field_name.data());
+}
+
+const reflection::Field* ReflectiveFlatbuffer::GetFieldOrNull(
+    const FlatbufferField* field) const {
+  // Lookup by name might be faster as the fields are sorted by name in the
+  // schema data, so try that first.
+  if (field->field_name() != nullptr) {
+    return GetFieldOrNull(field->field_name()->str());
+  }
+  return GetFieldByOffsetOrNull(field->field_offset());
+}
+
+bool ReflectiveFlatbuffer::GetFieldWithParent(
+    const FlatbufferFieldPath* field_path, ReflectiveFlatbuffer** parent,
+    reflection::Field const** field) {
+  const auto* path = field_path->field();
+  if (path == nullptr || path->size() == 0) {
+    return false;
+  }
+
+  for (int i = 0; i < path->size(); i++) {
+    *parent = (i == 0 ? this : (*parent)->Mutable(*field));
+    if (*parent == nullptr) {
+      return false;
+    }
+    *field = (*parent)->GetFieldOrNull(path->Get(i));
+    if (*field == nullptr) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+const reflection::Field* ReflectiveFlatbuffer::GetFieldByOffsetOrNull(
+    const int field_offset) const {
+  if (type_->fields() == nullptr) {
+    return nullptr;
+  }
+  for (const reflection::Field* field : *type_->fields()) {
+    if (field->offset() == field_offset) {
+      return field;
+    }
+  }
+  return nullptr;
 }
 
 bool ReflectiveFlatbuffer::IsMatchingType(const reflection::Field* field,
@@ -122,26 +171,26 @@ flatbuffers::uoffset_t ReflectiveFlatbuffer::Serialize(
   // Add scalar fields.
   for (const auto& it : fields_) {
     switch (it.second.GetType()) {
-      case VariantValue_::Type_BOOL_VALUE:
+      case Variant::TYPE_BOOL_VALUE:
         builder->AddElement<uint8_t>(
             it.first->offset(), static_cast<uint8_t>(it.second.BoolValue()),
             static_cast<uint8_t>(it.first->default_integer()));
         continue;
-      case VariantValue_::Type_INT_VALUE:
+      case Variant::TYPE_INT_VALUE:
         builder->AddElement<int32>(
             it.first->offset(), it.second.IntValue(),
             static_cast<int32>(it.first->default_integer()));
         continue;
-      case VariantValue_::Type_INT64_VALUE:
+      case Variant::TYPE_INT64_VALUE:
         builder->AddElement<int64>(it.first->offset(), it.second.Int64Value(),
                                    it.first->default_integer());
         continue;
-      case VariantValue_::Type_FLOAT_VALUE:
+      case Variant::TYPE_FLOAT_VALUE:
         builder->AddElement<float>(
             it.first->offset(), it.second.FloatValue(),
             static_cast<float>(it.first->default_real()));
         continue;
-      case VariantValue_::Type_DOUBLE_VALUE:
+      case Variant::TYPE_DOUBLE_VALUE:
         builder->AddElement<double>(it.first->offset(), it.second.DoubleValue(),
                                     it.first->default_real());
         continue;
@@ -156,6 +205,71 @@ flatbuffers::uoffset_t ReflectiveFlatbuffer::Serialize(
   }
 
   return builder->EndTable(table_start);
+}
+
+std::string ReflectiveFlatbuffer::Serialize() const {
+  flatbuffers::FlatBufferBuilder builder;
+  builder.Finish(flatbuffers::Offset<void>(Serialize(&builder)));
+  return std::string(reinterpret_cast<const char*>(builder.GetBufferPointer()),
+                     builder.GetSize());
+}
+
+bool ReflectiveFlatbuffer::MergeFrom(const flatbuffers::Table* from) {
+  // No fields to set.
+  if (type_->fields() == nullptr) {
+    return true;
+  }
+
+  for (const reflection::Field* field : *type_->fields()) {
+    // Skip fields that are not explicitly set.
+    if (!from->CheckField(field->offset())) {
+      continue;
+    }
+    const reflection::BaseType type = field->type()->base_type();
+    switch (type) {
+      case reflection::Bool:
+        Set<bool>(field, from->GetField<uint8_t>(field->offset(),
+                                                 field->default_integer()));
+        break;
+      case reflection::Int:
+        Set<int32>(field, from->GetField<int32>(field->offset(),
+                                                field->default_integer()));
+        break;
+      case reflection::Long:
+        Set<int64>(field, from->GetField<int64>(field->offset(),
+                                                field->default_integer()));
+        break;
+      case reflection::Float:
+        Set<float>(field, from->GetField<float>(field->offset(),
+                                                field->default_real()));
+        break;
+      case reflection::Double:
+        Set<double>(field, from->GetField<double>(field->offset(),
+                                                  field->default_real()));
+        break;
+      case reflection::String:
+        Set<std::string>(
+            field, from->GetPointer<const flatbuffers::String*>(field->offset())
+                       ->str());
+        break;
+      case reflection::Obj:
+        if (!Mutable(field)->MergeFrom(
+                from->GetPointer<const flatbuffers::Table* const>(
+                    field->offset()))) {
+          return false;
+        }
+        break;
+      default:
+        TC3_LOG(ERROR) << "Unsupported type: " << type;
+        return false;
+    }
+  }
+  return true;
+}
+
+bool ReflectiveFlatbuffer::MergeFromSerializedFlatbuffer(StringPiece from) {
+  return MergeFrom(flatbuffers::GetAnyRoot(
+      reinterpret_cast<const unsigned char*>(from.data())));
 }
 
 }  // namespace libtextclassifier3

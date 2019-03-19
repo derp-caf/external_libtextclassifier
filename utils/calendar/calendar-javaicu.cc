@@ -173,6 +173,9 @@ CalendarLib::CalendarLib(const std::shared_ptr<JniCache>& jni_cache)
 #define TC3_DEFINE_GET(NAME, CONST) \
   TC3_DEFINE_FIELD_ACCESSOR(NAME, CONST, Get, int*)
 
+TC3_DEFINE_ADD(Second, second)
+TC3_DEFINE_ADD(Minute, minute)
+TC3_DEFINE_ADD(HourOfDay, hour_of_day)
 TC3_DEFINE_ADD(DayOfMonth, day_of_month)
 TC3_DEFINE_ADD(Year, year)
 TC3_DEFINE_ADD(Month, month)

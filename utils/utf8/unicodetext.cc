@@ -20,6 +20,7 @@
 
 #include <algorithm>
 
+#include "utils/base/logging.h"
 #include "utils/strings/utf8.h"
 
 namespace libtextclassifier3 {
@@ -204,6 +205,15 @@ bool UnicodeText::operator==(const UnicodeText& other) const {
 
 std::string UnicodeText::ToUTF8String() const {
   return UTF8Substring(begin(), end());
+}
+
+std::string UnicodeText::UTF8Substring(int first, int last) const {
+  TC3_CHECK(0 <= first && first <= last && last <= size_codepoints());
+  auto span_begin = begin();
+  std::advance(span_begin, first);
+  auto span_end = begin();
+  std::advance(span_end, last);
+  return UTF8Substring(span_begin, span_end);
 }
 
 std::string UnicodeText::UTF8Substring(const const_iterator& first,

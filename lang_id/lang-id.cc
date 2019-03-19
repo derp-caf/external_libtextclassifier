@@ -278,19 +278,9 @@ bool LangId::is_valid() const { return pimpl_->is_valid(); }
 
 int LangId::GetModelVersion() const { return pimpl_->GetModelVersion(); }
 
-string LangId::GetStringProperty(const string &property,
-                                 string default_value) const {
-  return pimpl_->GetProperty<const char *, string>(property,
-                                                   default_value.c_str());
-}
-
 float LangId::GetFloatProperty(const string &property,
                                float default_value) const {
   return pimpl_->GetProperty<float, float>(property, default_value);
-}
-
-int LangId::GetIntProperty(const string &property, int default_value) const {
-  return pimpl_->GetProperty<int, int>(property, default_value);
 }
 
 }  // namespace lang_id

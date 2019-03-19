@@ -47,7 +47,7 @@ RemoteActionTemplatesHandler::Create(
                 TC3_PACKAGE_PATH TC3_REMOTE_ACTION_TEMPLATE_CLASS_NAME_STR);
   TC3_GET_METHOD(
       remote_action_template_class_, remote_action_template_init_, "<init>",
-      "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/"
+      "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/"
       "String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;[Ljava/"
       "lang/String;Ljava/lang/String;[L" TC3_PACKAGE_PATH
           TC3_NAMED_VARIANT_CLASS_NAME_STR ";Ljava/lang/Integer;)V");
@@ -112,27 +112,27 @@ jobject RemoteActionTemplatesHandler::AsNamedVariant(
     return nullptr;
   }
   switch (value.GetType()) {
-    case VariantValue_::Type_INT_VALUE:
+    case Variant::TYPE_INT_VALUE:
       return env_->NewObject(named_variant_class_.get(),
                              named_variant_from_int_, name.get(),
                              value.IntValue());
-    case VariantValue_::Type_INT64_VALUE:
+    case Variant::TYPE_INT64_VALUE:
       return env_->NewObject(named_variant_class_.get(),
                              named_variant_from_long_, name.get(),
                              value.Int64Value());
-    case VariantValue_::Type_FLOAT_VALUE:
+    case Variant::TYPE_FLOAT_VALUE:
       return env_->NewObject(named_variant_class_.get(),
                              named_variant_from_float_, name.get(),
                              value.FloatValue());
-    case VariantValue_::Type_DOUBLE_VALUE:
+    case Variant::TYPE_DOUBLE_VALUE:
       return env_->NewObject(named_variant_class_.get(),
                              named_variant_from_double_, name.get(),
                              value.DoubleValue());
-    case VariantValue_::Type_BOOL_VALUE:
+    case Variant::TYPE_BOOL_VALUE:
       return env_->NewObject(named_variant_class_.get(),
                              named_variant_from_bool_, name.get(),
                              value.BoolValue());
-    case VariantValue_::Type_STRING_VALUE: {
+    case Variant::TYPE_STRING_VALUE: {
       ScopedLocalRef<jstring> value_jstring =
           jni_cache_->ConvertToJavaString(value.StringValue());
       if (value_jstring == nullptr) {
@@ -180,7 +180,10 @@ jobjectArray RemoteActionTemplatesHandler::RemoteActionTemplatesToJObjectArray(
   }
   for (int i = 0; i < remote_actions.size(); i++) {
     const RemoteActionTemplate& remote_action = remote_actions[i];
-    const jstring title = AsUTF8String(remote_action.title);
+    const jstring title_without_entity =
+        AsUTF8String(remote_action.title_without_entity);
+    const jstring title_with_entity =
+        AsUTF8String(remote_action.title_with_entity);
     const jstring description = AsUTF8String(remote_action.description);
     const jstring action = AsUTF8String(remote_action.action);
     const jstring data = AsUTF8String(remote_action.data);
@@ -192,9 +195,9 @@ jobjectArray RemoteActionTemplatesHandler::RemoteActionTemplatesToJObjectArray(
     const jobject request_code = AsInteger(remote_action.request_code);
     ScopedLocalRef<jobject> result(
         env_->NewObject(remote_action_template_class_.get(),
-                        remote_action_template_init_, title, description,
-                        action, data, type, flags, category, package, extra,
-                        request_code),
+                        remote_action_template_init_, title_without_entity,
+                        title_with_entity, description, action, data, type,
+                        flags, category, package, extra, request_code),
         env_);
     if (result == nullptr) {
       return nullptr;

@@ -430,48 +430,15 @@ bool DatetimeExtractor::ParseRelationType(
           {DatetimeExtractorType_SATURDAY,
            DateParseData::RelationType::SATURDAY},
           {DatetimeExtractorType_SUNDAY, DateParseData::RelationType::SUNDAY},
+          {DatetimeExtractorType_SECONDS, DateParseData::RelationType::SECOND},
+          {DatetimeExtractorType_MINUTES, DateParseData::RelationType::MINUTE},
+          {DatetimeExtractorType_HOURS, DateParseData::RelationType::HOUR},
           {DatetimeExtractorType_DAY, DateParseData::RelationType::DAY},
           {DatetimeExtractorType_WEEK, DateParseData::RelationType::WEEK},
           {DatetimeExtractorType_MONTH, DateParseData::RelationType::MONTH},
           {DatetimeExtractorType_YEAR, DateParseData::RelationType::YEAR},
       },
       parsed_relation_type);
-}
-
-bool DatetimeExtractor::ParseTimeUnit(
-    const UnicodeText& input, DateParseData::TimeUnit* parsed_time_unit) const {
-  return MapInput(
-      input,
-      {
-          {DatetimeExtractorType_DAYS, DateParseData::TimeUnit::DAYS},
-          {DatetimeExtractorType_WEEKS, DateParseData::TimeUnit::WEEKS},
-          {DatetimeExtractorType_MONTHS, DateParseData::TimeUnit::MONTHS},
-          {DatetimeExtractorType_HOURS, DateParseData::TimeUnit::HOURS},
-          {DatetimeExtractorType_MINUTES, DateParseData::TimeUnit::MINUTES},
-          {DatetimeExtractorType_SECONDS, DateParseData::TimeUnit::SECONDS},
-          {DatetimeExtractorType_YEARS, DateParseData::TimeUnit::YEARS},
-      },
-      parsed_time_unit);
-}
-
-bool DatetimeExtractor::ParseWeekday(
-    const UnicodeText& input,
-    DateParseData::RelationType* parsed_weekday) const {
-  return MapInput(
-      input,
-      {
-          {DatetimeExtractorType_MONDAY, DateParseData::RelationType::MONDAY},
-          {DatetimeExtractorType_TUESDAY, DateParseData::RelationType::TUESDAY},
-          {DatetimeExtractorType_WEDNESDAY,
-           DateParseData::RelationType::WEDNESDAY},
-          {DatetimeExtractorType_THURSDAY,
-           DateParseData::RelationType::THURSDAY},
-          {DatetimeExtractorType_FRIDAY, DateParseData::RelationType::FRIDAY},
-          {DatetimeExtractorType_SATURDAY,
-           DateParseData::RelationType::SATURDAY},
-          {DatetimeExtractorType_SUNDAY, DateParseData::RelationType::SUNDAY},
-      },
-      parsed_weekday);
 }
 
 }  // namespace libtextclassifier3

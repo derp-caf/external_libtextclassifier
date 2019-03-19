@@ -327,7 +327,9 @@ TC3_JNI_METHOD(jobjectArray, TC3_ACTIONS_CLASS_NAME, nativeSuggestActions)
   std::unique_ptr<libtextclassifier3::IntentGenerator> intent_generator =
       libtextclassifier3::IntentGenerator::CreateIntentGenerator(
           action_model->model()->android_intent_options(),
-          action_model->model()->resources(), jni_cache, app_context);
+          action_model->model()->resources(), jni_cache, app_context,
+          (annotator != nullptr ? annotator->entity_data_schema() : nullptr),
+          action_model->entity_data_schema());
 
   std::unique_ptr<libtextclassifier3::RemoteActionTemplatesHandler>
       remote_actions_templates_handler =

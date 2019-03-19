@@ -60,7 +60,6 @@ class FastMathClass {
 
 extern FastMathClass FastMathInstance;
 
-inline float VeryFastExp2(float f) { return FastMathInstance.VeryFastExp2(f); }
 inline float VeryFastExp(float f) { return FastMathInstance.VeryFastExp(f); }
 
 }  // namespace libtextclassifier3

@@ -22,38 +22,42 @@ package com.google.android.textclassifier;
  * @hide
  */
 public final class RemoteActionTemplate {
-  // Title shown for the action (see: RemoteAction.getTitle).
-  public final String title;
+  /** Title shown for the action (see: RemoteAction.getTitle). */
+  public final String titleWithoutEntity;
 
-  // Description shown for the action (see: RemoteAction.getContentDescription).
+  /** Title with entity for the action. */
+  public final String titleWithEntity;
+
+  /** Description shown for the action (see: RemoteAction.getContentDescription). */
   public final String description;
 
-  // The action to set on the Intent (see: Intent.setAction).
+  /** The action to set on the Intent (see: Intent.setAction). */
   public final String action;
 
-  // The data to set on the Intent (see: Intent.setData).
+  /** The data to set on the Intent (see: Intent.setData). */
   public final String data;
 
-  // The type to set on the Intent (see: Intent.setType).
+  /** The type to set on the Intent (see: Intent.setType). */
   public final String type;
 
-  // Flags for launching the Intent (see: Intent.setFlags).
+  /** Flags for launching the Intent (see: Intent.setFlags). */
   public final Integer flags;
 
-  // Categories to set on the Intent (see: Intent.addCategory).
+  /** Categories to set on the Intent (see: Intent.addCategory). */
   public final String[] category;
 
-  // Explicit application package to set on the Intent (see: Intent.setPackage).
+  /** Explicit application package to set on the Intent (see: Intent.setPackage). */
   public final String packageName;
 
-  // The list of all the extras to add to the Intent.
+  /** The list of all the extras to add to the Intent. */
   public final NamedVariant[] extras;
 
-  // Private request code to use for the Intent.
+  /** Private request code to use for the Intent. */
   public final Integer requestCode;
 
   public RemoteActionTemplate(
-      String title,
+      String titleWithoutEntity,
+      String titleWithEntity,
       String description,
       String action,
       String data,
@@ -63,7 +67,8 @@ public final class RemoteActionTemplate {
       String packageName,
       NamedVariant[] extras,
       Integer requestCode) {
-    this.title = title;
+    this.titleWithoutEntity = titleWithoutEntity;
+    this.titleWithEntity = titleWithEntity;
     this.description = description;
     this.action = action;
     this.data = data;

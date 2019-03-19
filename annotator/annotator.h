@@ -27,24 +27,38 @@
 #include "annotator/contact/contact-engine.h"
 #include "annotator/datetime/parser.h"
 #include "annotator/feature-processor.h"
+#include "annotator/installed_app/installed-app-engine.h"
 #include "annotator/knowledge/knowledge-engine.h"
 #include "annotator/model-executor.h"
 #include "annotator/model_generated.h"
 #include "annotator/strip-unpaired-brackets.h"
 #include "annotator/types.h"
 #include "annotator/zlib-utils.h"
+#include "utils/flatbuffers.h"
 #include "utils/memory/mmap.h"
 #include "utils/utf8/unilib.h"
 #include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
 
+// Aliases for long enum values.
+const AnnotationUsecase ANNOTATION_USECASE_SMART =
+    AnnotationUsecase_ANNOTATION_USECASE_SMART;
+const AnnotationUsecase ANNOTATION_USECASE_RAW =
+    AnnotationUsecase_ANNOTATION_USECASE_RAW;
+
 struct SelectionOptions {
   // Comma-separated list of locale specification for the input text (BCP 47
   // tags).
   std::string locales;
 
-  static SelectionOptions Default() { return SelectionOptions(); }
+  // Tailors the output annotations according to the specified use-case.
+  AnnotationUsecase annotation_usecase = ANNOTATION_USECASE_SMART;
+
+  bool operator==(const SelectionOptions& other) const {
+    return this->locales == other.locales &&
+           this->annotation_usecase == other.annotation_usecase;
+  }
 };
 
 struct ClassificationOptions {
@@ -60,7 +74,15 @@ struct ClassificationOptions {
   // tags).
   std::string locales;
 
-  static ClassificationOptions Default() { return ClassificationOptions(); }
+  // Tailors the output annotations according to the specified use-case.
+  AnnotationUsecase annotation_usecase = ANNOTATION_USECASE_SMART;
+
+  bool operator==(const ClassificationOptions& other) const {
+    return this->reference_time_ms_utc == other.reference_time_ms_utc &&
+           this->reference_timezone == other.reference_timezone &&
+           this->locales == other.locales &&
+           this->annotation_usecase == other.annotation_usecase;
+  }
 };
 
 struct AnnotationOptions {
@@ -76,7 +98,15 @@ struct AnnotationOptions {
   // tags).
   std::string locales;
 
-  static AnnotationOptions Default() { return AnnotationOptions(); }
+  // Tailors the output annotations according to the specified use-case.
+  AnnotationUsecase annotation_usecase = ANNOTATION_USECASE_SMART;
+
+  bool operator==(const AnnotationOptions& other) const {
+    return this->reference_time_ms_utc == other.reference_time_ms_utc &&
+           this->reference_timezone == other.reference_timezone &&
+           this->locales == other.locales &&
+           this->annotation_usecase == other.annotation_usecase;
+  }
 };
 
 // Holds TFLite interpreters for selection and classification models.
@@ -137,6 +167,9 @@ class Annotator {
   // Initializes the contact engine with the given config.
   bool InitializeContactEngine(const std::string& serialized_config);
 
+  // Initializes the installed app engine with the given config.
+  bool InitializeInstalledAppEngine(const std::string& serialized_config);
+
   // Runs inference for given a context and current selection (i.e. index
   // of the first and one past last selected characters (utf8 codepoint
   // offsets)). Returns the indices (utf8 codepoint offsets) of the selection
@@ -147,22 +180,27 @@ class Annotator {
   // Requires that the model is a smart selection model.
   CodepointSpan SuggestSelection(
       const std::string& context, CodepointSpan click_indices,
-      const SelectionOptions& options = SelectionOptions::Default()) const;
+      const SelectionOptions& options = SelectionOptions()) const;
 
   // Classifies the selected text given the context string.
   // Returns an empty result if an error occurs.
   std::vector<ClassificationResult> ClassifyText(
       const std::string& context, CodepointSpan selection_indices,
-      const ClassificationOptions& options =
-          ClassificationOptions::Default()) const;
+      const ClassificationOptions& options = ClassificationOptions()) const;
 
   // Annotates given input text. The annotations are sorted by their position
   // in the context string and exclude spans classified as 'other'.
   std::vector<AnnotatedSpan> Annotate(
       const std::string& context,
-      const AnnotationOptions& options = AnnotationOptions::Default()) const;
+      const AnnotationOptions& options = AnnotationOptions()) const;
+
+  // Looks up a knowledge entity by its id. If successful, populates the
+  // serialized knowledge result and returns true.
+  bool LookUpKnowledgeEntity(const std::string& id,
+                             std::string* serialized_knowledge_result) const;
 
   const Model* ViewModel() const;
+  const reflection::Schema* entity_data_schema() const;
 
   // Exposes the feature processor for tests and evaluations.
   const FeatureProcessor* SelectionFeatureProcessorForTests() const;
@@ -315,6 +353,7 @@ class Annotator {
                      int64 reference_time_ms_utc,
                      const std::string& reference_timezone,
                      const std::string& locales, ModeFlag mode,
+                     AnnotationUsecase annotation_usecase,
                      std::vector<AnnotatedSpan>* result) const;
 
   // Returns whether a classification should be filtered.
@@ -327,6 +366,14 @@ class Annotator {
   CodepointSpan ComputeSelectionBoundaries(
       const UniLib::RegexMatcher* match,
       const RegexModel_::Pattern* config) const;
+
+  // Returns whether a regex pattern provides entity data from a match.
+  bool HasEntityData(const RegexModel_::Pattern* pattern) const;
+
+  // Constructs and serializes entity data from regex matches.
+  bool SerializedEntityDataFromRegexMatch(
+      const RegexModel_::Pattern* pattern, UniLib::RegexMatcher* matcher,
+      std::string* serialized_entity_data) const;
 
   const Model* model_;
 
@@ -367,6 +414,11 @@ class Annotator {
 
   std::unique_ptr<const KnowledgeEngine> knowledge_engine_;
   std::unique_ptr<const ContactEngine> contact_engine_;
+  std::unique_ptr<const InstalledAppEngine> installed_app_engine_;
+
+  // Builder for creating extra data.
+  const reflection::Schema* entity_data_schema_;
+  std::unique_ptr<ReflectiveFlatbufferBuilder> entity_data_builder_;
 };
 
 namespace internal {

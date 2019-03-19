@@ -15,7 +15,12 @@
  */
 
 #include "actions/actions-suggestions.h"
+
+#include <memory>
+
+#include "actions/types.h"
 #include "utils/base/logging.h"
+#include "utils/regex-match.h"
 #include "utils/strings/split.h"
 #include "utils/strings/stringpiece.h"
 #include "utils/utf8/unicodetext.h"
@@ -50,44 +55,6 @@ const ActionsModel* LoadAndVerifyModel(const uint8_t* addr, int size) {
   } else {
     return nullptr;
   }
-}
-
-// Checks whether two annotations can be considered equivalent.
-bool IsEquivalentActionAnnotation(const ActionSuggestionAnnotation& annotation,
-                                  const ActionSuggestionAnnotation& other) {
-  return annotation.message_index == other.message_index &&
-         annotation.span == other.span && annotation.name == other.name &&
-         annotation.entity.collection == other.entity.collection;
-}
-
-// Checks whether two action suggestions can be considered equivalent.
-bool IsEquivalentActionSuggestion(const ActionSuggestion& action,
-                                  const ActionSuggestion& other) {
-  if (action.type != other.type ||
-      action.response_text != other.response_text ||
-      action.annotations.size() != other.annotations.size()) {
-    return false;
-  }
-
-  // Check whether annotations are the same.
-  for (int i = 0; i < action.annotations.size(); i++) {
-    if (!IsEquivalentActionAnnotation(action.annotations[i],
-                                      other.annotations[i])) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Checks whether any action is equivalent to the given one.
-bool IsAnyActionEquivalent(const ActionSuggestion& action,
-                           const std::vector<ActionSuggestion>& actions) {
-  for (const ActionSuggestion& other : actions) {
-    if (IsEquivalentActionSuggestion(action, other)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 }  // namespace
@@ -193,6 +160,27 @@ bool ActionsSuggestions::ValidateAndInitialize() {
     return false;
   }
 
+  if (model_->actions_entity_data_schema()) {
+    entity_data_schema_ = LoadAndVerifyFlatbuffer<reflection::Schema>(
+        model_->actions_entity_data_schema()->Data(),
+        model_->actions_entity_data_schema()->size());
+    if (entity_data_schema_ == nullptr) {
+      TC3_LOG(ERROR) << "Could not load entity data schema data.";
+      return false;
+    }
+
+    entity_data_builder_.reset(
+        new ReflectiveFlatbufferBuilder(entity_data_schema_));
+  } else {
+    entity_data_schema_ = nullptr;
+  }
+
+  if (!(ranker_ = ActionsSuggestionsRanker::CreateActionsSuggestionsRanker(
+            model_->ranking_options()))) {
+    TC3_LOG(ERROR) << "Could not create an action suggestions ranker.";
+    return false;
+  }
+
   return true;
 }
 
@@ -291,25 +279,6 @@ bool ActionsSuggestions::IsLowConfidenceInput(const Conversation& conversation,
     }
   }
   return false;
-}
-
-void ActionsSuggestions::RankActions(
-    ActionsSuggestionsResponse* suggestions) const {
-  // First order suggestions by score.
-  std::sort(suggestions->actions.begin(), suggestions->actions.end(),
-            [](const ActionSuggestion& a, const ActionSuggestion& b) {
-              return a.score > b.score;
-            });
-
-  // Deduplicate, keeping the higher score actions.
-  std::vector<ActionSuggestion> deduplicated_actions;
-  for (const ActionSuggestion& candidate : suggestions->actions) {
-    // Check whether we already have an equivalent action.
-    if (!IsAnyActionEquivalent(candidate, deduplicated_actions)) {
-      deduplicated_actions.push_back(candidate);
-    }
-  }
-  suggestions->actions = deduplicated_actions;
 }
 
 void ActionsSuggestions::SetupModelInput(
@@ -500,48 +469,112 @@ void ActionsSuggestions::SuggestActionsFromAnnotations(
                                       options.annotation_options);
   }
   const int message_index = conversation.messages.size() - 1;
+  std::vector<ActionSuggestionAnnotation> action_annotations;
+  action_annotations.reserve(annotations.size());
   for (const AnnotatedSpan& annotation : annotations) {
-    if (annotation.classification.empty() ||
-        annotation.classification[0].collection.empty()) {
+    if (annotation.classification.empty()) {
       continue;
     }
-    CreateActionsFromAnnotationResult(message_index, annotation, response);
+
+    const ClassificationResult& classification_result =
+        annotation.classification[0];
+
+    ActionSuggestionAnnotation action_annotation;
+    action_annotation.message_index = message_index;
+    action_annotation.span = annotation.span;
+    action_annotation.entity = classification_result;
+    action_annotation.name = classification_result.collection;
+    action_annotation.text =
+        UTF8ToUnicodeText(conversation.messages.back().text,
+                          /*do_copy=*/false)
+            .UTF8Substring(annotation.span.first, annotation.span.second);
+    action_annotations.push_back(action_annotation);
+  }
+
+  if (model_->annotation_actions_spec()->deduplicate_annotations()) {
+    // Create actions only for deduplicated annotations.
+    for (const int annotation_id : DeduplicateAnnotations(action_annotations)) {
+      CreateActionsFromAnnotation(message_index,
+                                  action_annotations[annotation_id], response);
+    }
+  } else {
+    // Create actions for all annotations.
+    for (const ActionSuggestionAnnotation& annotation : action_annotations) {
+      CreateActionsFromAnnotation(message_index, annotation, response);
+    }
   }
 }
 
-void ActionsSuggestions::CreateActionsFromAnnotationResult(
-    const int message_index, const AnnotatedSpan& annotation,
-    ActionsSuggestionsResponse* suggestions) const {
-  const ClassificationResult& classification_result =
-      annotation.classification[0];
-  ActionSuggestionAnnotation suggestion_annotation;
-  suggestion_annotation.message_index = message_index;
-  suggestion_annotation.span = annotation.span;
-  suggestion_annotation.entity = classification_result;
-  const std::string collection = classification_result.collection;
-  suggestion_annotation.name = collection;
+std::vector<int> ActionsSuggestions::DeduplicateAnnotations(
+    const std::vector<ActionSuggestionAnnotation>& annotations) const {
+  std::map<std::pair<std::string, std::string>, int> deduplicated_annotations;
 
+  for (int i = 0; i < annotations.size(); i++) {
+    const std::pair<std::string, std::string> key = {annotations[i].name,
+                                                     annotations[i].text};
+    auto entry = deduplicated_annotations.find(key);
+    if (entry != deduplicated_annotations.end()) {
+      // Kepp the annotation with the higher score.
+      if (annotations[entry->second].entity.score <
+          annotations[i].entity.score) {
+        entry->second = i;
+      }
+      continue;
+    }
+    deduplicated_annotations.insert(entry, {key, i});
+  }
+
+  std::vector<int> result;
+  result.reserve(deduplicated_annotations.size());
+  for (const auto& key_and_annotation : deduplicated_annotations) {
+    result.push_back(key_and_annotation.second);
+  }
+  return result;
+}
+
+void ActionsSuggestions::CreateActionsFromAnnotation(
+    const int message_index, const ActionSuggestionAnnotation& annotation,
+    ActionsSuggestionsResponse* suggestions) const {
   for (const AnnotationActionsSpec_::AnnotationMapping* mapping :
        *model_->annotation_actions_spec()->annotation_mapping()) {
-    if (collection == mapping->annotation_collection()->str()) {
-      if (classification_result.score < mapping->min_annotation_score()) {
+    if (annotation.entity.collection ==
+        mapping->annotation_collection()->str()) {
+      if (annotation.entity.score < mapping->min_annotation_score()) {
         continue;
       }
       const float score =
-          (mapping->use_annotation_score() ? classification_result.score
+          (mapping->use_annotation_score() ? annotation.entity.score
                                            : mapping->action()->score());
+
+      std::string serialized_entity_data;
+      if (mapping->action()->serialized_entity_data()) {
+        serialized_entity_data =
+            mapping->action()->serialized_entity_data()->str();
+      }
+
       suggestions->actions.push_back({
           /*response_text=*/"",
           /*type=*/mapping->action()->type()->str(),
           /*score=*/score,
-          /*annotations=*/{suggestion_annotation},
-          /*extra=*/AsVariantMap(mapping->action()->extra()),
+          /*annotations=*/{annotation},
+          /*serialized_entity_data=*/serialized_entity_data,
       });
     }
   }
 }
 
-void ActionsSuggestions::SuggestActionsFromRules(
+bool ActionsSuggestions::HasEntityData(const RulesModel_::Rule* rule) const {
+  for (const RulesModel_::Rule_::RuleActionSpec* rule_action :
+       *rule->actions()) {
+    if (rule_action->action()->serialized_entity_data() != nullptr ||
+        rule_action->capturing_group() != nullptr) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ActionsSuggestions::SuggestActionsFromRules(
     const Conversation& conversation,
     ActionsSuggestionsResponse* suggestions) const {
   // Create actions based on rules checking the last message.
@@ -552,28 +585,62 @@ void ActionsSuggestions::SuggestActionsFromRules(
     const std::unique_ptr<UniLib::RegexMatcher> matcher =
         rule.pattern->Matcher(message_unicode);
     int status = UniLib::RegexMatcher::kNoError;
-    if (matcher->Find(&status) && status == UniLib::RegexMatcher::kNoError) {
-      for (const ActionSuggestionSpec* action : *rule.rule->actions()) {
-        suggestions->actions.push_back({
-            /*response_text=*/(action->response_text() != nullptr
-                                   ? action->response_text()->str()
-                                   : ""),
-            /*type=*/action->type()->str(),
-            /*score=*/action->score(),
-            /*annotations=*/{},
-            /*extra=*/AsVariantMap(action->extra()),
-        });
+    const bool has_entity_data = HasEntityData(rule.rule);
+    while (matcher->Find(&status) && status == UniLib::RegexMatcher::kNoError) {
+      for (const RulesModel_::Rule_::RuleActionSpec* rule_action :
+           *rule.rule->actions()) {
+        const ActionSuggestionSpec* action = rule_action->action();
+
+        std::string serialized_entity_data;
+        if (has_entity_data) {
+          TC3_CHECK(entity_data_builder_ != nullptr);
+          std::unique_ptr<ReflectiveFlatbuffer> entity_data =
+              entity_data_builder_->NewRoot();
+          TC3_CHECK(entity_data != nullptr);
+
+          // Set static entity data.
+          if (action->serialized_entity_data() != nullptr) {
+            entity_data->MergeFromSerializedFlatbuffer(
+                StringPiece(action->serialized_entity_data()->c_str(),
+                            action->serialized_entity_data()->size()));
+          }
+
+          // Add entity data from rule capturing groups.
+          if (rule_action->capturing_group() != nullptr) {
+            for (const RulesModel_::Rule_::RuleActionSpec_::CapturingGroup*
+                     group : *rule_action->capturing_group()) {
+              if (!SetFieldFromCapturingGroup(
+                      group->group_id(), group->entity_field(), matcher.get(),
+                      entity_data.get())) {
+                TC3_LOG(ERROR)
+                    << "Could not set entity data from rule capturing group.";
+                return false;
+              }
+            }
+          }
+
+          serialized_entity_data = entity_data->Serialize();
+        }
+        suggestions->actions.push_back(
+            {/*response_text=*/(action->response_text() != nullptr
+                                    ? action->response_text()->str()
+                                    : ""),
+             /*type=*/action->type()->str(),
+             /*score=*/action->score(),
+             /*annotations=*/{},
+             /*serialized_entity_data=*/serialized_entity_data});
       }
     }
   }
+  return true;
 }
 
-ActionsSuggestionsResponse ActionsSuggestions::GatherActionsSuggestions(
+bool ActionsSuggestions::GatherActionsSuggestions(
     const Conversation& conversation, const Annotator* annotator,
-    const ActionSuggestionOptions& options) const {
-  ActionsSuggestionsResponse response;
+    const ActionSuggestionOptions& options,
+    ActionsSuggestionsResponse* response) const {
   if (conversation.messages.empty()) {
-    return response;
+    return true;
   }
 
   const int conversation_history_length = conversation.messages.size();
@@ -587,10 +654,10 @@ ActionsSuggestionsResponse ActionsSuggestions::GatherActionsSuggestions(
 
   if (num_messages <= 0) {
     TC3_LOG(INFO) << "No messages provided for actions suggestions.";
-    return response;
+    return false;
   }
 
-  SuggestActionsFromAnnotations(conversation, options, annotator, &response);
+  SuggestActionsFromAnnotations(conversation, options, annotator, response);
 
   int input_text_length = 0;
   int num_matching_locales = 0;
@@ -620,35 +687,43 @@ ActionsSuggestionsResponse ActionsSuggestions::GatherActionsSuggestions(
   if (matching_fraction <
       model_->preconditions()->min_locale_match_fraction()) {
     TC3_LOG(INFO) << "Not enough locale matches.";
-    response.output_filtered_locale_mismatch = true;
-    return response;
+    response->output_filtered_locale_mismatch = true;
+    return true;
   }
 
   if (IsLowConfidenceInput(conversation, num_messages)) {
     TC3_LOG(INFO) << "Low confidence input.";
-    response.output_filtered_low_confidence = true;
-    return response;
+    response->output_filtered_low_confidence = true;
+    return true;
   }
 
-  SuggestActionsFromModel(conversation, num_messages, options, &response);
+  SuggestActionsFromModel(conversation, num_messages, options, response);
 
   // Suppress all predictions if the conversation was deemed sensitive.
   if (model_->preconditions()->suppress_on_sensitive_topic() &&
-      response.output_filtered_sensitivity) {
-    return response;
+      response->output_filtered_sensitivity) {
+    return true;
   }
 
-  SuggestActionsFromRules(conversation, &response);
+  if (!SuggestActionsFromRules(conversation, response)) {
+    TC3_LOG(ERROR) << "Could not suggest actions from rules.";
+    return false;
+  }
 
-  return response;
+  return true;
 }
 
 ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
     const Conversation& conversation, const Annotator* annotator,
     const ActionSuggestionOptions& options) const {
-  ActionsSuggestionsResponse response =
-      GatherActionsSuggestions(conversation, annotator, options);
-  RankActions(&response);
+  ActionsSuggestionsResponse response;
+  if (!GatherActionsSuggestions(conversation, annotator, options, &response)) {
+    TC3_LOG(ERROR) << "Could not gather actions suggestions.";
+    response.actions.clear();
+  } else if (!ranker_->RankActions(&response)) {
+    TC3_LOG(ERROR) << "Could not rank actions.";
+    response.actions.clear();
+  }
   return response;
 }
 
@@ -659,6 +734,9 @@ ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
 }
 
 const ActionsModel* ActionsSuggestions::model() const { return model_; }
+const reflection::Schema* ActionsSuggestions::entity_data_schema() const {
+  return entity_data_schema_;
+}
 
 const ActionsModel* ViewActionsModel(const void* buffer, int size) {
   if (buffer == nullptr) {

@@ -24,7 +24,11 @@ namespace libtextclassifier3 {
 // A template with parameters for an Android remote action.
 struct RemoteActionTemplate {
   // Title shown for the action (see: RemoteAction.getTitle).
-  Optional<std::string> title;
+  Optional<std::string> title_without_entity;
+
+  // Title with entity for the action. It is not guaranteed that the client
+  // will use this, so title should be always given and general enough.
+  Optional<std::string> title_with_entity;
 
   // Description shown for the action (see: RemoteAction.getContentDescription).
   Optional<std::string> description;
@@ -59,7 +63,9 @@ class IntentGenerator {
  public:
   static std::unique_ptr<IntentGenerator> CreateIntentGenerator(
       const IntentFactoryModel* options, const ResourcePool* resources,
-      const std::shared_ptr<JniCache>& jni_cache, const jobject context);
+      const std::shared_ptr<JniCache>& jni_cache, const jobject context,
+      const reflection::Schema* annotations_entity_data_schema = nullptr,
+      const reflection::Schema* actions_entity_data_schema = nullptr);
 
   // Generate intents for a classification result.
   std::vector<RemoteActionTemplate> GenerateIntents(
@@ -76,7 +82,9 @@ class IntentGenerator {
   IntentGenerator(const IntentFactoryModel* options,
                   const ResourcePool* resources,
                   const std::shared_ptr<JniCache>& jni_cache,
-                  const jobject context);
+                  const jobject context,
+                  const reflection::Schema* annotations_entity_data_schema,
+                  const reflection::Schema* actions_entity_data_schema);
 
   Locale ParseLocale(const jstring device_locale) const;
 
@@ -84,6 +92,8 @@ class IntentGenerator {
   const Resources resources_;
   std::shared_ptr<JniCache> jni_cache_;
   const jobject context_;
+  const reflection::Schema* const annotations_entity_data_schema_;
+  const reflection::Schema* const actions_entity_data_schema_;
   std::map<std::string, std::string> generators_;
 };
 

@@ -21,7 +21,9 @@
 #include <string>
 #include <vector>
 
+#include "actions/actions-entity-data_generated.h"
 #include "annotator/types.h"
+#include "utils/flatbuffers.h"
 
 namespace libtextclassifier3 {
 
@@ -38,6 +40,9 @@ struct ActionSuggestionAnnotation {
 
   // Optional annotation name.
   std::string name;
+
+  // Span text.
+  std::string text;
 
   explicit ActionSuggestionAnnotation()
       : message_index(kInvalidIndex), span({kInvalidIndex, kInvalidIndex}) {}
@@ -58,7 +63,12 @@ struct ActionSuggestion {
   std::vector<ActionSuggestionAnnotation> annotations;
 
   // Extras information.
-  std::map<std::string, Variant> extra;
+  std::string serialized_entity_data;
+
+  const ActionsEntityData* entity_data() {
+    return LoadAndVerifyFlatbuffer<ActionsEntityData>(
+        serialized_entity_data.data(), serialized_entity_data.size());
+  }
 };
 
 // Actions suggestions result containing meta - information and the suggested

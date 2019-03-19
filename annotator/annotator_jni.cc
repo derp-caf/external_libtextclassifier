@@ -91,7 +91,8 @@ jobjectArray ClassificationResultsWithIntentsToJObjectArray(
       result_class.get(), "<init>",
       "(Ljava/lang/String;FL" TC3_PACKAGE_PATH TC3_ANNOTATOR_CLASS_NAME_STR
       "$DatetimeResult;[BLjava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-      "Ljava/lang/String;Ljava/lang/String;[L" TC3_PACKAGE_PATH
+      "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+      "Ljava/lang/String;[L" TC3_PACKAGE_PATH
           TC3_REMOTE_ACTION_TEMPLATE_CLASS_NAME_STR ";)V");
   const jmethodID datetime_parse_class_constructor =
       env->GetMethodID(datetime_parse_class.get(), "<init>", "(JI)V");
@@ -153,6 +154,23 @@ jobjectArray ClassificationResultsWithIntentsToJObjectArray(
           classification_result[i].contact_phone_number.c_str());
     }
 
+    jstring contact_id = nullptr;
+    if (!classification_result[i].contact_id.empty()) {
+      contact_id =
+          env->NewStringUTF(classification_result[i].contact_id.c_str());
+    }
+
+    jstring app_name = nullptr;
+    if (!classification_result[i].app_name.empty()) {
+      app_name = env->NewStringUTF(classification_result[i].app_name.c_str());
+    }
+
+    jstring app_package_name = nullptr;
+    if (!classification_result[i].app_package_name.empty()) {
+      app_package_name =
+          env->NewStringUTF(classification_result[i].app_package_name.c_str());
+    }
+
     jobject remote_action_templates_result = nullptr;
     // Only generate RemoteActionTemplate for the top classification result
     // as classifyText does not need RemoteAction from other results anyway.
@@ -172,7 +190,7 @@ jobjectArray ClassificationResultsWithIntentsToJObjectArray(
         static_cast<jfloat>(classification_result[i].score), row_datetime_parse,
         serialized_knowledge_result, contact_name, contact_given_name,
         contact_nickname, contact_email_address, contact_phone_number,
-        remote_action_templates_result);
+        contact_id, app_name, app_package_name, remote_action_templates_result);
     env->SetObjectArrayElement(results, i, result);
     env->DeleteLocalRef(result);
   }
@@ -380,6 +398,25 @@ TC3_JNI_METHOD(jboolean, TC3_ANNOTATOR_CLASS_NAME,
   return model->InitializeContactEngine(serialized_config_string);
 }
 
+TC3_JNI_METHOD(jboolean, TC3_ANNOTATOR_CLASS_NAME,
+               nativeInitializeInstalledAppEngine)
+(JNIEnv* env, jobject thiz, jlong ptr, jbyteArray serialized_config) {
+  if (!ptr) {
+    return false;
+  }
+
+  Annotator* model = reinterpret_cast<Annotator*>(ptr);
+
+  std::string serialized_config_string;
+  const int length = env->GetArrayLength(serialized_config);
+  serialized_config_string.resize(length);
+  env->GetByteArrayRegion(serialized_config, 0, length,
+                          reinterpret_cast<jbyte*>(const_cast<char*>(
+                              serialized_config_string.data())));
+
+  return model->InitializeInstalledAppEngine(serialized_config_string);
+}
+
 TC3_JNI_METHOD(jintArray, TC3_ANNOTATOR_CLASS_NAME, nativeSuggestSelection)
 (JNIEnv* env, jobject thiz, jlong ptr, jstring context, jint selection_begin,
  jint selection_end, jobject options) {
@@ -427,7 +464,8 @@ TC3_JNI_METHOD(jobjectArray, TC3_ANNOTATOR_CLASS_NAME, nativeClassifyText)
     intent_generator =
         libtextclassifier3::IntentGenerator::CreateIntentGenerator(
             ff_model->ViewModel()->intent_options(),
-            ff_model->ViewModel()->resources(), jni_cache, app_context);
+            ff_model->ViewModel()->resources(), jni_cache, app_context,
+            ff_model->entity_data_schema());
     std::unique_ptr<libtextclassifier3::RemoteActionTemplatesHandler>
         remote_actions_templates_handler =
             libtextclassifier3::RemoteActionTemplatesHandler::Create(env,
@@ -481,6 +519,25 @@ TC3_JNI_METHOD(jobjectArray, TC3_ANNOTATOR_CLASS_NAME, nativeAnnotate)
   }
   env->DeleteLocalRef(result_class);
   return results;
+}
+
+TC3_JNI_METHOD(jbyteArray, TC3_ANNOTATOR_CLASS_NAME,
+               nativeLookUpKnowledgeEntity)
+(JNIEnv* env, jobject thiz, jlong ptr, jstring id) {
+  if (!ptr) {
+    return nullptr;
+  }
+  Annotator* model = reinterpret_cast<Annotator*>(ptr);
+  const std::string id_utf8 = ToStlString(env, id);
+  std::string serialized_knowledge_result;
+  if (!model->LookUpKnowledgeEntity(id_utf8, &serialized_knowledge_result)) {
+    return nullptr;
+  }
+  jbyteArray result = env->NewByteArray(serialized_knowledge_result.size());
+  env->SetByteArrayRegion(
+      result, 0, serialized_knowledge_result.size(),
+      reinterpret_cast<const jbyte*>(serialized_knowledge_result.data()));
+  return result;
 }
 
 TC3_JNI_METHOD(void, TC3_ANNOTATOR_CLASS_NAME, nativeCloseAnnotator)

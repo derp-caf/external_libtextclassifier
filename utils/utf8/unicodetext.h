@@ -172,6 +172,7 @@ class UnicodeText {
   void clear();
 
   std::string ToUTF8String() const;
+  std::string UTF8Substring(int first, int last) const;
   static std::string UTF8Substring(const const_iterator& first,
                                    const const_iterator& last);
 

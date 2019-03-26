@@ -79,9 +79,41 @@ class TfLiteModelExecutor {
   }
 
   template <typename T>
+  void SetInput(const int input_index, const T input_value,
+                tflite::Interpreter* interpreter) const {
+    TfLiteTensor* input_tensor =
+        interpreter->tensor(interpreter->inputs()[input_index]);
+    switch (input_tensor->type) {
+      case kTfLiteFloat32:
+        *(input_tensor->data.f) = input_value;
+        break;
+      case kTfLiteInt32:
+        *(input_tensor->data.i32) = input_value;
+        break;
+      case kTfLiteUInt8:
+        *(input_tensor->data.uint8) = input_value;
+        break;
+      case kTfLiteInt64:
+        *(input_tensor->data.i64) = input_value;
+        break;
+      case kTfLiteBool:
+        *(input_tensor->data.b) = input_value;
+        break;
+      case kTfLiteInt16:
+        *(input_tensor->data.i16) = input_value;
+        break;
+      case kTfLiteInt8:
+        *(input_tensor->data.int8) = input_value;
+        break;
+      default:
+        break;
+    }
+  }
+
+  template <typename T>
   TensorView<T> OutputView(const int output_index,
-                           tflite::Interpreter* interpreter) const {
-    TfLiteTensor* output_tensor =
+                           const tflite::Interpreter* interpreter) const {
+    const TfLiteTensor* output_tensor =
         interpreter->tensor(interpreter->outputs()[output_index]);
     return TensorView<T>(interpreter->typed_output_tensor<T>(output_index),
                          std::vector<int>(output_tensor->dims->data,
@@ -91,7 +123,7 @@ class TfLiteModelExecutor {
 
   template <typename T>
   std::vector<T> Output(const int output_index,
-                        tflite::Interpreter* interpreter) const {
+                        const tflite::Interpreter* interpreter) const {
     TensorView<T> output_view = OutputView<T>(output_index, interpreter);
     return std::vector<T>(output_view.data(),
                           output_view.data() + output_view.size());
@@ -112,11 +144,11 @@ void TfLiteModelExecutor::SetInput(const int input_index,
 
 template <>
 std::vector<tflite::StringRef> TfLiteModelExecutor::Output(
-    const int output_index, tflite::Interpreter* interpreter) const;
+    const int output_index, const tflite::Interpreter* interpreter) const;
 
 template <>
 std::vector<std::string> TfLiteModelExecutor::Output(
-    const int output_index, tflite::Interpreter* interpreter) const;
+    const int output_index, const tflite::Interpreter* interpreter) const;
 
 }  // namespace libtextclassifier3
 

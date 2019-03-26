@@ -27,7 +27,7 @@ bool SetFieldFromCapturingGroup(const int group_id,
   if (status != UniLib::RegexMatcher::kNoError || group_text.empty()) {
     return false;
   }
-  return flatbuffer->Set(field_path, group_text);
+  return flatbuffer->ParseAndSet(field_path, group_text);
 }
 
 }  // namespace libtextclassifier3

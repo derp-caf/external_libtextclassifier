@@ -19,6 +19,7 @@
 #include <string>
 
 #include "actions/types.h"
+#include "utils/flatbuffers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -31,6 +32,38 @@ MATCHER_P2(IsAction, type, response_text, "") {
 }
 
 MATCHER_P(IsActionType, type, "") { return testing::Value(arg.type, type); }
+
+std::string TestEntitySchema() {
+  // Create fake entity data schema meta data.
+  // Cannot use object oriented API here as that is not available for the
+  // reflection schema.
+  flatbuffers::FlatBufferBuilder schema_builder;
+  std::vector<flatbuffers::Offset<reflection::Field>> fields = {
+      reflection::CreateField(
+          schema_builder,
+          /*name=*/schema_builder.CreateString("test"),
+          /*type=*/
+          reflection::CreateType(schema_builder,
+                                 /*base_type=*/reflection::String),
+          /*id=*/0,
+          /*offset=*/4)};
+  std::vector<flatbuffers::Offset<reflection::Enum>> enums;
+  std::vector<flatbuffers::Offset<reflection::Object>> objects = {
+      reflection::CreateObject(
+          schema_builder,
+          /*name=*/schema_builder.CreateString("EntityData"),
+          /*fields=*/
+          schema_builder.CreateVectorOfSortedTables(&fields))};
+  schema_builder.Finish(reflection::CreateSchema(
+      schema_builder, schema_builder.CreateVectorOfSortedTables(&objects),
+      schema_builder.CreateVectorOfSortedTables(&enums),
+      /*(unused) file_ident=*/0,
+      /*(unused) file_ext=*/0,
+      /*root_table*/ objects[0]));
+  return std::string(
+      reinterpret_cast<const char*>(schema_builder.GetBufferPointer()),
+      schema_builder.GetSize());
+}
 
 TEST(LuaRankingTest, PassThrough) {
   ActionsSuggestionsResponse response;
@@ -48,7 +81,8 @@ TEST(LuaRankingTest, PassThrough) {
   )";
 
   EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, &response)
+                  test_snippet, /*entity_data_schema=*/nullptr,
+                  /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,
               testing::ElementsAreArray({IsActionType("text_reply"),
@@ -68,7 +102,8 @@ TEST(LuaRankingTest, Filtering) {
   )";
 
   EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, &response)
+                  test_snippet, /*entity_data_schema=*/nullptr,
+                  /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions, testing::IsEmpty());
 }
@@ -89,7 +124,8 @@ TEST(LuaRankingTest, Duplication) {
   )";
 
   EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, &response)
+                  test_snippet, /*entity_data_schema=*/nullptr,
+                  /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,
               testing::ElementsAreArray({IsActionType("text_reply"),
@@ -117,7 +153,8 @@ TEST(LuaRankingTest, SortByScore) {
   )";
 
   EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, &response)
+                  test_snippet, /*entity_data_schema=*/nullptr,
+                  /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,
               testing::ElementsAreArray({IsActionType("add_to_collection"),
@@ -143,11 +180,53 @@ TEST(LuaRankingTest, SuppressType) {
   )";
 
   EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, &response)
+                  test_snippet, /*entity_data_schema=*/nullptr,
+                  /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,
               testing::ElementsAreArray({IsActionType("share_location"),
                                          IsActionType("add_to_collection")}));
+}
+
+TEST(LuaRankingTest, HandlesEntityData) {
+  std::string serialized_schema = TestEntitySchema();
+  const reflection::Schema* entity_data_schema =
+      flatbuffers::GetRoot<reflection::Schema>(serialized_schema.data());
+
+  // Create test entity data.
+  ReflectiveFlatbufferBuilder builder(entity_data_schema);
+  std::unique_ptr<ReflectiveFlatbuffer> buffer = builder.NewRoot();
+  buffer->Set("test", "value_a");
+  const std::string serialized_entity_data_a = buffer->Serialize();
+  buffer->Set("test", "value_b");
+  const std::string serialized_entity_data_b = buffer->Serialize();
+
+  ActionsSuggestionsResponse response;
+  response.actions = {
+      {/*response_text=*/"", /*type=*/"test",
+       /*score=*/1.0, /*priority_score=*/1.0, /*annotations=*/{},
+       /*serialized_entity_data=*/serialized_entity_data_a},
+      {/*response_text=*/"", /*type=*/"test",
+       /*score=*/1.0, /*priority_score=*/1.0, /*annotations=*/{},
+       /*serialized_entity_data=*/serialized_entity_data_b},
+      {/*response_text=*/"", /*type=*/"share_location", /*score=*/0.5},
+      {/*response_text=*/"", /*type=*/"add_to_collection", /*score=*/0.1}};
+  const std::string test_snippet = R"(
+    local result = {}
+    for id, action in pairs(actions) do
+      if action.type == "test" and action.test == "value_a" then
+        table.insert(result, id)
+      end
+    end
+    return result
+  )";
+
+  EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
+                  test_snippet, entity_data_schema,
+                  /*annotations_entity_data_schema=*/nullptr, &response)
+                  ->RankActions());
+  EXPECT_THAT(response.actions,
+              testing::ElementsAreArray({IsActionType("test")}));
 }
 
 }  // namespace

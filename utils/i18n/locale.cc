@@ -21,6 +21,7 @@
 namespace libtextclassifier3 {
 
 namespace {
+constexpr const char* kAnyMatch = "*";
 
 // BCP 47 code for "Undetermined Language".
 constexpr const char* kUnknownLanguageCode = "und";
@@ -130,4 +131,49 @@ bool ParseLocales(StringPiece locales_list, std::vector<Locale>* locales) {
   return true;
 }
 
+bool Locale::IsLocaleSupported(const Locale& locale,
+                               const std::vector<Locale>& supported_locales,
+                               bool default_value) {
+  if (!locale.IsValid()) {
+    return false;
+  }
+  if (locale.IsUnknown()) {
+    return default_value;
+  }
+  for (const Locale& supported_locale : supported_locales) {
+    if (!supported_locale.IsValid()) {
+      continue;
+    }
+    const bool language_matches =
+        supported_locale.Language().empty() ||
+        supported_locale.Language() == kAnyMatch ||
+        supported_locale.Language() == locale.Language();
+    const bool script_matches = supported_locale.Script().empty() ||
+                                supported_locale.Script() == kAnyMatch ||
+                                locale.Script().empty() ||
+                                supported_locale.Script() == locale.Script();
+    const bool region_matches = supported_locale.Region().empty() ||
+                                supported_locale.Region() == kAnyMatch ||
+                                locale.Region().empty() ||
+                                supported_locale.Region() == locale.Region();
+    if (language_matches && script_matches && region_matches) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Locale::IsAnyLocaleSupported(const std::vector<Locale>& locales,
+                                  const std::vector<Locale>& supported_locales,
+                                  bool default_value) {
+  if (locales.empty()) {
+    return default_value;
+  }
+  for (const Locale& locale : locales) {
+    if (IsLocaleSupported(locale, supported_locales, default_value)) {
+      return true;
+    }
+  }
+  return false;
+}
 }  // namespace libtextclassifier3

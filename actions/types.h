@@ -27,8 +27,8 @@
 
 namespace libtextclassifier3 {
 
-// An entity associated with an action.
-struct ActionSuggestionAnnotation {
+// A text span in the conversation.
+struct MessageTextSpan {
   // The referenced message.
   // -1 if not referencing a particular message in the provided input.
   int message_index;
@@ -36,16 +36,24 @@ struct ActionSuggestionAnnotation {
   // The span within the reference message.
   // (-1, -1) if not referencing a particular location.
   CodepointSpan span;
+
+  // The span text.
+  std::string text;
+
+  explicit MessageTextSpan()
+      : message_index(kInvalidIndex), span({kInvalidIndex, kInvalidIndex}) {}
+  MessageTextSpan(const int message_index, const CodepointSpan span,
+                  const std::string& text)
+      : message_index(message_index), span(span), text(text) {}
+};
+
+// An entity associated with an action.
+struct ActionSuggestionAnnotation {
+  MessageTextSpan span;
   ClassificationResult entity;
 
   // Optional annotation name.
   std::string name;
-
-  // Span text.
-  std::string text;
-
-  explicit ActionSuggestionAnnotation()
-      : message_index(kInvalidIndex), span({kInvalidIndex, kInvalidIndex}) {}
 };
 
 // Action suggestion that contains a response text and the type of the response.
@@ -58,6 +66,9 @@ struct ActionSuggestion {
 
   // Score.
   float score;
+
+  // Priority score for internal conflict resolution.
+  float priority_score;
 
   // The associated annotations.
   std::vector<ActionSuggestionAnnotation> annotations;
@@ -113,12 +124,14 @@ struct ConversationMessage {
   // Reference time of this message.
   int64 reference_time_ms_utc;
 
+  // Timezone in which the input text was written (format as accepted by ICU).
+  std::string reference_timezone;
+
   // Annotations on the text.
   std::vector<AnnotatedSpan> annotations;
 
-  // Comma-separated list of locale specification for the text in the
-  // conversation (BCP 47 tags).
-  std::string locales;
+  // Comma-separated list of BCP 47 language tags of the message.
+  std::string detected_text_language_tags;
 };
 
 // Conversation between multiple users.

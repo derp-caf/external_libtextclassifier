@@ -17,8 +17,8 @@
 // Extra information and data associated with actions.
 namespace libtextclassifier3;
 table ActionsEntityData {
-  // Extracted code.
-  code:string;
+  // Extracted text.
+  text:string;
 }
 
 root_type libtextclassifier3.ActionsEntityData;

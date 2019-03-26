@@ -51,7 +51,7 @@ TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetVersion)
 TC3_JNI_METHOD(jint, TC3_LANG_ID_CLASS_NAME, nativeGetVersionFromFd)
 (JNIEnv* env, jobject clazz, jint fd);
 
-TC3_JNI_METHOD(jfloat, TC3_LANG_ID_CLASS_NAME, nativeGetTranslateThreshold)
+TC3_JNI_METHOD(jfloat, TC3_LANG_ID_CLASS_NAME, nativeGetLangIdThreshold)
 (JNIEnv* env, jobject thizz, jlong ptr);
 
 #ifdef __cplusplus

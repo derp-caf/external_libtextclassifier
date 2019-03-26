@@ -28,7 +28,6 @@ bool SetFieldFromCapturingGroup(const int group_id,
                                 const FlatbufferFieldPath* field_path,
                                 UniLib::RegexMatcher* matcher,
                                 ReflectiveFlatbuffer* flatbuffer);
-
 }  // namespace libtextclassifier3
 
 #endif  // LIBTEXTCLASSIFIER_UTILS_REGEX_MATCH_H_

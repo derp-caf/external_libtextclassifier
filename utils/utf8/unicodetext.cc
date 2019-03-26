@@ -207,18 +207,36 @@ std::string UnicodeText::ToUTF8String() const {
   return UTF8Substring(begin(), end());
 }
 
-std::string UnicodeText::UTF8Substring(int first, int last) const {
-  TC3_CHECK(0 <= first && first <= last && last <= size_codepoints());
+std::string UnicodeText::UTF8Substring(int begin_codepoint,
+                                       int end_codepoint) const {
   auto span_begin = begin();
-  std::advance(span_begin, first);
+  std::advance(span_begin, begin_codepoint);
   auto span_end = begin();
-  std::advance(span_end, last);
+  std::advance(span_end, end_codepoint);
   return UTF8Substring(span_begin, span_end);
 }
 
-std::string UnicodeText::UTF8Substring(const const_iterator& first,
-                                       const const_iterator& last) {
-  return std::string(first.it_, last.it_ - first.it_);
+std::string UnicodeText::UTF8Substring(const const_iterator& it_begin,
+                                       const const_iterator& it_end) {
+  return std::string(it_begin.it_, it_end.it_ - it_begin.it_);
+}
+
+UnicodeText UnicodeText::Substring(const UnicodeText& text, int begin_codepoint,
+                                   int end_codepoint, bool do_copy) {
+  auto it_begin = text.begin();
+  std::advance(it_begin, begin_codepoint);
+  auto it_end = text.begin();
+  std::advance(it_end, end_codepoint);
+
+  if (do_copy) {
+    UnicodeText result;
+    result.repr_.Copy(it_begin.it_, it_end.it_ - it_begin.it_);
+    return result;
+  } else {
+    UnicodeText result;
+    result.repr_.PointTo(it_begin.it_, it_end.it_ - it_begin.it_);
+    return result;
+  }
 }
 
 UnicodeText::~UnicodeText() {}

@@ -17,6 +17,8 @@
 #ifndef LIBTEXTCLASSIFIER_UTILS_RESOURCES_H_
 #define LIBTEXTCLASSIFIER_UTILS_RESOURCES_H_
 
+#include <vector>
+
 #include "utils/i18n/locale.h"
 #include "utils/resources_generated.h"
 #include "utils/strings/stringpiece.h"
@@ -29,8 +31,10 @@ class Resources {
   explicit Resources(const ResourcePool* resources) : resources_(resources) {}
 
   // Returns the string value associated with the particular resource.
-  bool GetResourceContent(const Locale& locale, const StringPiece resource_name,
-                          StringPiece* result) const;
+  // `locales` are locales in preference order.
+  bool GetResourceContent(const std::vector<Locale>& locales,
+                          const StringPiece resource_name,
+                          std::string* result) const;
 
  private:
   // Match priorities: language > script > region with wildcard matches being
@@ -48,11 +52,24 @@ class Resources {
   };
   int LocaleMatch(const Locale& locale, const LanguageTag* entry_locale) const;
 
-  // Find a resource entry by name.
+  // Finds a resource entry by name.
   const ResourceEntry* FindResource(const StringPiece resource_name) const;
+
+  // Finds the best locale matching resource from a resource entry.
+  int BestResourceForLocales(const ResourceEntry* resource,
+                             const std::vector<Locale>& locales) const;
 
   const ResourcePool* resources_;
 };
+
+// Compresses resources in place.
+bool CompressResources(ResourcePoolT* resources,
+                       const bool build_compression_dictionary = false,
+                       const int dictionary_sample_every = 1);
+std::string CompressSerializedResources(
+    const std::string& resources,
+    const bool build_compression_dictionary = false,
+    const int dictionary_sample_every = 1);
 
 }  // namespace libtextclassifier3
 

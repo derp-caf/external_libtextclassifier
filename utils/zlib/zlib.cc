@@ -16,26 +16,36 @@
 
 #include "utils/zlib/zlib.h"
 
-#include <memory>
-
-#include "utils/base/logging.h"
 #include "utils/flatbuffers.h"
 
 namespace libtextclassifier3 {
 
-std::unique_ptr<ZlibDecompressor> ZlibDecompressor::Instance() {
-  std::unique_ptr<ZlibDecompressor> result(new ZlibDecompressor());
+std::unique_ptr<ZlibDecompressor> ZlibDecompressor::Instance(
+    const unsigned char* dictionary, const unsigned int dictionary_size) {
+  std::unique_ptr<ZlibDecompressor> result(
+      new ZlibDecompressor(dictionary, dictionary_size));
   if (!result->initialized_) {
     result.reset();
   }
   return result;
 }
 
-ZlibDecompressor::ZlibDecompressor() {
+ZlibDecompressor::ZlibDecompressor(const unsigned char* dictionary,
+                                   const unsigned int dictionary_size) {
   memset(&stream_, 0, sizeof(stream_));
   stream_.zalloc = Z_NULL;
   stream_.zfree = Z_NULL;
-  initialized_ = (inflateInit(&stream_) == Z_OK);
+  initialized_ = false;
+  if (inflateInit(&stream_) != Z_OK) {
+    TC3_LOG(ERROR) << "Could not initialize decompressor.";
+    return;
+  }
+  if (dictionary != nullptr &&
+      inflateSetDictionary(&stream_, dictionary, dictionary_size) != Z_OK) {
+    TC3_LOG(ERROR) << "Could not set dictionary.";
+    return;
+  }
+  initialized_ = true;
 }
 
 ZlibDecompressor::~ZlibDecompressor() {
@@ -78,21 +88,57 @@ bool ZlibDecompressor::MaybeDecompress(
                     compressed_buffer->uncompressed_size, out);
 }
 
-std::unique_ptr<ZlibCompressor> ZlibCompressor::Instance() {
-  std::unique_ptr<ZlibCompressor> result(new ZlibCompressor());
+bool ZlibDecompressor::MaybeDecompressOptionallyCompressedBuffer(
+    const flatbuffers::String* uncompressed_buffer,
+    const CompressedBuffer* compressed_buffer, std::string* out) {
+  if (uncompressed_buffer != nullptr) {
+    *out = uncompressed_buffer->str();
+    return true;
+  }
+  return MaybeDecompress(compressed_buffer, out);
+}
+
+bool ZlibDecompressor::MaybeDecompressOptionallyCompressedBuffer(
+    const flatbuffers::Vector<uint8>* uncompressed_buffer,
+    const CompressedBuffer* compressed_buffer, std::string* out) {
+  if (uncompressed_buffer != nullptr) {
+    *out =
+        std::string(reinterpret_cast<const char*>(uncompressed_buffer->data()),
+                    uncompressed_buffer->size());
+    return true;
+  }
+  return MaybeDecompress(compressed_buffer, out);
+}
+
+std::unique_ptr<ZlibCompressor> ZlibCompressor::Instance(
+    const unsigned char* dictionary, const unsigned int dictionary_size) {
+  std::unique_ptr<ZlibCompressor> result(
+      new ZlibCompressor(dictionary, dictionary_size));
   if (!result->initialized_) {
     result.reset();
   }
   return result;
 }
 
-ZlibCompressor::ZlibCompressor(int level, int tmp_buffer_size) {
+ZlibCompressor::ZlibCompressor(const unsigned char* dictionary,
+                               const unsigned int dictionary_size,
+                               const int level, const int tmp_buffer_size) {
   memset(&stream_, 0, sizeof(stream_));
   stream_.zalloc = Z_NULL;
   stream_.zfree = Z_NULL;
   buffer_size_ = tmp_buffer_size;
   buffer_.reset(new Bytef[buffer_size_]);
-  initialized_ = (deflateInit(&stream_, level) == Z_OK);
+  initialized_ = false;
+  if (deflateInit(&stream_, level) != Z_OK) {
+    TC3_LOG(ERROR) << "Could not initialize compressor.";
+    return;
+  }
+  if (dictionary != nullptr &&
+      deflateSetDictionary(&stream_, dictionary, dictionary_size) != Z_OK) {
+    TC3_LOG(ERROR) << "Could not set dictionary.";
+    return;
+  }
+  initialized_ = true;
 }
 
 ZlibCompressor::~ZlibCompressor() { deflateEnd(&stream_); }
@@ -131,44 +177,14 @@ void ZlibCompressor::Compress(const std::string& uncompressed_content,
   } while (status == Z_OK);
 }
 
-std::unique_ptr<UniLib::RegexPattern> UncompressMakeRegexPattern(
-    const UniLib& unilib, const flatbuffers::String* uncompressed_pattern,
-    const CompressedBuffer* compressed_pattern, ZlibDecompressor* decompressor,
-    std::string* result_pattern_text) {
-  UnicodeText unicode_regex_pattern;
-  std::string decompressed_pattern;
-  if (compressed_pattern != nullptr &&
-      compressed_pattern->buffer() != nullptr) {
-    if (decompressor == nullptr ||
-        !decompressor->MaybeDecompress(compressed_pattern,
-                                       &decompressed_pattern)) {
-      TC3_LOG(ERROR) << "Cannot decompress pattern.";
-      return nullptr;
-    }
-    unicode_regex_pattern =
-        UTF8ToUnicodeText(decompressed_pattern.data(),
-                          decompressed_pattern.size(), /*do_copy=*/false);
-  } else {
-    if (uncompressed_pattern == nullptr) {
-      TC3_LOG(ERROR) << "Cannot load uncompressed pattern.";
-      return nullptr;
-    }
-    unicode_regex_pattern =
-        UTF8ToUnicodeText(uncompressed_pattern->c_str(),
-                          uncompressed_pattern->Length(), /*do_copy=*/false);
+bool ZlibCompressor::GetDictionary(std::vector<unsigned char>* dictionary) {
+  // Retrieve first the size of the dictionary.
+  unsigned int size;
+  if (deflateGetDictionary(&stream_, /*dictionary=*/Z_NULL, &size) != Z_OK) {
+    return false;
   }
-
-  if (result_pattern_text != nullptr) {
-    *result_pattern_text = unicode_regex_pattern.ToUTF8String();
-  }
-
-  std::unique_ptr<UniLib::RegexPattern> regex_pattern =
-      unilib.CreateRegexPattern(unicode_regex_pattern);
-  if (!regex_pattern) {
-    TC3_LOG(ERROR) << "Could not create pattern: "
-                   << unicode_regex_pattern.ToUTF8String();
-  }
-  return regex_pattern;
+  dictionary->resize(size);
+  return deflateGetDictionary(&stream_, dictionary->data(), &size) == Z_OK;
 }
 
 }  // namespace libtextclassifier3

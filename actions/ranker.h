@@ -21,6 +21,7 @@
 
 #include "actions/actions_model_generated.h"
 #include "actions/types.h"
+#include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
 
@@ -28,19 +29,26 @@ namespace libtextclassifier3 {
 class ActionsSuggestionsRanker {
  public:
   static std::unique_ptr<ActionsSuggestionsRanker>
-  CreateActionsSuggestionsRanker(const RankingOptions* options);
+  CreateActionsSuggestionsRanker(const RankingOptions* options,
+                                 ZlibDecompressor* decompressor,
+                                 const std::string& smart_reply_action_type);
 
   // Rank and filter actions.
-  bool RankActions(ActionsSuggestionsResponse* response) const;
+  bool RankActions(
+      ActionsSuggestionsResponse* response,
+      const reflection::Schema* entity_data_schema = nullptr,
+      const reflection::Schema* annotations_entity_data_schema = nullptr) const;
 
  private:
-  explicit ActionsSuggestionsRanker(const RankingOptions* options)
-      : options_(options) {}
+  explicit ActionsSuggestionsRanker(const RankingOptions* options,
+                                    const std::string& smart_reply_action_type)
+      : options_(options), smart_reply_action_type_(smart_reply_action_type) {}
 
-  bool InitializeAndValidate();
+  bool InitializeAndValidate(ZlibDecompressor* decompressor);
 
   const RankingOptions* const options_;
   std::string lua_bytecode_;
+  std::string smart_reply_action_type_;
 };
 
 }  // namespace libtextclassifier3

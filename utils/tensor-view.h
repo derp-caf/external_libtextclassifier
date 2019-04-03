@@ -51,7 +51,12 @@ class TensorView {
 
   const T* data() const { return data_; }
 
-  int size() const { return size_; }
+  int size() const {
+    if (!is_valid()) {
+      return 0;
+    }
+    return size_;
+  }
 
   bool copy_to(T* dest, int dest_size) const {
     if (dest_size < size_) {

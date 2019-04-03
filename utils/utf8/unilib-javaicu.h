@@ -23,12 +23,14 @@
 
 #include <jni.h>
 #include <memory>
+#include <mutex>  // NOLINT
 #include <string>
 
 #include "utils/base/integral_types.h"
 #include "utils/java/jni-cache.h"
 #include "utils/java/scoped_global_ref.h"
 #include "utils/java/scoped_local_ref.h"
+#include "utils/java/string_utils.h"
 #include "utils/utf8/unicodetext.h"
 
 namespace libtextclassifier3 {
@@ -104,12 +106,17 @@ class UniLib {
     // was not called previously.
     UnicodeText Group(int group_idx, int* status) const;
 
-   protected:
+    // Returns the matched text (the 0th capturing group).
+    std::string Text() const {
+      ScopedStringChars text_str =
+          GetScopedStringChars(jni_cache_->GetEnv(), text_.get());
+      return text_str.get();
+    }
+
+   private:
     friend class RegexPattern;
     RegexMatcher(const JniCache* jni_cache, ScopedGlobalRef<jobject> matcher,
                  ScopedGlobalRef<jstring> text);
-
-   private:
     bool UpdateLastFindOffset() const;
 
     const JniCache* jni_cache_;
@@ -124,13 +131,23 @@ class UniLib {
    public:
     std::unique_ptr<RegexMatcher> Matcher(const UnicodeText& context) const;
 
-   protected:
-    friend class UniLib;
-    RegexPattern(const JniCache* jni_cache, const UnicodeText& regex);
-
    private:
+    friend class UniLib;
+    RegexPattern(const JniCache* jni_cache, const UnicodeText& pattern,
+                 bool lazy);
+    void LockedInitializeIfNotAlready() const;
+
     const JniCache* jni_cache_;
-    ScopedGlobalRef<jobject> pattern_;
+
+    // These members need to be mutable because of the lazy initialization.
+    // NOTE: The Matcher method first ensures (using a lock) that the
+    // initialization was attempted (by using LockedInitializeIfNotAlready) and
+    // then can access them without locking.
+    mutable std::mutex mutex_;
+    mutable ScopedGlobalRef<jobject> pattern_;
+    mutable bool initialized_;
+    mutable bool initialization_failure_;
+    mutable UnicodeText pattern_text_;
   };
 
   class BreakIterator {
@@ -139,11 +156,10 @@ class UniLib {
 
     static constexpr int kDone = -1;
 
-   protected:
+   private:
     friend class UniLib;
     BreakIterator(const JniCache* jni_cache, const UnicodeText& text);
 
-   private:
     const JniCache* jni_cache_;
     ScopedGlobalRef<jstring> text_;
     ScopedGlobalRef<jobject> iterator_;
@@ -152,6 +168,8 @@ class UniLib {
   };
 
   std::unique_ptr<RegexPattern> CreateRegexPattern(
+      const UnicodeText& regex) const;
+  std::unique_ptr<RegexPattern> CreateLazyRegexPattern(
       const UnicodeText& regex) const;
   std::unique_ptr<BreakIterator> CreateBreakIterator(
       const UnicodeText& text) const;

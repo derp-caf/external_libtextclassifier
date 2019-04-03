@@ -16,15 +16,6 @@
 
 #include "utils/lua-utils.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-#include "lauxlib.h"
-#include "lualib.h"
-#ifdef __cplusplus
-}
-#endif
-
 // lua_dump takes an extra argument "strip" in 5.3, but not in 5.2.
 #ifndef TC3_AOSP
 #define lua_dump(L, w, d, s) lua_dump((L), (w), (d))
@@ -32,18 +23,17 @@ extern "C" {
 
 namespace libtextclassifier3 {
 namespace {
-// Upvalue indices for callbacks.
-static const int kEnvIndex = 1;
-static const int kCallbackIdIndex = 2;
-static const int kNumArgsIndex = 3;
-static const int kArgIndex = 4;
+// Upvalue indices for the flatbuffer callback.
+static constexpr int kSchemaArgId = 1;
+static constexpr int kTypeArgId = 2;
+static constexpr int kTableArgId = 3;
 
-static const luaL_Reg defaultlibs[] = {{"_G", luaopen_base},
-                                       {LUA_TABLIBNAME, luaopen_table},
-                                       {LUA_STRLIBNAME, luaopen_string},
-                                       {LUA_BITLIBNAME, luaopen_bit32},
-                                       {LUA_MATHLIBNAME, luaopen_math},
-                                       {nullptr, nullptr}};
+static constexpr luaL_Reg defaultlibs[] = {{"_G", luaopen_base},
+                                           {LUA_TABLIBNAME, luaopen_table},
+                                           {LUA_STRLIBNAME, luaopen_string},
+                                           {LUA_BITLIBNAME, luaopen_bit32},
+                                           {LUA_MATHLIBNAME, luaopen_math},
+                                           {nullptr, nullptr}};
 
 // Implementation of a lua_Writer that appends the data to a string.
 int LuaStringWriter(lua_State *state, const void *data, size_t size,
@@ -56,42 +46,6 @@ int LuaStringWriter(lua_State *state, const void *data, size_t size,
 
 }  // namespace
 
-void LuaEnvironment::LoadDefaultLibraries() {
-  for (const luaL_Reg *lib = defaultlibs; lib->func; lib++) {
-    luaL_requiref(state_, lib->name, lib->func, 1);
-    lua_pop(state_, 1); /* remove lib */
-  }
-}
-
-int LuaEnvironment::LengthCallbackDispatch(lua_State *state) {
-  lua_pushstring(state, kLengthKey);
-  int num_results = CallbackDispatch(state);
-  lua_remove(state, -2);
-  return num_results;
-}
-
-int LuaEnvironment::PairsCallbackDispatch(lua_State *state) {
-  lua_pushstring(state, kPairsKey);
-  int num_results = CallbackDispatch(state);
-  lua_remove(state, -2);
-  return num_results;
-}
-
-int LuaEnvironment::CallbackDispatch(lua_State *state) {
-  // Fetch reference to our environment.
-  LuaEnvironment *env = static_cast<LuaEnvironment *>(
-      lua_touserdata(state, lua_upvalueindex(kEnvIndex)));
-  TC3_CHECK_EQ(env->state_, state);
-  const int callback_id =
-      lua_tointeger(state, lua_upvalueindex(kCallbackIdIndex));
-  const int num_args = lua_tointeger(state, lua_upvalueindex(kNumArgsIndex));
-  std::vector<void *> args(num_args);
-  for (int i = 0; i < num_args; i++) {
-    args[i] = lua_touserdata(state, GetArgIndex(i));
-  }
-  return env->HandleCallback(callback_id, args);
-}
-
 LuaEnvironment::LuaEnvironment() { state_ = luaL_newstate(); }
 
 LuaEnvironment::~LuaEnvironment() {
@@ -100,30 +54,172 @@ LuaEnvironment::~LuaEnvironment() {
   }
 }
 
-void LuaEnvironment::PushCallback(const int callback_id,
-                                  const std::vector<void *> &args,
-                                  const CallbackHandler handler) {
-  lua_pushlightuserdata(state_, static_cast<void *>(this));
-  lua_pushnumber(state_, callback_id);
-  lua_pushnumber(state_, args.size());
-  for (void *arg : args) {
-    lua_pushlightuserdata(state_, arg);
-  }
-  lua_pushcclosure(state_, handler, 3 + args.size());
+int LuaEnvironment::Iterator::NextCallback(lua_State *state) {
+  return FromUpValue<Iterator *>(kIteratorArgId, state)->Next(state);
 }
 
-void LuaEnvironment::SetupTableLookupCallback(const char *name,
-                                              const int callback_id,
-                                              const std::vector<void *> &args) {
-  lua_newtable(state_);
-  luaL_newmetatable(state_, name);
-  PushCallback(callback_id, args);
-  lua_setfield(state_, -2, kIndexKey);
-  PushCallback(callback_id, args, &LengthCallbackDispatch);
-  lua_setfield(state_, -2, kLengthKey);
-  PushCallback(callback_id, args, &PairsCallbackDispatch);
-  lua_setfield(state_, -2, kPairsKey);
-  lua_setmetatable(state_, -2);
+int LuaEnvironment::Iterator::LengthCallback(lua_State *state) {
+  return FromUpValue<Iterator *>(kIteratorArgId, state)->Length(state);
+}
+
+int LuaEnvironment::Iterator::ItemCallback(lua_State *state) {
+  return FromUpValue<Iterator *>(kIteratorArgId, state)->Item(state);
+}
+
+int LuaEnvironment::Iterator::IteritemsCallback(lua_State *state) {
+  return FromUpValue<Iterator *>(kIteratorArgId, state)->Iteritems(state);
+}
+
+void LuaEnvironment::PushFlatbuffer(const char *name,
+                                    const reflection::Schema *schema,
+                                    const reflection::Object *type,
+                                    const flatbuffers::Table *table,
+                                    lua_State *state) {
+  lua_newtable(state);
+  luaL_newmetatable(state, name);
+  lua_pushlightuserdata(state, AsUserData(schema));
+  lua_pushlightuserdata(state, AsUserData(type));
+  lua_pushlightuserdata(state, AsUserData(table));
+  lua_pushcclosure(state, &GetFieldCallback, 3);
+  lua_setfield(state, -2, kIndexKey);
+  lua_setmetatable(state, -2);
+}
+
+int LuaEnvironment::GetFieldCallback(lua_State *state) {
+  // Fetch the arguments.
+  const reflection::Schema *schema =
+      FromUpValue<reflection::Schema *>(kSchemaArgId, state);
+  const reflection::Object *type =
+      FromUpValue<reflection::Object *>(kTypeArgId, state);
+  const flatbuffers::Table *table =
+      FromUpValue<flatbuffers::Table *>(kTableArgId, state);
+  return GetField(schema, type, table, state);
+}
+
+int LuaEnvironment::GetField(const reflection::Schema *schema,
+                             const reflection::Object *type,
+                             const flatbuffers::Table *table,
+                             lua_State *state) {
+  const char *field_name = lua_tostring(state, -1);
+  const reflection::Field *field = type->fields()->LookupByKey(field_name);
+  if (field == nullptr) {
+    lua_error(state);
+    return 0;
+  }
+  // Provide primitive fields directly.
+  const reflection::BaseType field_type = field->type()->base_type();
+  switch (field_type) {
+    case reflection::Bool:
+      lua_pushboolean(state, table->GetField<uint8_t>(
+                                 field->offset(), field->default_integer()));
+      break;
+    case reflection::Int:
+      lua_pushinteger(state, table->GetField<int32>(field->offset(),
+                                                    field->default_integer()));
+      break;
+    case reflection::Long:
+      lua_pushinteger(state, table->GetField<int64>(field->offset(),
+                                                    field->default_integer()));
+      break;
+    case reflection::Float:
+      lua_pushnumber(state, table->GetField<float>(field->offset(),
+                                                   field->default_real()));
+      break;
+    case reflection::Double:
+      lua_pushnumber(state, table->GetField<double>(field->offset(),
+                                                    field->default_real()));
+      break;
+    case reflection::String: {
+      const flatbuffers::String *string_value =
+          table->GetPointer<const flatbuffers::String *>(field->offset());
+      if (string_value != nullptr) {
+        lua_pushlstring(state, string_value->data(), string_value->Length());
+      } else {
+        lua_pushlstring(state, "", 0);
+      }
+      break;
+    }
+    case reflection::Obj: {
+      const flatbuffers::Table *field_table =
+          table->GetPointer<const flatbuffers::Table *>(field->offset());
+      if (field_table == nullptr) {
+        TC3_LOG(ERROR) << "Field was not set in entity data.";
+        lua_error(state);
+        return 0;
+      }
+      const reflection::Object *field_type =
+          schema->objects()->Get(field->type()->index());
+      PushFlatbuffer(field->name()->c_str(), schema, field_type, field_table,
+                     state);
+      break;
+    }
+    default:
+      TC3_LOG(ERROR) << "Unsupported type: " << field_type;
+      lua_error(state);
+      return 0;
+  }
+  return 1;
+}
+
+int LuaEnvironment::ReadFlatbuffer(ReflectiveFlatbuffer *buffer) {
+  if (lua_type(state_, /*idx=*/-1) != LUA_TTABLE) {
+    TC3_LOG(ERROR) << "Expected actions table, got: "
+                   << lua_type(state_, /*idx=*/-1);
+    lua_error(state_);
+    return LUA_ERRRUN;
+  }
+
+  lua_pushnil(state_);
+  while (lua_next(state_, /*idx=*/-2)) {
+    const StringPiece key = ReadString(/*index=*/-2);
+    const reflection::Field *field = buffer->GetFieldOrNull(key);
+    if (field == nullptr) {
+      TC3_LOG(ERROR) << "Unknown field: " << key.ToString();
+      lua_error(state_);
+      return LUA_ERRRUN;
+    }
+    switch (field->type()->base_type()) {
+      case reflection::Obj:
+        return ReadFlatbuffer(buffer->Mutable(field));
+      case reflection::Bool:
+        buffer->Set(field,
+                    static_cast<bool>(lua_toboolean(state_, /*idx=*/-1)));
+        break;
+      case reflection::Int:
+        buffer->Set(field, static_cast<int>(lua_tonumber(state_, /*idx=*/-1)));
+        break;
+      case reflection::Long:
+        buffer->Set(field,
+                    static_cast<int64>(lua_tonumber(state_, /*idx=*/-1)));
+        break;
+      case reflection::Float:
+        buffer->Set(field,
+                    static_cast<float>(lua_tonumber(state_, /*idx=*/-1)));
+        break;
+      case reflection::Double:
+        buffer->Set(field,
+                    static_cast<double>(lua_tonumber(state_, /*idx=*/-1)));
+        break;
+      case reflection::String: {
+        buffer->Set(field, ReadString(/*index=*/-1));
+        break;
+      }
+      default:
+        TC3_LOG(ERROR) << "Unsupported type: " << field->type()->base_type();
+        lua_error(state_);
+        return LUA_ERRRUN;
+    }
+    lua_pop(state_, 1);
+  }
+  // lua_pop(state_, /*n=*/1);
+  return LUA_OK;
+}
+
+void LuaEnvironment::LoadDefaultLibraries() {
+  for (const luaL_Reg *lib = defaultlibs; lib->func; lib++) {
+    luaL_requiref(state_, lib->name, lib->func, 1);
+    lua_pop(state_, 1); /* remove lib */
+  }
 }
 
 void LuaEnvironment::PushValue(const Variant &value) {
@@ -155,14 +251,10 @@ void LuaEnvironment::PushString(const StringPiece str) {
   lua_pushlstring(state_, str.data(), str.size());
 }
 
-int LuaEnvironment::GetArgIndex(const int arg_index) {
-  return lua_upvalueindex(kArgIndex + arg_index);
-}
-
-int LuaEnvironment::HandleCallback(int callback_id,
-                                   const std::vector<void *> &) {
-  lua_error(state_);
-  return 0;
+void LuaEnvironment::PushFlatbuffer(const reflection::Schema *schema,
+                                    const flatbuffers::Table *table) {
+  PushFlatbuffer(schema->root_table()->name()->c_str(), schema,
+                 schema->root_table(), table, state_);
 }
 
 int LuaEnvironment::RunProtected(const std::function<int()> &func,

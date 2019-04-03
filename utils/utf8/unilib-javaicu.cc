@@ -340,21 +340,50 @@ bool UniLib::ParseInt32(const UnicodeText& text, int* result) const {
 std::unique_ptr<UniLib::RegexPattern> UniLib::CreateRegexPattern(
     const UnicodeText& regex) const {
   return std::unique_ptr<UniLib::RegexPattern>(
-      new UniLib::RegexPattern(jni_cache_.get(), regex));
+      new UniLib::RegexPattern(jni_cache_.get(), regex, /*lazy=*/false));
+}
+
+std::unique_ptr<UniLib::RegexPattern> UniLib::CreateLazyRegexPattern(
+    const UnicodeText& regex) const {
+  return std::unique_ptr<UniLib::RegexPattern>(
+      new UniLib::RegexPattern(jni_cache_.get(), regex, /*lazy=*/true));
 }
 
 UniLib::RegexPattern::RegexPattern(const JniCache* jni_cache,
-                                   const UnicodeText& regex)
+                                   const UnicodeText& pattern, bool lazy)
     : jni_cache_(jni_cache),
-      pattern_(nullptr, jni_cache ? jni_cache->jvm : nullptr) {
+      pattern_(nullptr, jni_cache ? jni_cache->jvm : nullptr),
+      initialized_(false),
+      initialization_failure_(false),
+      pattern_text_(pattern) {
+  if (!lazy) {
+    LockedInitializeIfNotAlready();
+  }
+}
+
+void UniLib::RegexPattern::LockedInitializeIfNotAlready() const {
+  std::lock_guard<std::mutex> guard(mutex_);
+  if (initialized_ || initialization_failure_) {
+    return;
+  }
+
   if (jni_cache_) {
     JNIEnv* jenv = jni_cache_->GetEnv();
     const ScopedLocalRef<jstring> regex_java =
-        jni_cache->ConvertToJavaString(regex);
+        jni_cache_->ConvertToJavaString(pattern_text_);
     pattern_ = MakeGlobalRef(jenv->CallStaticObjectMethod(
                                  jni_cache_->pattern_class.get(),
                                  jni_cache_->pattern_compile, regex_java.get()),
                              jenv, jni_cache_->jvm);
+
+    if (jni_cache_->ExceptionCheckAndClear() || pattern_ == nullptr) {
+      initialization_failure_ = true;
+      pattern_.reset();
+      return;
+    }
+
+    initialized_ = true;
+    pattern_text_.clear();  // We don't need this anymore.
   }
 }
 
@@ -363,6 +392,11 @@ constexpr int UniLib::RegexMatcher::kNoError;
 
 std::unique_ptr<UniLib::RegexMatcher> UniLib::RegexPattern::Matcher(
     const UnicodeText& context) const {
+  LockedInitializeIfNotAlready();  // Possibly lazy initialization.
+  if (initialization_failure_) {
+    return nullptr;
+  }
+
   if (jni_cache_) {
     JNIEnv* env = jni_cache_->GetEnv();
     const jstring context_java =

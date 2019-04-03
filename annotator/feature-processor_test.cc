@@ -53,8 +53,6 @@ class TestingFeatureProcessor : public FeatureProcessor {
  public:
   using FeatureProcessor::CountIgnoredSpanBoundaryCodepoints;
   using FeatureProcessor::FeatureProcessor;
-  using FeatureProcessor::ICUTokenize;
-  using FeatureProcessor::IsCodepointInRanges;
   using FeatureProcessor::SpanToLabel;
   using FeatureProcessor::StripTokensFromOtherLines;
   using FeatureProcessor::supported_codepoint_ranges_;
@@ -531,24 +529,21 @@ TEST_F(FeatureProcessorTest, SupportedCodepointsRatio) {
   config->role = TokenizationCodepointRange_::Role_WHITESPACE_SEPARATOR;
 
   {
-    options.supported_codepoint_ranges.emplace_back(
-        new FeatureProcessorOptions_::CodepointRangeT());
+    options.supported_codepoint_ranges.emplace_back(new CodepointRangeT());
     auto& range = options.supported_codepoint_ranges.back();
     range->start = 0;
     range->end = 128;
   }
 
   {
-    options.supported_codepoint_ranges.emplace_back(
-        new FeatureProcessorOptions_::CodepointRangeT());
+    options.supported_codepoint_ranges.emplace_back(new CodepointRangeT());
     auto& range = options.supported_codepoint_ranges.back();
     range->start = 10000;
     range->end = 10001;
   }
 
   {
-    options.supported_codepoint_ranges.emplace_back(
-        new FeatureProcessorOptions_::CodepointRangeT());
+    options.supported_codepoint_ranges.emplace_back(new CodepointRangeT());
     auto& range = options.supported_codepoint_ranges.back();
     range->start = 20000;
     range->end = 30000;
@@ -567,23 +562,23 @@ TEST_F(FeatureProcessorTest, SupportedCodepointsRatio) {
   EXPECT_THAT(feature_processor.SupportedCodepointsRatio(
                   {0, 3}, feature_processor.Tokenize("ěěě řřř ěěě")),
               FloatEq(0.0));
-  EXPECT_FALSE(feature_processor.IsCodepointInRanges(
-      -1, feature_processor.supported_codepoint_ranges_));
-  EXPECT_TRUE(feature_processor.IsCodepointInRanges(
-      0, feature_processor.supported_codepoint_ranges_));
-  EXPECT_TRUE(feature_processor.IsCodepointInRanges(
-      10, feature_processor.supported_codepoint_ranges_));
-  EXPECT_TRUE(feature_processor.IsCodepointInRanges(
-      127, feature_processor.supported_codepoint_ranges_));
-  EXPECT_FALSE(feature_processor.IsCodepointInRanges(
-      128, feature_processor.supported_codepoint_ranges_));
-  EXPECT_FALSE(feature_processor.IsCodepointInRanges(
-      9999, feature_processor.supported_codepoint_ranges_));
-  EXPECT_TRUE(feature_processor.IsCodepointInRanges(
+  EXPECT_FALSE(
+      IsCodepointInRanges(-1, feature_processor.supported_codepoint_ranges_));
+  EXPECT_TRUE(
+      IsCodepointInRanges(0, feature_processor.supported_codepoint_ranges_));
+  EXPECT_TRUE(
+      IsCodepointInRanges(10, feature_processor.supported_codepoint_ranges_));
+  EXPECT_TRUE(
+      IsCodepointInRanges(127, feature_processor.supported_codepoint_ranges_));
+  EXPECT_FALSE(
+      IsCodepointInRanges(128, feature_processor.supported_codepoint_ranges_));
+  EXPECT_FALSE(
+      IsCodepointInRanges(9999, feature_processor.supported_codepoint_ranges_));
+  EXPECT_TRUE(IsCodepointInRanges(
       10000, feature_processor.supported_codepoint_ranges_));
-  EXPECT_FALSE(feature_processor.IsCodepointInRanges(
+  EXPECT_FALSE(IsCodepointInRanges(
       10001, feature_processor.supported_codepoint_ranges_));
-  EXPECT_TRUE(feature_processor.IsCodepointInRanges(
+  EXPECT_TRUE(IsCodepointInRanges(
       25000, feature_processor.supported_codepoint_ranges_));
 
   const std::vector<Token> tokens = {Token("ěěě", 0, 3), Token("řřř", 4, 7),
@@ -833,151 +828,6 @@ TEST_F(FeatureProcessorTest, StripUnusedTokensWithRelativeClick) {
   // clang-format on
   EXPECT_EQ(click_index, 5);
 }
-
-TEST_F(FeatureProcessorTest, InternalTokenizeOnScriptChange) {
-  FeatureProcessorOptionsT options;
-  options.tokenization_codepoint_config.emplace_back(
-      new TokenizationCodepointRangeT());
-  {
-    auto& config = options.tokenization_codepoint_config.back();
-    config->start = 0;
-    config->end = 256;
-    config->role = TokenizationCodepointRange_::Role_DEFAULT_ROLE;
-    config->script_id = 1;
-  }
-  options.tokenize_on_script_change = false;
-
-  flatbuffers::DetachedBuffer options_fb = PackFeatureProcessorOptions(options);
-  TestingFeatureProcessor feature_processor(
-      flatbuffers::GetRoot<FeatureProcessorOptions>(options_fb.data()),
-      &unilib_);
-
-  EXPECT_EQ(feature_processor.Tokenize("앨라배마123웹사이트"),
-            std::vector<Token>({Token("앨라배마123웹사이트", 0, 11)}));
-
-  options.tokenize_on_script_change = true;
-  flatbuffers::DetachedBuffer options_fb2 =
-      PackFeatureProcessorOptions(options);
-  TestingFeatureProcessor feature_processor2(
-      flatbuffers::GetRoot<FeatureProcessorOptions>(options_fb2.data()),
-      &unilib_);
-
-  EXPECT_EQ(feature_processor2.Tokenize("앨라배마123웹사이트"),
-            std::vector<Token>({Token("앨라배마", 0, 4), Token("123", 4, 7),
-                                Token("웹사이트", 7, 11)}));
-}
-
-#ifdef TC3_TEST_ICU
-TEST_F(FeatureProcessorTest, ICUTokenize) {
-  FeatureProcessorOptionsT options;
-  options.tokenization_type = FeatureProcessorOptions_::TokenizationType_ICU;
-
-  flatbuffers::DetachedBuffer options_fb = PackFeatureProcessorOptions(options);
-  UniLib unilib;
-  TestingFeatureProcessor feature_processor(
-      flatbuffers::GetRoot<FeatureProcessorOptions>(options_fb.data()),
-      &unilib);
-  std::vector<Token> tokens = feature_processor.Tokenize("พระบาทสมเด็จพระปรมิ");
-  ASSERT_EQ(tokens,
-            // clang-format off
-            std::vector<Token>({Token("พระบาท", 0, 6),
-                                Token("สมเด็จ", 6, 12),
-                                Token("พระ", 12, 15),
-                                Token("ปร", 15, 17),
-                                Token("มิ", 17, 19)}));
-  // clang-format on
-}
-#endif
-
-#ifdef TC3_TEST_ICU
-TEST_F(FeatureProcessorTest, ICUTokenizeWithWhitespaces) {
-  FeatureProcessorOptionsT options;
-  options.tokenization_type = FeatureProcessorOptions_::TokenizationType_ICU;
-  options.icu_preserve_whitespace_tokens = true;
-
-  flatbuffers::DetachedBuffer options_fb = PackFeatureProcessorOptions(options);
-  UniLib unilib;
-  TestingFeatureProcessor feature_processor(
-      flatbuffers::GetRoot<FeatureProcessorOptions>(options_fb.data()),
-      &unilib);
-  std::vector<Token> tokens =
-      feature_processor.Tokenize("พระบาท สมเด็จ พระ ปร มิ");
-  ASSERT_EQ(tokens,
-            // clang-format off
-            std::vector<Token>({Token("พระบาท", 0, 6),
-                                Token(" ", 6, 7),
-                                Token("สมเด็จ", 7, 13),
-                                Token(" ", 13, 14),
-                                Token("พระ", 14, 17),
-                                Token(" ", 17, 18),
-                                Token("ปร", 18, 20),
-                                Token(" ", 20, 21),
-                                Token("มิ", 21, 23)}));
-  // clang-format on
-}
-#endif
-
-#ifdef TC3_TEST_ICU
-TEST_F(FeatureProcessorTest, MixedTokenize) {
-  FeatureProcessorOptionsT options;
-  options.tokenization_type = FeatureProcessorOptions_::TokenizationType_MIXED;
-
-  options.tokenization_codepoint_config.emplace_back(
-      new TokenizationCodepointRangeT());
-  auto& config = options.tokenization_codepoint_config.back();
-  config->start = 32;
-  config->end = 33;
-  config->role = TokenizationCodepointRange_::Role_WHITESPACE_SEPARATOR;
-
-  {
-    options.internal_tokenizer_codepoint_ranges.emplace_back(
-        new FeatureProcessorOptions_::CodepointRangeT());
-    auto& range = options.internal_tokenizer_codepoint_ranges.back();
-    range->start = 0;
-    range->end = 128;
-  }
-
-  {
-    options.internal_tokenizer_codepoint_ranges.emplace_back(
-        new FeatureProcessorOptions_::CodepointRangeT());
-    auto& range = options.internal_tokenizer_codepoint_ranges.back();
-    range->start = 128;
-    range->end = 256;
-  }
-
-  {
-    options.internal_tokenizer_codepoint_ranges.emplace_back(
-        new FeatureProcessorOptions_::CodepointRangeT());
-    auto& range = options.internal_tokenizer_codepoint_ranges.back();
-    range->start = 256;
-    range->end = 384;
-  }
-
-  {
-    options.internal_tokenizer_codepoint_ranges.emplace_back(
-        new FeatureProcessorOptions_::CodepointRangeT());
-    auto& range = options.internal_tokenizer_codepoint_ranges.back();
-    range->start = 384;
-    range->end = 592;
-  }
-
-  flatbuffers::DetachedBuffer options_fb = PackFeatureProcessorOptions(options);
-  UniLib unilib;
-  TestingFeatureProcessor feature_processor(
-      flatbuffers::GetRoot<FeatureProcessorOptions>(options_fb.data()),
-      &unilib);
-  std::vector<Token> tokens = feature_processor.Tokenize(
-      "こんにちはJapanese-ląnguagę text 世界 http://www.google.com/");
-  ASSERT_EQ(tokens,
-            // clang-format off
-            std::vector<Token>({Token("こんにちは", 0, 5),
-                                Token("Japanese-ląnguagę", 5, 22),
-                                Token("text", 23, 27),
-                                Token("世界", 28, 30),
-                                Token("http://www.google.com/", 31, 53)}));
-  // clang-format on
-}
-#endif
 
 TEST_F(FeatureProcessorTest, IgnoredSpanBoundaryCodepoints) {
   FeatureProcessorOptionsT options;

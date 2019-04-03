@@ -53,8 +53,9 @@ logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
 
 logging::LoggingStringStream& operator<<(logging::LoggingStringStream& stream,
                                          const ClassificationResult& result) {
-  return stream << "ClassificationResult(" << result.collection << ", "
-                << result.score << ")";
+  return stream << "ClassificationResult(" << result.collection
+                << ", /*score=*/ " << result.score << ", /*priority_score=*/ "
+                << result.priority_score << ")";
 }
 
 logging::LoggingStringStream& operator<<(

@@ -24,32 +24,21 @@
 
 namespace libtextclassifier3 {
 
-inline std::ostream& operator<<(std::ostream& stream, const Token& value) {
-  logging::LoggingStringStream tmp_stream;
-  tmp_stream << value;
-  return stream << tmp_stream.message;
-}
+#define TC3_DECLARE_PRINT_OPERATOR(TYPE_NAME)               \
+  inline std::ostream& operator<<(std::ostream& stream,     \
+                                  const TYPE_NAME& value) { \
+    logging::LoggingStringStream tmp_stream;                \
+    tmp_stream << value;                                    \
+    return stream << tmp_stream.message;                    \
+  }
 
-inline std::ostream& operator<<(std::ostream& stream,
-                                const AnnotatedSpan& value) {
-  logging::LoggingStringStream tmp_stream;
-  tmp_stream << value;
-  return stream << tmp_stream.message;
-}
+TC3_DECLARE_PRINT_OPERATOR(AnnotatedSpan)
+TC3_DECLARE_PRINT_OPERATOR(ClassificationResult)
+TC3_DECLARE_PRINT_OPERATOR(DateParseData)
+TC3_DECLARE_PRINT_OPERATOR(DatetimeParseResultSpan)
+TC3_DECLARE_PRINT_OPERATOR(Token)
 
-inline std::ostream& operator<<(std::ostream& stream,
-                                const DatetimeParseResultSpan& value) {
-  logging::LoggingStringStream tmp_stream;
-  tmp_stream << value;
-  return stream << tmp_stream.message;
-}
-
-inline std::ostream& operator<<(std::ostream& stream,
-                                const DateParseData& value) {
-  logging::LoggingStringStream tmp_stream;
-  tmp_stream << value;
-  return stream << tmp_stream.message;
-}
+#undef TC3_DECLARE_PRINT_OPERATOR
 
 }  // namespace libtextclassifier3
 

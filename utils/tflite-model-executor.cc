@@ -26,6 +26,7 @@ namespace builtin {
 TfLiteRegistration* Register_DIV();
 TfLiteRegistration* Register_FULLY_CONNECTED();
 TfLiteRegistration* Register_SOFTMAX();  // TODO(smillius): remove.
+TfLiteRegistration* Register_MEAN();
 }  // namespace builtin
 }  // namespace ops
 }  // namespace tflite
@@ -54,6 +55,8 @@ inline std::unique_ptr<tflite::OpResolver> BuildOpResolver() {
                        tflite::ops::builtin::Register_FULLY_CONNECTED());
   resolver->AddBuiltin(tflite::BuiltinOperator_SOFTMAX,
                        tflite::ops::builtin::Register_SOFTMAX());
+  resolver->AddBuiltin(tflite::BuiltinOperator_MEAN,
+                       tflite::ops::builtin::Register_MEAN());
   RegisterSelectedOps(resolver.get());
 #else
   std::unique_ptr<tflite::ops::builtin::BuiltinOpResolver> resolver(
@@ -116,7 +119,7 @@ void TfLiteModelExecutor::SetInput(const int input_index,
 
 template <>
 std::vector<tflite::StringRef> TfLiteModelExecutor::Output(
-    const int output_index, tflite::Interpreter* interpreter) const {
+    const int output_index, const tflite::Interpreter* interpreter) const {
   const TfLiteTensor* output_tensor =
       interpreter->tensor(interpreter->outputs()[output_index]);
   const int num_strings = tflite::GetStringCount(output_tensor);
@@ -129,7 +132,7 @@ std::vector<tflite::StringRef> TfLiteModelExecutor::Output(
 
 template <>
 std::vector<std::string> TfLiteModelExecutor::Output(
-    const int output_index, tflite::Interpreter* interpreter) const {
+    const int output_index, const tflite::Interpreter* interpreter) const {
   std::vector<std::string> output;
   for (const tflite::StringRef& s :
        Output<tflite::StringRef>(output_index, interpreter)) {

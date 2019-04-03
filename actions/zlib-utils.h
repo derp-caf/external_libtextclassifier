@@ -20,6 +20,8 @@
 #define LIBTEXTCLASSIFIER_ACTIONS_ZLIB_UTILS_H_
 
 #include "actions/actions_model_generated.h"
+#include "utils/zlib/buffer_generated.h"
+#include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
 
@@ -31,6 +33,10 @@ bool DecompressActionsModel(ActionsModelT* model);
 
 // Compresses regex rules in the model.
 std::string CompressSerializedActionsModel(const std::string& model);
+
+bool GetUncompressedString(const flatbuffers::String* uncompressed_buffer,
+                           const CompressedBuffer* compressed_buffer,
+                           ZlibDecompressor* decompressor, std::string* out);
 
 }  // namespace libtextclassifier3
 

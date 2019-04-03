@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+include "utils/zlib/buffer.fbs";
+
 // The type of variable to fetch.
 namespace libtextclassifier3;
 enum AndroidSimpleIntentGeneratorVariableType : int {
@@ -182,11 +184,16 @@ table IntentGenerator {
   // The template generator lua code, either as text source or precompiled
   // bytecode.
   lua_template_generator:[ubyte];
+
+  compressed_lua_template_generator:CompressedBuffer;
 }
 
 // Describes how intents for the various entity types should be generated.
 namespace libtextclassifier3;
 table IntentFactoryModel {
   generator:[IntentFactoryModel_.IntentGenerator];
+
+  // Whether to precompile the generators when loading.
+  precompile_generators:bool = false;
 }
 

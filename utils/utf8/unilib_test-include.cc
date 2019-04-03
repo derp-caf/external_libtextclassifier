@@ -115,6 +115,27 @@ TEST_F(UniLibTest, Regex) {
   EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
 }
 
+TEST_F(UniLibTest, RegexLazy) {
+  std::unique_ptr<UniLib::RegexPattern> pattern =
+      unilib_.CreateLazyRegexPattern(
+          UTF8ToUnicodeText("[a-z][0-9]", /*do_copy=*/false));
+  int status;
+  std::unique_ptr<UniLib::RegexMatcher> matcher;
+
+  matcher = pattern->Matcher(UTF8ToUnicodeText("a3", /*do_copy=*/false));
+  EXPECT_TRUE(matcher->Matches(&status));
+  EXPECT_TRUE(matcher->ApproximatelyMatches(&status));
+  EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
+  EXPECT_TRUE(matcher->Matches(&status));  // Check that the state is reset.
+  EXPECT_TRUE(matcher->ApproximatelyMatches(&status));
+  EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
+
+  matcher = pattern->Matcher(UTF8ToUnicodeText("3a", /*do_copy=*/false));
+  EXPECT_FALSE(matcher->Matches(&status));
+  EXPECT_FALSE(matcher->ApproximatelyMatches(&status));
+  EXPECT_EQ(status, UniLib::RegexMatcher::kNoError);
+}
+
 TEST_F(UniLibTest, RegexGroups) {
   // The smiley face is a 4-byte UTF8 codepoint 0x1F60B, and it's important to
   // test the regex functionality with it to verify we are handling the indices

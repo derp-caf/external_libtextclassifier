@@ -32,18 +32,14 @@ extern "C" {
 #endif
 
 TC3_JNI_METHOD(jlong, TC3_ACTIONS_CLASS_NAME, nativeNewActionsModel)
-(JNIEnv* env, jobject thiz, jint fd);
+(JNIEnv* env, jobject thiz, jint fd, jbyteArray serialized_preconditions);
 
 TC3_JNI_METHOD(jlong, TC3_ACTIONS_CLASS_NAME, nativeNewActionsModelFromPath)
-(JNIEnv* env, jobject thiz, jstring path);
-
-TC3_JNI_METHOD(jlong, TC3_ACTIONS_CLASS_NAME,
-               nativeNewActionsModelModelsFromAssetFileDescriptor)
-(JNIEnv* env, jobject thiz, jobject afd, jlong offset, jlong size);
+(JNIEnv* env, jobject thiz, jstring path, jbyteArray serialized_preconditions);
 
 TC3_JNI_METHOD(jobjectArray, TC3_ACTIONS_CLASS_NAME, nativeSuggestActions)
 (JNIEnv* env, jobject thiz, jlong ptr, jobject jconversation, jobject joptions,
- jlong annotatorPtr, jobject app_context, jstring device_locale,
+ jlong annotatorPtr, jobject app_context, jstring device_locales,
  jboolean generate_intents);
 
 TC3_JNI_METHOD(void, TC3_ACTIONS_CLASS_NAME, nativeCloseActionsModel)

@@ -17,9 +17,48 @@
 #include "utils/flatbuffers.h"
 
 #include <vector>
+#include "utils/strings/numbers.h"
 #include "utils/variant.h"
 
 namespace libtextclassifier3 {
+namespace {
+bool CreateRepeatedField(
+    const reflection::Schema* schema, const reflection::Type* type,
+    std::unique_ptr<ReflectiveFlatbuffer::RepeatedField>* repeated_field) {
+  switch (type->element()) {
+    case reflection::Bool:
+      repeated_field->reset(new ReflectiveFlatbuffer::TypedRepeatedField<bool>);
+      return true;
+    case reflection::Int:
+      repeated_field->reset(new ReflectiveFlatbuffer::TypedRepeatedField<int>);
+      return true;
+    case reflection::Long:
+      repeated_field->reset(
+          new ReflectiveFlatbuffer::TypedRepeatedField<int64>);
+      return true;
+    case reflection::Float:
+      repeated_field->reset(
+          new ReflectiveFlatbuffer::TypedRepeatedField<float>);
+      return true;
+    case reflection::Double:
+      repeated_field->reset(
+          new ReflectiveFlatbuffer::TypedRepeatedField<double>);
+      return true;
+    case reflection::String:
+      repeated_field->reset(
+          new ReflectiveFlatbuffer::TypedRepeatedField<std::string>);
+      return true;
+    case reflection::Obj:
+      repeated_field->reset(
+          new ReflectiveFlatbuffer::TypedRepeatedField<ReflectiveFlatbuffer>(
+              schema, type));
+      return true;
+    default:
+      TC3_LOG(ERROR) << "Unsupported type: " << type->element();
+      return false;
+  }
+}
+}  // namespace
 
 template <>
 const char* FlatbufferFileIdentifier<Model>() {
@@ -117,6 +156,59 @@ bool ReflectiveFlatbuffer::IsMatchingType(const reflection::Field* field,
   }
 }
 
+bool ReflectiveFlatbuffer::ParseAndSet(const reflection::Field* field,
+                                       const std::string& value) {
+  switch (field->type()->base_type()) {
+    case reflection::String:
+      return Set(field, value);
+    case reflection::Int: {
+      int32 int_value;
+      if (!ParseInt32(value.data(), &int_value)) {
+        TC3_LOG(ERROR) << "Could not parse '" << value << "' as int32.";
+        return false;
+      }
+      return Set(field, int_value);
+    }
+    case reflection::Long: {
+      int64 int_value;
+      if (!ParseInt64(value.data(), &int_value)) {
+        TC3_LOG(ERROR) << "Could not parse '" << value << "' as int64.";
+        return false;
+      }
+      return Set(field, int_value);
+    }
+    case reflection::Float: {
+      double double_value;
+      if (!ParseDouble(value.data(), &double_value)) {
+        TC3_LOG(ERROR) << "Could not parse '" << value << "' as float.";
+        return false;
+      }
+      return Set(field, static_cast<float>(double_value));
+    }
+    case reflection::Double: {
+      double double_value;
+      if (!ParseDouble(value.data(), &double_value)) {
+        TC3_LOG(ERROR) << "Could not parse '" << value << "' as double.";
+        return false;
+      }
+      return Set(field, double_value);
+    }
+    default:
+      TC3_LOG(ERROR) << "Unhandled field type: " << field->type()->base_type();
+      return false;
+  }
+}
+
+bool ReflectiveFlatbuffer::ParseAndSet(const FlatbufferFieldPath* path,
+                                       const std::string& value) {
+  ReflectiveFlatbuffer* parent;
+  const reflection::Field* field;
+  if (!GetFieldWithParent(path, &parent, &field)) {
+    return false;
+  }
+  return parent->ParseAndSet(field, value);
+}
+
 ReflectiveFlatbuffer* ReflectiveFlatbuffer::Mutable(
     const StringPiece field_name) {
   if (const reflection::Field* field = GetFieldOrNull(field_name)) {
@@ -132,16 +224,49 @@ ReflectiveFlatbuffer* ReflectiveFlatbuffer::Mutable(
     TC3_LOG(ERROR) << "Field is not of type Object.";
     return nullptr;
   }
-  auto entry = children_.find(field->offset());
+  const auto entry = children_.find(field);
   if (entry != children_.end()) {
     return entry->second.get();
   }
-  auto it = children_.insert(
-      entry,
+  const auto it = children_.insert(
+      /*hint=*/entry,
       std::make_pair(
-          field->offset(),
+          field,
           std::unique_ptr<ReflectiveFlatbuffer>(new ReflectiveFlatbuffer(
               schema_, schema_->objects()->Get(field->type()->index())))));
+  return it->second.get();
+}
+
+ReflectiveFlatbuffer::RepeatedField* ReflectiveFlatbuffer::Repeated(
+    StringPiece field_name) {
+  if (const reflection::Field* field = GetFieldOrNull(field_name)) {
+    return Repeated(field);
+  }
+  TC3_LOG(ERROR) << "Unknown field: " << field_name.ToString();
+  return nullptr;
+}
+
+ReflectiveFlatbuffer::RepeatedField* ReflectiveFlatbuffer::Repeated(
+    const reflection::Field* field) {
+  if (field->type()->base_type() != reflection::Vector) {
+    TC3_LOG(ERROR) << "Field is not of type Vector.";
+    return nullptr;
+  }
+
+  // If the repeated field was already set, return its instance.
+  const auto entry = repeated_fields_.find(field);
+  if (entry != repeated_fields_.end()) {
+    return entry->second.get();
+  }
+
+  // Otherwise, create a new instance and store it.
+  std::unique_ptr<RepeatedField> repeated_field;
+  if (!CreateRepeatedField(schema_, field->type(), &repeated_field)) {
+    TC3_LOG(ERROR) << "Could not create repeated field.";
+    return nullptr;
+  }
+  const auto it = repeated_fields_.insert(
+      /*hint=*/entry, std::make_pair(field, std::move(repeated_field)));
   return it->second.get();
 }
 
@@ -152,9 +277,9 @@ flatbuffers::uoffset_t ReflectiveFlatbuffer::Serialize(
       std::pair</* field vtable offset */ int,
                 /* field data offset in buffer */ flatbuffers::uoffset_t>>
       offsets;
-  offsets.reserve(children_.size());
+  offsets.reserve(children_.size() + repeated_fields_.size());
   for (const auto& it : children_) {
-    offsets.push_back({it.first, it.second->Serialize(builder)});
+    offsets.push_back({it.first->offset(), it.second->Serialize(builder)});
   }
 
   // Create strings.
@@ -163,6 +288,11 @@ flatbuffers::uoffset_t ReflectiveFlatbuffer::Serialize(
       offsets.push_back({it.first->offset(),
                          builder->CreateString(it.second.StringValue()).o});
     }
+  }
+
+  // Build the repeated fields.
+  for (const auto& it : repeated_fields_) {
+    offsets.push_back({it.first->offset(), it.second->Serialize(builder)});
   }
 
   // Build the table now.
@@ -199,7 +329,7 @@ flatbuffers::uoffset_t ReflectiveFlatbuffer::Serialize(
     }
   }
 
-  // Add strings and subtables.
+  // Add strings, subtables and repeated fields.
   for (const auto& it : offsets) {
     builder->AddOffset(it.first, flatbuffers::Offset<void>(it.second));
   }
@@ -270,6 +400,22 @@ bool ReflectiveFlatbuffer::MergeFrom(const flatbuffers::Table* from) {
 bool ReflectiveFlatbuffer::MergeFromSerializedFlatbuffer(StringPiece from) {
   return MergeFrom(flatbuffers::GetAnyRoot(
       reinterpret_cast<const unsigned char*>(from.data())));
+}
+
+void ReflectiveFlatbuffer::AsFlatMap(
+    const std::string& key_separator, const std::string& key_prefix,
+    std::map<std::string, Variant>* result) const {
+  // Add direct fields.
+  for (auto it : fields_) {
+    (*result)[key_prefix + it.first->name()->str()] = it.second;
+  }
+
+  // Add nested messages.
+  for (auto& it : children_) {
+    it.second->AsFlatMap(key_separator,
+                         key_prefix + it.first->name()->str() + key_separator,
+                         result);
+  }
 }
 
 }  // namespace libtextclassifier3

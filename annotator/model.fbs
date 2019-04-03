@@ -14,9 +14,11 @@
 // limitations under the License.
 //
 
+include "utils/codepoint-range.fbs";
 include "utils/flatbuffers.fbs";
 include "utils/intents/intent-config.fbs";
 include "utils/resources.fbs";
+include "utils/tokenizer.fbs";
 include "utils/zlib/buffer.fbs";
 
 file_identifier "TC2 ";
@@ -34,16 +36,15 @@ enum ModeFlag : int {
   ALL = 7,
 }
 
-// Enum for specifying the annotation usecase. The values are meant to be used
-// as flags, and thus are not mutually exclusive.
+// Enum for specifying the annotation usecase.
 namespace libtextclassifier3;
 enum AnnotationUsecase : int {
-  ANNOTATION_USECASE_NONE = 0,
-  ANNOTATION_USECASE_SMART = 1,
-  ANNOTATION_USECASE_RAW = 2,
+  // Results are optimized for Smart{Select,Share,Linkify}.
+  ANNOTATION_USECASE_SMART = 0,
 
-  // 32-bit int maximum value (all bits set); since in flatbuffers we use int
-  ANNOTATION_USECASE_ALL = 2147483647,
+  // Results are optimized for using TextClassifier as an infrastructure that
+  // annotates as much as possible.
+  ANNOTATION_USECASE_RAW = 1,
 }
 
 namespace libtextclassifier3;
@@ -239,6 +240,9 @@ table Pattern {
 namespace libtextclassifier3;
 table RegexModel {
   patterns:[RegexModel_.Pattern];
+
+  // If true, will compile the regexes only on first use.
+  lazy_regex_compilation:bool = true;
 }
 
 // List of regex patterns.
@@ -271,7 +275,8 @@ table DatetimeModelPattern {
   enabled_modes:ModeFlag = ALL;
 
   // The annotation usecases for which to apply the patterns.
-  enabled_annotation_usecases:AnnotationUsecase = ANNOTATION_USECASE_ALL;
+  // This is a flag field for values of AnnotationUsecase.
+  enabled_annotation_usecases:uint = 4294967295;
 }
 
 namespace libtextclassifier3;
@@ -302,6 +307,9 @@ table DatetimeModel {
   // If true, will generate the alternative interpretations for ambiguous
   // datetime expressions.
   generate_alternative_interpretations_when_ambiguous:bool = false;
+
+  // If true, will compile the regexes only on first use.
+  lazy_regex_compilation:bool = true;
 }
 
 namespace libtextclassifier3.DatetimeModelLibrary_;
@@ -324,6 +332,10 @@ table ModelTriggeringOptions {
 
   // The modes for which to enable the models.
   enabled_modes:ModeFlag = ALL;
+
+  // Comma-separated list of locales that dictionary classification supports as
+  // BCP 47 tags.
+  dictionary_locales:string;
 }
 
 // Options controlling the output of the classifier.
@@ -383,7 +395,6 @@ table Model {
   output_options:OutputOptions;
 
   // Configures how Intents should be generated on Android.
-  // TODO(smillius): Remove deprecated factory options.
   android_intent_options:AndroidIntentFactoryOptions;
 
   intent_options:IntentFactoryModel;
@@ -393,43 +404,9 @@ table Model {
 
   // Schema data for handling entity data.
   entity_data_schema:[ubyte];
-}
 
-// Role of the codepoints in the range.
-namespace libtextclassifier3.TokenizationCodepointRange_;
-enum Role : int {
-  // Concatenates the codepoint to the current run of codepoints.
-  DEFAULT_ROLE = 0,
-
-  // Splits a run of codepoints before the current codepoint.
-  SPLIT_BEFORE = 1,
-
-  // Splits a run of codepoints after the current codepoint.
-  SPLIT_AFTER = 2,
-
-  // Each codepoint will be a separate token. Good e.g. for Chinese
-  // characters.
-  TOKEN_SEPARATOR = 3,
-
-  // Discards the codepoint.
-  DISCARD_CODEPOINT = 4,
-
-  // Common values:
-  // Splits on the characters and discards them. Good e.g. for the space
-  // character.
-  WHITESPACE_SEPARATOR = 7,
-}
-
-// Represents a codepoint range [start, end) with its role for tokenization.
-namespace libtextclassifier3;
-table TokenizationCodepointRange {
-  start:int;
-  end:int;
-  role:TokenizationCodepointRange_.Role;
-
-  // Integer identifier of the script this range denotes. Negative values are
-  // reserved for Tokenizer's internal use.
-  script_id:int;
+  number_annotator_options:NumberAnnotatorOptions;
+  duration_annotator_options:DurationAnnotatorOptions;
 }
 
 // Method for selecting the center token.
@@ -443,30 +420,6 @@ enum CenterTokenSelectionMethod : int {
   // Use selection indices to get a token range, and select the middle of it
   // as the center token.
   CENTER_TOKEN_MIDDLE_OF_SELECTION = 2,
-}
-
-// Controls the type of tokenization the model will use for the input text.
-namespace libtextclassifier3.FeatureProcessorOptions_;
-enum TokenizationType : int {
-  INVALID_TOKENIZATION_TYPE = 0,
-
-  // Use the internal tokenizer for tokenization.
-  INTERNAL_TOKENIZER = 1,
-
-  // Use ICU for tokenization.
-  ICU = 2,
-
-  // First apply ICU tokenization. Then identify stretches of tokens
-  // consisting only of codepoints in internal_tokenizer_codepoint_ranges
-  // and re-tokenize them using the internal tokenizer.
-  MIXED = 3,
-}
-
-// Range of codepoints start - end, where end is exclusive.
-namespace libtextclassifier3.FeatureProcessorOptions_;
-table CodepointRange {
-  start:int;
-  end:int;
 }
 
 // Bounds-sensitive feature extraction configuration.
@@ -585,11 +538,11 @@ table FeatureProcessorOptions {
   snap_label_span_boundaries_to_containing_tokens:bool;
 
   // A set of codepoint ranges supported by the model.
-  supported_codepoint_ranges:[FeatureProcessorOptions_.CodepointRange];
+  supported_codepoint_ranges:[CodepointRange];
 
   // A set of codepoint ranges to use in the mixed tokenization mode to identify
   // stretches of tokens to re-tokenize using the internal tokenizer.
-  internal_tokenizer_codepoint_ranges:[FeatureProcessorOptions_.CodepointRange];
+  internal_tokenizer_codepoint_ranges:[CodepointRange];
 
   // Minimum ratio of supported codepoints in the input context. If the ratio
   // is lower than this, the feature computation will fail.
@@ -605,7 +558,7 @@ table FeatureProcessorOptions {
   // to it. So the resulting feature vector has two regions.
   feature_version:int = 0;
 
-  tokenization_type:FeatureProcessorOptions_.TokenizationType = INTERNAL_TOKENIZER;
+  tokenization_type:TokenizationType = INTERNAL_TOKENIZER;
   icu_preserve_whitespace_tokens:bool = false;
 
   // List of codepoints that will be stripped from beginning and end of
@@ -624,6 +577,69 @@ table FeatureProcessorOptions {
   // If true, tokens will be also split when the codepoint's script_id changes
   // as defined in TokenizationCodepointRange.
   tokenize_on_script_change:bool = false;
+}
+
+namespace libtextclassifier3;
+table NumberAnnotatorOptions {
+  // If true, number annotations will be produced.
+  enabled:bool = false;
+
+  // Score to assign to the annotated numbers from the annotator.
+  score:float = 1;
+
+  // Priority score used for conflict resolution with the other models.
+  priority_score:float = 0;
+
+  // The modes in which to enable number annotations.
+  enabled_modes:ModeFlag = ALL;
+
+  // The annotation usecases for which to produce number annotations.
+  // This is a flag field for values of AnnotationUsecase.
+  enabled_annotation_usecases:uint = 4294967295;
+
+  // A list of codepoints that can form a prefix of a valid number.
+  allowed_prefix_codepoints:[int];
+
+  // A list of codepoints that can form a suffix of a valid number.
+  allowed_suffix_codepoints:[int];
+}
+
+// DurationAnnotator is so far tailored for English only.
+namespace libtextclassifier3;
+table DurationAnnotatorOptions {
+  // If true, duration annotations will be produced.
+  enabled:bool = false;
+
+  // Score to assign to the annotated durations from the annotator.
+  score:float = 1;
+
+  // Priority score used for conflict resolution with the other models.
+  priority_score:float = 0;
+
+  // The modes in which to enable duration annotations.
+  enabled_modes:ModeFlag = ALL;
+
+  // The annotation usecases for which to produce duration annotations.
+  enabled_annotation_usecases:uint = 4294967295;
+
+  // Durations typically look like XX hours and XX minutes etc... The list of
+  // strings below enumerate variants of "hours", "minutes", etc. in these
+  // expressions. These are verbatim strings that are matched against tokens in
+  // the input.
+  week_expressions:[string];
+
+  day_expressions:[string];
+  hour_expressions:[string];
+  minute_expressions:[string];
+  second_expressions:[string];
+
+  // List of expressions that doesn't break a duration expression (can become
+  // a part of it) but has not semantic meaning.
+  filler_expressions:[string];
+
+  // List of expressions that mean half of a unit of duration (e.g. "half an
+  // hour").
+  half_expressions:[string];
 }
 
 root_type libtextclassifier3.Model;

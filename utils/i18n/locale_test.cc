@@ -66,5 +66,38 @@ TEST(LocaleTest, ParseCineseTraditional) {
   EXPECT_EQ(locale.Region(), "");
 }
 
+TEST(LocaleTest, IsAnyLocaleSupportedMatch) {
+  std::vector<Locale> locales = {Locale::FromBCP47("zh-HK"),
+                                 Locale::FromBCP47("en-UK")};
+  std::vector<Locale> supported_locales = {Locale::FromBCP47("en")};
+
+  EXPECT_TRUE(Locale::IsAnyLocaleSupported(locales, supported_locales,
+                                           /*default_value=*/false));
+}
+
+TEST(LocaleTest, IsAnyLocaleSupportedNotMatch) {
+  std::vector<Locale> locales = {Locale::FromBCP47("zh-tw")};
+  std::vector<Locale> supported_locales = {Locale::FromBCP47("en"),
+                                           Locale::FromBCP47("fr")};
+
+  EXPECT_FALSE(Locale::IsAnyLocaleSupported(locales, supported_locales,
+                                            /*default_value=*/false));
+}
+
+TEST(LocaleTest, IsAnyLocaleSupportedAnyLocale) {
+  std::vector<Locale> locales = {Locale::FromBCP47("zh-tw")};
+  std::vector<Locale> supported_locales = {Locale::FromBCP47("*")};
+
+  EXPECT_TRUE(Locale::IsAnyLocaleSupported(locales, supported_locales,
+                                           /*default_value=*/false));
+}
+
+TEST(LocaleTest, IsAnyLocaleSupportedEmptyLocales) {
+  std::vector<Locale> supported_locales = {Locale::FromBCP47("en")};
+
+  EXPECT_TRUE(Locale::IsAnyLocaleSupported({}, supported_locales,
+                                           /*default_value=*/true));
+}
+
 }  // namespace
 }  // namespace libtextclassifier3

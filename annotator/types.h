@@ -214,6 +214,10 @@ struct ClassificationResult {
   std::string contact_name, contact_given_name, contact_nickname,
       contact_email_address, contact_phone_number, contact_id;
   std::string app_name, app_package_name;
+  int64 numeric_value;
+
+  // Length of the parsed duration in milliseconds.
+  int64 duration_ms;
 
   // Internal score used for conflict resolution.
   float priority_score;
@@ -251,11 +255,22 @@ logging::LoggingStringStream& operator<<(
 
 // Represents a result of Annotate call.
 struct AnnotatedSpan {
+  enum class Source { OTHER, KNOWLEDGE, DURATION, DATETIME };
+
   // Unicode codepoint indices in the input string.
   CodepointSpan span = {kInvalidIndex, kInvalidIndex};
 
   // Classification result for the span.
   std::vector<ClassificationResult> classification;
+
+  // The source of the annotation, used in conflict resolution.
+  Source source = Source::OTHER;
+
+  AnnotatedSpan() = default;
+
+  AnnotatedSpan(CodepointSpan arg_span,
+                std::vector<ClassificationResult> arg_classification)
+      : span(arg_span), classification(std::move(arg_classification)) {}
 };
 
 // Pretty-printing function for AnnotatedSpan.

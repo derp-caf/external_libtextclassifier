@@ -45,9 +45,18 @@ T FromJavaOptionsInternal(JNIEnv* env, jobject joptions,
       CallJniMethod0<int64>(env, joptions, options_class.get(),
                             &JNIEnv::CallLongMethod, "getReferenceTimeMsUtc",
                             "J");
+  const std::pair<bool, jobject> status_or_detected_text_language_tags =
+      CallJniMethod0<jobject>(
+          env, joptions, options_class.get(), &JNIEnv::CallObjectMethod,
+          "getDetectedTextLanguageTags", "Ljava/lang/String;");
+  const std::pair<bool, int> status_or_annotation_usecase =
+      CallJniMethod0<int>(env, joptions, options_class.get(),
+                          &JNIEnv::CallIntMethod, "getAnnotationUsecase", "I");
 
   if (!status_or_locales.first || !status_or_reference_timezone.first ||
-      !status_or_reference_time_ms_utc.first) {
+      !status_or_reference_time_ms_utc.first ||
+      !status_or_detected_text_language_tags.first ||
+      !status_or_annotation_usecase.first) {
     return {};
   }
 
@@ -57,6 +66,11 @@ T FromJavaOptionsInternal(JNIEnv* env, jobject joptions,
   options.reference_timezone = ToStlString(
       env, reinterpret_cast<jstring>(status_or_reference_timezone.second));
   options.reference_time_ms_utc = status_or_reference_time_ms_utc.second;
+  options.detected_text_language_tags = ToStlString(
+      env,
+      reinterpret_cast<jstring>(status_or_detected_text_language_tags.second));
+  options.annotation_usecase =
+      static_cast<AnnotationUsecase>(status_or_annotation_usecase.second);
   return options;
 }
 }  // namespace
@@ -73,13 +87,18 @@ SelectionOptions FromJavaSelectionOptions(JNIEnv* env, jobject joptions) {
   const std::pair<bool, jobject> status_or_locales = CallJniMethod0<jobject>(
       env, joptions, options_class.get(), &JNIEnv::CallObjectMethod,
       "getLocales", "Ljava/lang/String;");
-  if (!status_or_locales.first) {
+  const std::pair<bool, int> status_or_annotation_usecase =
+      CallJniMethod0<int>(env, joptions, options_class.get(),
+                          &JNIEnv::CallIntMethod, "getAnnotationUsecase", "I");
+  if (!status_or_locales.first || !status_or_annotation_usecase.first) {
     return {};
   }
 
   SelectionOptions options;
   options.locales =
       ToStlString(env, reinterpret_cast<jstring>(status_or_locales.second));
+  options.annotation_usecase =
+      static_cast<AnnotationUsecase>(status_or_annotation_usecase.second);
 
   return options;
 }

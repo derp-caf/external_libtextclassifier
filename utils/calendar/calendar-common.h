@@ -121,6 +121,9 @@ bool CalendarLibTempl<TCalendar>::InterpretParseData(
     if (parse_data.field_set_mask & DateParseData::Fields::AMPM_FIELD &&
         parse_data.ampm == DateParseData::AMPM::PM && parse_data.hour < 12) {
       TC3_CALENDAR_CHECK(calendar->SetHourOfDay(parse_data.hour + 12))
+    } else if (parse_data.ampm == DateParseData::AMPM::AM &&
+               parse_data.hour == 12) {
+      // Do nothing. 12am == 0.
     } else {
       TC3_CALENDAR_CHECK(calendar->SetHourOfDay(parse_data.hour))
     }

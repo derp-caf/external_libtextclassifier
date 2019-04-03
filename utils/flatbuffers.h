@@ -111,6 +111,81 @@ class ReflectiveFlatbuffer {
                        const reflection::Object* type)
       : schema_(schema), type_(type) {}
 
+  // Encapsulates a repeated field.
+  // Serves as a common base class for repeated fields.
+  class RepeatedField {
+   public:
+    virtual ~RepeatedField() {}
+
+    virtual flatbuffers::uoffset_t Serialize(
+        flatbuffers::FlatBufferBuilder* builder) const = 0;
+  };
+
+  // Represents a repeated field of particular type.
+  template <typename T>
+  class TypedRepeatedField : public RepeatedField {
+   public:
+    void Add(const T value) { items_.push_back(value); }
+
+    flatbuffers::uoffset_t Serialize(
+        flatbuffers::FlatBufferBuilder* builder) const override {
+      return builder->CreateVector(items_).o;
+    }
+
+   private:
+    std::vector<T> items_;
+  };
+
+  // Specialization for strings.
+  template <>
+  class TypedRepeatedField<std::string> : public RepeatedField {
+   public:
+    void Add(const std::string& value) { items_.push_back(value); }
+
+    flatbuffers::uoffset_t Serialize(
+        flatbuffers::FlatBufferBuilder* builder) const override {
+      std::vector<flatbuffers::Offset<flatbuffers::String>> offsets(
+          items_.size());
+      for (int i = 0; i < items_.size(); i++) {
+        offsets[i] = builder->CreateString(items_[i]);
+      }
+      return builder->CreateVector(offsets).o;
+    }
+
+   private:
+    std::vector<std::string> items_;
+  };
+
+  // Specialization for repeated sub-messages.
+  template <>
+  class TypedRepeatedField<ReflectiveFlatbuffer> : public RepeatedField {
+   public:
+    TypedRepeatedField<ReflectiveFlatbuffer>(
+        const reflection::Schema* const schema,
+        const reflection::Type* const type)
+        : schema_(schema), type_(type) {}
+
+    ReflectiveFlatbuffer* Add() {
+      items_.emplace_back(new ReflectiveFlatbuffer(
+          schema_, schema_->objects()->Get(type_->index())));
+      return items_.back().get();
+    }
+
+    flatbuffers::uoffset_t Serialize(
+        flatbuffers::FlatBufferBuilder* builder) const override {
+      std::vector<flatbuffers::Offset<void>> offsets(items_.size());
+      for (int i = 0; i < items_.size(); i++) {
+        offsets[i] = items_[i]->Serialize(builder);
+      }
+      return builder->CreateVector(offsets).o;
+    }
+
+   private:
+    const reflection::Schema* const schema_;
+    const reflection::Type* const type_;
+    std::vector<std::unique_ptr<ReflectiveFlatbuffer>> items_;
+  };
+
   // Gets the field information for a field name, returns nullptr if the
   // field was not defined.
   const reflection::Field* GetFieldOrNull(const StringPiece field_name) const;
@@ -167,11 +242,32 @@ class ReflectiveFlatbuffer {
     return parent->Set<T>(field, value);
   }
 
+  // Sets a (primitive) field to a specific value.
+  // Parses the string value according to the field type.
+  bool ParseAndSet(const reflection::Field* field, const std::string& value);
+  bool ParseAndSet(const FlatbufferFieldPath* path, const std::string& value);
+
   // Gets the reflective flatbuffer for a table field.
   // Returns nullptr if the field was not found, or the field type was not a
   // table.
   ReflectiveFlatbuffer* Mutable(StringPiece field_name);
   ReflectiveFlatbuffer* Mutable(const reflection::Field* field);
+
+  // Gets the reflective flatbuffer for a repeated field.
+  // Returns nullptr if the field was not found, or the field type was not a
+  // vector.
+  RepeatedField* Repeated(StringPiece field_name);
+  RepeatedField* Repeated(const reflection::Field* field);
+
+  template <typename T>
+  TypedRepeatedField<T>* Repeated(const reflection::Field* field) {
+    return static_cast<TypedRepeatedField<T>*>(Repeated(field));
+  }
+
+  template <typename T>
+  TypedRepeatedField<T>* Repeated(StringPiece field_name) {
+    return static_cast<TypedRepeatedField<T>*>(Repeated(field_name));
+  }
 
   // Serializes the flatbuffer.
   flatbuffers::uoffset_t Serialize(
@@ -184,6 +280,15 @@ class ReflectiveFlatbuffer {
   bool MergeFrom(const flatbuffers::Table* from);
   bool MergeFromSerializedFlatbuffer(StringPiece from);
 
+  // Flattens the flatbuffer as a flat map.
+  // (Nested) fields names are joined by `key_separator`.
+  std::map<std::string, Variant> AsFlatMap(
+      const std::string& key_separator = ".") const {
+    std::map<std::string, Variant> result;
+    AsFlatMap(key_separator, /*key_prefix=*/"", &result);
+    return result;
+  }
+
  private:
   const reflection::Schema* const schema_;
   const reflection::Object* const type_;
@@ -191,8 +296,20 @@ class ReflectiveFlatbuffer {
   // Cached primitive fields (scalars and strings).
   std::map<const reflection::Field*, Variant> fields_;
 
-  // Cached sub-messages, keyed by vtable offset.
-  std::map<int, std::unique_ptr<ReflectiveFlatbuffer>> children_;
+  // Cached sub-messages.
+  std::map<const reflection::Field*, std::unique_ptr<ReflectiveFlatbuffer>>
+      children_;
+
+  // Cached repeated fields.
+  std::map<const reflection::Field*, std::unique_ptr<RepeatedField>>
+      repeated_fields_;
+
+  // Flattens the flatbuffer as a flat map.
+  // (Nested) fields names are joined by `key_separator` and prefixed by
+  // `key_prefix`.
+  void AsFlatMap(const std::string& key_separator,
+                 const std::string& key_prefix,
+                 std::map<std::string, Variant>* result) const;
 };
 
 // A helper class to build flatbuffers based on schema reflection data.

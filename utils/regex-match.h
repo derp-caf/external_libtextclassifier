@@ -26,8 +26,23 @@ namespace libtextclassifier3 {
 // Returns true if successful, and false if the field couldn't be set.
 bool SetFieldFromCapturingGroup(const int group_id,
                                 const FlatbufferFieldPath* field_path,
-                                UniLib::RegexMatcher* matcher,
+                                const UniLib::RegexMatcher* matcher,
                                 ReflectiveFlatbuffer* flatbuffer);
+
+// Post-checks a regular expression match with a lua verifier script.
+// The verifier can access:
+//   * `context`: The context as a string.
+//   * `match`: The groups of the regex match as an array, each group gives
+//       * `begin`: span start
+//       * `end`: span end
+//       * `text`: the text
+// The verifier is expected to return a boolean, indicating whether the
+// verification succeeded or not.
+// Returns true if the verification was successful, false if not.
+bool VerifyMatch(const std::string& context,
+                 const UniLib::RegexMatcher* matcher,
+                 const std::string& lua_verifier_code);
+
 }  // namespace libtextclassifier3
 
 #endif  // LIBTEXTCLASSIFIER_UTILS_REGEX_MATCH_H_

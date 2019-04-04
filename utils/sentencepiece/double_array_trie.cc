@@ -21,7 +21,7 @@ namespace libtextclassifier3 {
 
 bool DoubleArrayTrie::GatherPrefixMatches(
     StringPiece input, const std::function<void(TrieMatch)>& update_fn) const {
-  unsigned int pos = 0;
+  uint32 pos = 0;
   if (nodes_length_ == 0) {
     TC3_LOG(WARNING) << "Trie is empty. Skipping.";
     return true;

@@ -408,8 +408,10 @@ TC3_JNI_METHOD(jlong, TC3_ANNOTATOR_CLASS_NAME, nativeNewAnnotator)
       libtextclassifier3::JniCache::Create(env));
 #ifdef TC3_USE_JAVAICU
   return reinterpret_cast<jlong>(AnnotatorJniContext::Create(
-      jni_cache, Annotator::FromFileDescriptor(fd, new UniLib(jni_cache),
-                                               new CalendarLib(jni_cache))));
+      jni_cache,
+      Annotator::FromFileDescriptor(
+          fd, std::unique_ptr<UniLib>(new UniLib(jni_cache)),
+          std::unique_ptr<CalendarLib>(new CalendarLib(jni_cache)))));
 #else
   return reinterpret_cast<jlong>(AnnotatorJniContext::Create(
       jni_cache, Annotator::FromFileDescriptor(fd)));
@@ -423,8 +425,10 @@ TC3_JNI_METHOD(jlong, TC3_ANNOTATOR_CLASS_NAME, nativeNewAnnotatorFromPath)
       libtextclassifier3::JniCache::Create(env));
 #ifdef TC3_USE_JAVAICU
   return reinterpret_cast<jlong>(AnnotatorJniContext::Create(
-      jni_cache, Annotator::FromPath(path_str, new UniLib(jni_cache),
-                                     new CalendarLib(jni_cache))));
+      jni_cache,
+      Annotator::FromPath(
+          path_str, std::unique_ptr<UniLib>(new UniLib(jni_cache)),
+          std::unique_ptr<CalendarLib>(new CalendarLib(jni_cache)))));
 #else
   return reinterpret_cast<jlong>(
       AnnotatorJniContext::Create(jni_cache, Annotator::FromPath(path_str)));
@@ -440,8 +444,9 @@ TC3_JNI_METHOD(jlong, TC3_ANNOTATOR_CLASS_NAME,
 #ifdef TC3_USE_JAVAICU
   return reinterpret_cast<jlong>(AnnotatorJniContext::Create(
       jni_cache,
-      Annotator::FromFileDescriptor(fd, offset, size, new UniLib(jni_cache),
-                                    new CalendarLib(jni_cache))));
+      Annotator::FromFileDescriptor(
+          fd, offset, size, std::unique_ptr<UniLib>(new UniLib(jni_cache)),
+          std::unique_ptr<CalendarLib>(new CalendarLib(jni_cache)))));
 #else
   return reinterpret_cast<jlong>(AnnotatorJniContext::Create(
       jni_cache, Annotator::FromFileDescriptor(fd, offset, size)));

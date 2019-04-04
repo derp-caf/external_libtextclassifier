@@ -50,8 +50,8 @@ RemoteActionTemplatesHandler::Create(
   TC3_GET_METHOD(
       remote_action_template_class_, remote_action_template_init_, "<init>",
       "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/"
-      "String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;[Ljava/"
-      "lang/String;Ljava/lang/String;[L" TC3_PACKAGE_PATH
+      "String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/"
+      "Integer;[Ljava/lang/String;Ljava/lang/String;[L" TC3_PACKAGE_PATH
           TC3_NAMED_VARIANT_CLASS_NAME_STR ";Ljava/lang/Integer;)V");
 
   TC3_GET_CLASS(named_variant_class_,
@@ -189,6 +189,8 @@ jobjectArray RemoteActionTemplatesHandler::RemoteActionTemplatesToJObjectArray(
     const jstring title_with_entity =
         AsUTF8String(remote_action.title_with_entity);
     const jstring description = AsUTF8String(remote_action.description);
+    const jstring description_with_app_name =
+        AsUTF8String(remote_action.description_with_app_name);
     const jstring action = AsUTF8String(remote_action.action);
     const jstring data = AsUTF8String(remote_action.data);
     const jstring type = AsUTF8String(remote_action.type);
@@ -200,8 +202,9 @@ jobjectArray RemoteActionTemplatesHandler::RemoteActionTemplatesToJObjectArray(
     ScopedLocalRef<jobject> result(
         jni_cache_->GetEnv()->NewObject(
             remote_action_template_class_.get(), remote_action_template_init_,
-            title_without_entity, title_with_entity, description, action, data,
-            type, flags, category, package, extra, request_code),
+            title_without_entity, title_with_entity, description,
+            description_with_app_name, action, data, type, flags, category,
+            package, extra, request_code),
         jni_cache_->GetEnv());
     if (result == nullptr) {
       return nullptr;

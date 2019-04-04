@@ -66,6 +66,7 @@ std::string TestEntitySchema() {
 }
 
 TEST(LuaRankingTest, PassThrough) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"hello there", /*type=*/"text_reply",
@@ -80,8 +81,8 @@ TEST(LuaRankingTest, PassThrough) {
     return result
   )";
 
-  EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, /*entity_data_schema=*/nullptr,
+  EXPECT_TRUE(ActionsSuggestionsLuaRanker::Create(
+                  conversation, test_snippet, /*entity_data_schema=*/nullptr,
                   /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,
@@ -91,6 +92,7 @@ TEST(LuaRankingTest, PassThrough) {
 }
 
 TEST(LuaRankingTest, Filtering) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"hello there", /*type=*/"text_reply",
@@ -101,14 +103,15 @@ TEST(LuaRankingTest, Filtering) {
     return {}
   )";
 
-  EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, /*entity_data_schema=*/nullptr,
+  EXPECT_TRUE(ActionsSuggestionsLuaRanker::Create(
+                  conversation, test_snippet, /*entity_data_schema=*/nullptr,
                   /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions, testing::IsEmpty());
 }
 
 TEST(LuaRankingTest, Duplication) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"hello there", /*type=*/"text_reply",
@@ -123,8 +126,8 @@ TEST(LuaRankingTest, Duplication) {
     return result
   )";
 
-  EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, /*entity_data_schema=*/nullptr,
+  EXPECT_TRUE(ActionsSuggestionsLuaRanker::Create(
+                  conversation, test_snippet, /*entity_data_schema=*/nullptr,
                   /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,
@@ -134,6 +137,7 @@ TEST(LuaRankingTest, Duplication) {
 }
 
 TEST(LuaRankingTest, SortByScore) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"hello there", /*type=*/"text_reply",
@@ -152,8 +156,8 @@ TEST(LuaRankingTest, SortByScore) {
     return result
   )";
 
-  EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, /*entity_data_schema=*/nullptr,
+  EXPECT_TRUE(ActionsSuggestionsLuaRanker::Create(
+                  conversation, test_snippet, /*entity_data_schema=*/nullptr,
                   /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,
@@ -163,6 +167,7 @@ TEST(LuaRankingTest, SortByScore) {
 }
 
 TEST(LuaRankingTest, SuppressType) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"hello there", /*type=*/"text_reply",
@@ -179,8 +184,38 @@ TEST(LuaRankingTest, SuppressType) {
     return result
   )";
 
-  EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, /*entity_data_schema=*/nullptr,
+  EXPECT_TRUE(ActionsSuggestionsLuaRanker::Create(
+                  conversation, test_snippet, /*entity_data_schema=*/nullptr,
+                  /*annotations_entity_data_schema=*/nullptr, &response)
+                  ->RankActions());
+  EXPECT_THAT(response.actions,
+              testing::ElementsAreArray({IsActionType("share_location"),
+                                         IsActionType("add_to_collection")}));
+}
+
+TEST(LuaRankingTest, HandlesConversation) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
+  ActionsSuggestionsResponse response;
+  response.actions = {
+      {/*response_text=*/"hello there", /*type=*/"text_reply",
+       /*score=*/1.0},
+      {/*response_text=*/"", /*type=*/"share_location", /*score=*/0.5},
+      {/*response_text=*/"", /*type=*/"add_to_collection", /*score=*/0.1}};
+  const std::string test_snippet = R"(
+    local result = {}
+    if messages[1].text ~= "hello hello" then
+      return result
+    end
+    for id, action in pairs(actions) do
+      if action.type ~= "text_reply" then
+        table.insert(result, id)
+      end
+    end
+    return result
+  )";
+
+  EXPECT_TRUE(ActionsSuggestionsLuaRanker::Create(
+                  conversation, test_snippet, /*entity_data_schema=*/nullptr,
                   /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,
@@ -201,6 +236,7 @@ TEST(LuaRankingTest, HandlesEntityData) {
   buffer->Set("test", "value_b");
   const std::string serialized_entity_data_b = buffer->Serialize();
 
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"", /*type=*/"test",
@@ -221,8 +257,8 @@ TEST(LuaRankingTest, HandlesEntityData) {
     return result
   )";
 
-  EXPECT_TRUE(ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-                  test_snippet, entity_data_schema,
+  EXPECT_TRUE(ActionsSuggestionsLuaRanker::Create(
+                  conversation, test_snippet, entity_data_schema,
                   /*annotations_entity_data_schema=*/nullptr, &response)
                   ->RankActions());
   EXPECT_THAT(response.actions,

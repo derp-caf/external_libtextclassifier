@@ -74,6 +74,7 @@ cc_defaults {
         "-Wno-unused-parameter",
         "-Wno-extern-c-compat",
 
+        "-funsigned-char",
         "-fvisibility=hidden",
         "-DLIBTEXTCLASSIFIER_UNILIB_ICU",
         "-DZLIB_CONST",

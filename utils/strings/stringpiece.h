@@ -30,7 +30,7 @@ class StringPiece {
   StringPiece() : StringPiece(nullptr, 0) {}
 
   StringPiece(const char *str)  // NOLINT(runtime/explicit)
-      : start_(str), size_(strlen(str)) {}
+      : start_(str), size_(str == nullptr ? 0 : strlen(str)) {}
 
   StringPiece(const char *start, size_t size) : start_(start), size_(size) {}
 

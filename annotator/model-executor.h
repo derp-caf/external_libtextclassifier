@@ -78,19 +78,28 @@ class TFLiteEmbeddingExecutor : public EmbeddingExecutor {
  public:
   static std::unique_ptr<TFLiteEmbeddingExecutor> FromBuffer(
       const flatbuffers::Vector<uint8_t>* model_spec_buffer, int embedding_size,
-      int quantization_bits);
+      int quantization_bits,
+      const Model_::EmbeddingPruningMask* embedding_pruning_mask = nullptr);
 
   // Embeds the sparse_features into a dense embedding and adds (+) it
   // element-wise to the dest vector.
   bool AddEmbedding(const TensorView<int>& sparse_features, float* dest,
                     int dest_size) const;
 
+  // Auxiliary function for computing prefixes used in implementation of
+  // efficient mask indexing data structure.
+  void ComputePrefixCounts();
+
+  // Function implementing mask indexing based on efficient data structure
+  int PruneBucketId(int bucket_id) const;
+
  protected:
   explicit TFLiteEmbeddingExecutor(
       std::unique_ptr<TfLiteModelExecutor> executor, int quantization_bits,
       int num_buckets, int bytes_per_embedding, int output_embedding_size,
       const TfLiteTensor* scales, const TfLiteTensor* embeddings,
-      std::unique_ptr<tflite::Interpreter> interpreter);
+      std::unique_ptr<tflite::Interpreter> interpreter,
+      const Model_::EmbeddingPruningMask* embedding_pruning_mask = nullptr);
 
   std::unique_ptr<TfLiteModelExecutor> executor_;
 
@@ -104,6 +113,13 @@ class TFLiteEmbeddingExecutor : public EmbeddingExecutor {
   // NOTE: This interpreter is used in a read-only way (as a storage for the
   // model params), thus is still thread-safe.
   std::unique_ptr<tflite::Interpreter> interpreter_;
+
+  std::vector<uint64> pruning_mask_;
+  std::vector<uint16> prefix_counts_;
+  int full_num_buckets_ = -1;
+
+  // Index of row of embedding table corresponding to all pruned buckets.
+  int pruned_row_bucket_id_ = -1;
 };
 
 }  // namespace libtextclassifier3

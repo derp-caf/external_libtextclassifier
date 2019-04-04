@@ -29,9 +29,8 @@ namespace libtextclassifier3 {
 // Lua backed action suggestion ranking.
 class ActionsSuggestionsLuaRanker : public LuaEnvironment {
  public:
-  static std::unique_ptr<ActionsSuggestionsLuaRanker>
-  CreateActionsSuggestionsLuaRanker(
-      const std::string& ranker_code,
+  static std::unique_ptr<ActionsSuggestionsLuaRanker> Create(
+      const Conversation& conversation, const std::string& ranker_code,
       const reflection::Schema* entity_data_schema,
       const reflection::Schema* annotations_entity_data_schema,
       ActionsSuggestionsResponse* response);
@@ -40,23 +39,27 @@ class ActionsSuggestionsLuaRanker : public LuaEnvironment {
 
  private:
   explicit ActionsSuggestionsLuaRanker(
-      const std::string& ranker_code,
+      const Conversation& conversation, const std::string& ranker_code,
       const reflection::Schema* entity_data_schema,
       const reflection::Schema* annotations_entity_data_schema,
       ActionsSuggestionsResponse* response)
-      : ranker_code_(ranker_code),
+      : conversation_(conversation),
+        ranker_code_(ranker_code),
         response_(response),
         actions_iterator_(entity_data_schema, annotations_entity_data_schema,
-                          this) {}
+                          this),
+        conversation_iterator_(annotations_entity_data_schema, this) {}
 
   bool Initialize();
 
   // Reads ranking results from the lua stack.
   int ReadActionsRanking();
 
+  const Conversation& conversation_;
   const std::string& ranker_code_;
   ActionsSuggestionsResponse* response_;
   const ActionsIterator actions_iterator_;
+  const ConversationIterator conversation_iterator_;
 };
 
 }  // namespace libtextclassifier3

@@ -19,6 +19,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include "utils/base/integral_types.h"
 #include "utils/sentencepiece/sorted_strings_table.h"
 
 namespace libtextclassifier3 {
@@ -26,7 +27,7 @@ namespace {
 
 TEST(SortedStringsTest, Lookup) {
   const char pieces[] = "hell\0hello\0o\0there\0";
-  const int offsets[] = {0, 5, 11, 13};
+  const uint32 offsets[] = {0, 5, 11, 13};
 
   SortedStringsTable table(/*num_pieces=*/4, offsets, StringPiece(pieces, 18),
                            /*use_linear_scan_threshold=*/1);

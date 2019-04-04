@@ -69,7 +69,7 @@ bool NumberAnnotator::FindAll(const UnicodeText& context,
       classification.priority_score = options_->priority_score();
 
       AnnotatedSpan annotated_span;
-      annotated_span.span = {token.start - num_prefix_codepoints,
+      annotated_span.span = {token.start + num_prefix_codepoints,
                              token.end - num_suffix_codepoints};
       annotated_span.classification.push_back(classification);
 

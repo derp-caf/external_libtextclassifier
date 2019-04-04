@@ -20,6 +20,7 @@
 #include <functional>
 #include <vector>
 
+#include "utils/base/integral_types.h"
 #include "utils/sentencepiece/matcher.h"
 #include "utils/strings/stringpiece.h"
 
@@ -36,7 +37,7 @@ namespace libtextclassifier3 {
 //     switching to a linear sweep for prefix match testing.
 class SortedStringsTable : public SentencePieceMatcher {
  public:
-  SortedStringsTable(const int num_pieces, const int* offsets,
+  SortedStringsTable(const int num_pieces, const uint32* offsets,
                      StringPiece pieces,
                      const int use_linear_scan_threshold = 10)
       : num_pieces_(num_pieces),
@@ -56,7 +57,7 @@ class SortedStringsTable : public SentencePieceMatcher {
       StringPiece input, const std::function<void(TrieMatch)>& update_fn) const;
 
   const int num_pieces_;
-  const int* offsets_;
+  const uint32* offsets_;
   const StringPiece pieces_;
   const int use_linear_scan_threshold_;
 };

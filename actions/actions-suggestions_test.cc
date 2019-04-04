@@ -74,7 +74,7 @@ TEST_F(ActionsSuggestionsTest, SuggestActions) {
           {{{/*user_id=*/1, "Where are you?", /*reference_time_ms_utc=*/0,
              /*reference_timezone=*/"Europe/Zurich",
              /*annotations=*/{}, /*locales=*/"en"}}});
-  EXPECT_EQ(response.actions.size(), 4);
+  EXPECT_EQ(response.actions.size(), 3 /* share_location + 2 smart replies*/);
 }
 
 TEST_F(ActionsSuggestionsTest, SuggestNoActionsForUnknownLocale) {
@@ -99,7 +99,7 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsFromAnnotations) {
              /*reference_timezone=*/"Europe/Zurich",
              /*annotations=*/{annotation},
              /*locales=*/"en"}}});
-  ASSERT_EQ(response.actions.size(), 5);
+  ASSERT_GE(response.actions.size(), 1);
   EXPECT_EQ(response.actions.front().type, "view_map");
   EXPECT_EQ(response.actions.front().score, 1.0);
 }
@@ -144,7 +144,7 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsFromAnnotationsWithEntityData) {
              /*reference_timezone=*/"Europe/Zurich",
              /*annotations=*/{annotation},
              /*locales=*/"en"}}});
-  ASSERT_GT(response.actions.size(), 1);
+  ASSERT_GE(response.actions.size(), 1);
   EXPECT_EQ(response.actions.front().type, "save_location");
   EXPECT_EQ(response.actions.front().score, 1.0);
 
@@ -229,6 +229,168 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsAnnotationsNoDeduplication) {
   EXPECT_EQ(response.actions[2].score, 2.0);
 }
 
+ActionsSuggestionsResponse TestSuggestActionsFromAnnotations(
+    const std::function<void(ActionsModelT*)>& set_config_fn,
+    const UniLib* unilib = nullptr) {
+  const std::string actions_model_string =
+      ReadFile(GetModelPath() + kModelFileName);
+  std::unique_ptr<ActionsModelT> actions_model =
+      UnPackActionsModel(actions_model_string.c_str());
+
+  // Set custom config.
+  set_config_fn(actions_model.get());
+
+  // Disable smart reply for easier testing.
+  actions_model->preconditions->min_smart_reply_triggering_score = 1.0;
+
+  flatbuffers::FlatBufferBuilder builder;
+  FinishActionsModelBuffer(builder,
+                           ActionsModel::Pack(builder, actions_model.get()));
+  std::unique_ptr<ActionsSuggestions> actions_suggestions =
+      ActionsSuggestions::FromUnownedBuffer(
+          reinterpret_cast<const uint8_t*>(builder.GetBufferPointer()),
+          builder.GetSize(), unilib);
+
+  AnnotatedSpan flight_annotation;
+  flight_annotation.span = {15, 19};
+  flight_annotation.classification = {ClassificationResult("flight", 2.0)};
+  AnnotatedSpan email_annotation;
+  email_annotation.span = {0, 16};
+  email_annotation.classification = {ClassificationResult("email", 1.0)};
+
+  return actions_suggestions->SuggestActions(
+      {{{/*user_id=*/ActionsSuggestions::kLocalUserId,
+         "hehe@android.com",
+         /*reference_time_ms_utc=*/0,
+         /*reference_timezone=*/"Europe/Zurich",
+         /*annotations=*/
+         {email_annotation},
+         /*locales=*/"en"},
+        {/*user_id=*/2,
+         "yoyo@android.com",
+         /*reference_time_ms_utc=*/0,
+         /*reference_timezone=*/"Europe/Zurich",
+         /*annotations=*/
+         {email_annotation},
+         /*locales=*/"en"},
+        {/*user_id=*/1,
+         "test@android.com",
+         /*reference_time_ms_utc=*/0,
+         /*reference_timezone=*/"Europe/Zurich",
+         /*annotations=*/
+         {email_annotation},
+         /*locales=*/"en"},
+        {/*user_id=*/1,
+         "I am on flight LX38.",
+         /*reference_time_ms_utc=*/0,
+         /*reference_timezone=*/"Europe/Zurich",
+         /*annotations=*/
+         {flight_annotation},
+         /*locales=*/"en"}}});
+}
+
+TEST_F(ActionsSuggestionsTest, SuggestActionsWithAnnotationsOnlyLastMessage) {
+  const ActionsSuggestionsResponse response = TestSuggestActionsFromAnnotations(
+      [](ActionsModelT* actions_model) {
+        actions_model->annotation_actions_spec->include_local_user_messages =
+            false;
+        actions_model->annotation_actions_spec->only_until_last_sent = true;
+        actions_model->annotation_actions_spec->max_history_from_any_person = 1;
+        actions_model->annotation_actions_spec->max_history_from_last_person =
+            1;
+      },
+      &unilib_);
+  EXPECT_EQ(response.actions.size(), 1);
+  EXPECT_EQ(response.actions[0].type, "track_flight");
+}
+
+TEST_F(ActionsSuggestionsTest, SuggestActionsWithAnnotationsOnlyLastPerson) {
+  const ActionsSuggestionsResponse response = TestSuggestActionsFromAnnotations(
+      [](ActionsModelT* actions_model) {
+        actions_model->annotation_actions_spec->include_local_user_messages =
+            false;
+        actions_model->annotation_actions_spec->only_until_last_sent = true;
+        actions_model->annotation_actions_spec->max_history_from_any_person = 1;
+        actions_model->annotation_actions_spec->max_history_from_last_person =
+            3;
+      },
+      &unilib_);
+  EXPECT_EQ(response.actions.size(), 2);
+  EXPECT_EQ(response.actions[0].type, "track_flight");
+  EXPECT_EQ(response.actions[1].type, "add_contact");
+}
+
+TEST_F(ActionsSuggestionsTest, SuggestActionsWithAnnotationsFromAny) {
+  const ActionsSuggestionsResponse response = TestSuggestActionsFromAnnotations(
+      [](ActionsModelT* actions_model) {
+        actions_model->annotation_actions_spec->include_local_user_messages =
+            false;
+        actions_model->annotation_actions_spec->only_until_last_sent = true;
+        actions_model->annotation_actions_spec->max_history_from_any_person = 2;
+        actions_model->annotation_actions_spec->max_history_from_last_person =
+            1;
+      },
+      &unilib_);
+  EXPECT_EQ(response.actions.size(), 2);
+  EXPECT_EQ(response.actions[0].type, "track_flight");
+  EXPECT_EQ(response.actions[1].type, "add_contact");
+}
+
+TEST_F(ActionsSuggestionsTest,
+       SuggestActionsWithAnnotationsFromAnyManyMessages) {
+  const ActionsSuggestionsResponse response = TestSuggestActionsFromAnnotations(
+      [](ActionsModelT* actions_model) {
+        actions_model->annotation_actions_spec->include_local_user_messages =
+            false;
+        actions_model->annotation_actions_spec->only_until_last_sent = true;
+        actions_model->annotation_actions_spec->max_history_from_any_person = 3;
+        actions_model->annotation_actions_spec->max_history_from_last_person =
+            1;
+      },
+      &unilib_);
+  EXPECT_EQ(response.actions.size(), 3);
+  EXPECT_EQ(response.actions[0].type, "track_flight");
+  EXPECT_EQ(response.actions[1].type, "add_contact");
+  EXPECT_EQ(response.actions[2].type, "add_contact");
+}
+
+TEST_F(ActionsSuggestionsTest,
+       SuggestActionsWithAnnotationsFromAnyManyMessagesButNotLocalUser) {
+  const ActionsSuggestionsResponse response = TestSuggestActionsFromAnnotations(
+      [](ActionsModelT* actions_model) {
+        actions_model->annotation_actions_spec->include_local_user_messages =
+            false;
+        actions_model->annotation_actions_spec->only_until_last_sent = true;
+        actions_model->annotation_actions_spec->max_history_from_any_person = 5;
+        actions_model->annotation_actions_spec->max_history_from_last_person =
+            1;
+      },
+      &unilib_);
+  EXPECT_EQ(response.actions.size(), 3);
+  EXPECT_EQ(response.actions[0].type, "track_flight");
+  EXPECT_EQ(response.actions[1].type, "add_contact");
+  EXPECT_EQ(response.actions[2].type, "add_contact");
+}
+
+TEST_F(ActionsSuggestionsTest,
+       SuggestActionsWithAnnotationsFromAnyManyMessagesAlsoFromLocalUser) {
+  const ActionsSuggestionsResponse response = TestSuggestActionsFromAnnotations(
+      [](ActionsModelT* actions_model) {
+        actions_model->annotation_actions_spec->include_local_user_messages =
+            true;
+        actions_model->annotation_actions_spec->only_until_last_sent = false;
+        actions_model->annotation_actions_spec->max_history_from_any_person = 5;
+        actions_model->annotation_actions_spec->max_history_from_last_person =
+            1;
+      },
+      &unilib_);
+  EXPECT_EQ(response.actions.size(), 4);
+  EXPECT_EQ(response.actions[0].type, "track_flight");
+  EXPECT_EQ(response.actions[1].type, "add_contact");
+  EXPECT_EQ(response.actions[2].type, "add_contact");
+  EXPECT_EQ(response.actions[3].type, "add_contact");
+}
+
 void TestSuggestActionsWithThreshold(
     const std::function<void(ActionsModelT*)>& set_value_fn,
     const UniLib* unilib = nullptr, const int expected_size = 0,
@@ -252,7 +414,7 @@ void TestSuggestActionsWithThreshold(
              /*reference_time_ms_utc=*/0,
              /*reference_timezone=*/"Europe/Zurich",
              /*annotations=*/{}, /*locales=*/"en"}}});
-  EXPECT_EQ(response.actions.size(), expected_size);
+  EXPECT_LE(response.actions.size(), expected_size);
 }
 
 TEST_F(ActionsSuggestionsTest, SuggestActionsWithTriggeringScore) {
@@ -382,10 +544,8 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsLowConfidenceInputOutput) {
              /*reference_time_ms_utc=*/0,
              /*reference_timezone=*/"Europe/Zurich",
              /*annotations=*/{}, /*locales=*/"en"}}});
-  EXPECT_THAT(response.actions,
-              ElementsAre(testing::Field(&ActionSuggestion::response_text,
-                                         "General Kenobi!"),
-                          _, _, _));
+  ASSERT_GE(response.actions.size(), 1);
+  EXPECT_EQ(response.actions[0].response_text, "General Kenobi!");
 }
 
 TEST_F(ActionsSuggestionsTest,
@@ -394,6 +554,8 @@ TEST_F(ActionsSuggestionsTest,
       ReadFile(GetModelPath() + kModelFileName);
   std::unique_ptr<ActionsModelT> actions_model =
       UnPackActionsModel(actions_model_string.c_str());
+  actions_model->low_confidence_rules.reset();
+
   // Add custom triggering rule.
   actions_model->rules.reset(new RulesModelT());
   actions_model->rules->rule.emplace_back(new RulesModel_::RuleT);
@@ -451,10 +613,8 @@ TEST_F(ActionsSuggestionsTest,
              /*reference_time_ms_utc=*/0,
              /*reference_timezone=*/"Europe/Zurich",
              /*annotations=*/{}, /*locales=*/"en"}}});
-  EXPECT_THAT(response.actions,
-              ElementsAre(testing::Field(&ActionSuggestion::response_text,
-                                         "General Kenobi!"),
-                          _, _, _));
+  ASSERT_GE(response.actions.size(), 1);
+  EXPECT_EQ(response.actions[0].response_text, "General Kenobi!");
 }
 #endif
 
@@ -514,7 +674,8 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsWithLongerConversation) {
       ClassificationResult(Collections::Address(), 1.0)};
   const ActionsSuggestionsResponse& response =
       actions_suggestions->SuggestActions(
-          {{{/*user_id=*/0, "hi, how are you?", /*reference_time_ms_utc=*/10000,
+          {{{/*user_id=*/ActionsSuggestions::kLocalUserId, "hi, how are you?",
+             /*reference_time_ms_utc=*/10000,
              /*reference_timezone=*/"Europe/Zurich",
              /*annotations=*/{}, /*locales=*/"en"},
             {/*user_id=*/1, "good! are you at home?",
@@ -522,9 +683,9 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsWithLongerConversation) {
              /*reference_timezone=*/"Europe/Zurich",
              /*annotations=*/{annotation},
              /*locales=*/"en"}}});
-  ASSERT_EQ(response.actions.size(), 1);
-  EXPECT_EQ(response.actions.back().type, "view_map");
-  EXPECT_EQ(response.actions.back().score, 1.0);
+  ASSERT_GE(response.actions.size(), 1);
+  EXPECT_EQ(response.actions[0].type, "view_map");
+  EXPECT_EQ(response.actions[0].score, 1.0);
 }
 
 TEST_F(ActionsSuggestionsTest, CreateActionsFromClassificationResult) {
@@ -542,8 +703,7 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromClassificationResult) {
              /*annotations=*/{annotation},
              /*locales=*/"en"}}});
 
-  ASSERT_EQ(response.actions.size(),
-            4 /* smart replies + actions from annotations*/);
+  ASSERT_GE(response.actions.size(), 2);
   EXPECT_EQ(response.actions[0].type, "track_flight");
   EXPECT_EQ(response.actions[0].score, 1.0);
   EXPECT_EQ(response.actions[0].annotations.size(), 1);
@@ -573,16 +733,16 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromRules) {
 
   // Set capturing groups for entity data.
   rule->actions.back()->capturing_group.emplace_back(
-      new RulesModel_::Rule_::RuleActionSpec_::CapturingGroupT);
-  RulesModel_::Rule_::RuleActionSpec_::CapturingGroupT* greeting_group =
+      new RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroupT);
+  RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroupT* greeting_group =
       rule->actions.back()->capturing_group.back().get();
   greeting_group->group_id = 0;
   greeting_group->entity_field.reset(new FlatbufferFieldPathT);
   greeting_group->entity_field->field.emplace_back(new FlatbufferFieldT);
   greeting_group->entity_field->field.back()->field_name = "greeting";
   rule->actions.back()->capturing_group.emplace_back(
-      new RulesModel_::Rule_::RuleActionSpec_::CapturingGroupT);
-  RulesModel_::Rule_::RuleActionSpec_::CapturingGroupT* location_group =
+      new RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroupT);
+  RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroupT* location_group =
       rule->actions.back()->capturing_group.back().get();
   location_group->group_id = 1;
   location_group->entity_field.reset(new FlatbufferFieldPathT);
@@ -629,13 +789,54 @@ TEST_F(ActionsSuggestionsTest, CreateActionsFromRules) {
             "Kenobi");
 }
 
+TEST_F(ActionsSuggestionsTest, CreatesTextRepliesFromRules) {
+  const std::string actions_model_string =
+      ReadFile(GetModelPath() + kModelFileName);
+  std::unique_ptr<ActionsModelT> actions_model =
+      UnPackActionsModel(actions_model_string.c_str());
+  ASSERT_TRUE(DecompressActionsModel(actions_model.get()));
+
+  actions_model->rules.reset(new RulesModelT());
+  actions_model->rules->rule.emplace_back(new RulesModel_::RuleT);
+  RulesModel_::RuleT* rule = actions_model->rules->rule.back().get();
+  rule->pattern = "(?i:reply (stop|quit|end) (?:to|for) )";
+  rule->actions.emplace_back(new RulesModel_::Rule_::RuleActionSpecT);
+
+  // Set capturing groups for entity data.
+  rule->actions.back()->capturing_group.emplace_back(
+      new RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroupT);
+  RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroupT* code_group =
+      rule->actions.back()->capturing_group.back().get();
+  code_group->group_id = 1;
+  code_group->text_reply.reset(new ActionSuggestionSpecT);
+  code_group->text_reply->score = 1.0f;
+  code_group->text_reply->priority_score = 1.0f;
+
+  flatbuffers::FlatBufferBuilder builder;
+  FinishActionsModelBuffer(builder,
+                           ActionsModel::Pack(builder, actions_model.get()));
+  std::unique_ptr<ActionsSuggestions> actions_suggestions =
+      ActionsSuggestions::FromUnownedBuffer(
+          reinterpret_cast<const uint8_t*>(builder.GetBufferPointer()),
+          builder.GetSize(), &unilib_);
+
+  const ActionsSuggestionsResponse& response =
+      actions_suggestions->SuggestActions(
+          {{{/*user_id=*/1,
+             "visit test.com or reply STOP to cancel your subscription",
+             /*reference_time_ms_utc=*/0,
+             /*reference_timezone=*/"Europe/Zurich",
+             /*annotations=*/{}, /*locales=*/"en"}}});
+  EXPECT_GE(response.actions.size(), 1);
+  EXPECT_EQ(response.actions[0].response_text, "STOP");
+}
+
 TEST_F(ActionsSuggestionsTest, DeduplicateActions) {
   std::unique_ptr<ActionsSuggestions> actions_suggestions = LoadTestModel();
   ActionsSuggestionsResponse response = actions_suggestions->SuggestActions(
       {{{/*user_id=*/1, "Where are you?", /*reference_time_ms_utc=*/0,
          /*reference_timezone=*/"Europe/Zurich",
          /*annotations=*/{}, /*locales=*/"en"}}});
-  EXPECT_EQ(response.actions.size(), 4);
 
   // Check that the location sharing model triggered.
   bool has_location_sharing_action = false;
@@ -646,6 +847,7 @@ TEST_F(ActionsSuggestionsTest, DeduplicateActions) {
     }
   }
   EXPECT_TRUE(has_location_sharing_action);
+  const int num_actions = response.actions.size();
 
   // Add custom rule for location sharing.
   const std::string actions_model_string =
@@ -677,7 +879,7 @@ TEST_F(ActionsSuggestionsTest, DeduplicateActions) {
       {{{/*user_id=*/1, "Where are you?", /*reference_time_ms_utc=*/0,
          /*reference_timezone=*/"Europe/Zurich",
          /*annotations=*/{}, /*locales=*/"en"}}});
-  EXPECT_EQ(response.actions.size(), 4);
+  EXPECT_EQ(response.actions.size(), num_actions);
 }
 
 TEST_F(ActionsSuggestionsTest, DeduplicateConflictingActions) {
@@ -694,7 +896,7 @@ TEST_F(ActionsSuggestionsTest, DeduplicateConflictingActions) {
          /*locales=*/"en"}}});
 
   // Check that the phone actions are present.
-  EXPECT_EQ(response.actions.size(), 4 /* track_flight + 3 smart replies */);
+  EXPECT_GE(response.actions.size(), 1);
   EXPECT_EQ(response.actions[0].type, "track_flight");
 
   // Add custom rule.
@@ -715,8 +917,8 @@ TEST_F(ActionsSuggestionsTest, DeduplicateConflictingActions) {
   action->priority_score = 2.0f;
   action->type = "test_code";
   rule->actions.back()->capturing_group.emplace_back(
-      new RulesModel_::Rule_::RuleActionSpec_::CapturingGroupT);
-  RulesModel_::Rule_::RuleActionSpec_::CapturingGroupT* code_group =
+      new RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroupT);
+  RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroupT* code_group =
       rule->actions.back()->capturing_group.back().get();
   code_group->group_id = 1;
   code_group->annotation_name = "code";
@@ -735,7 +937,7 @@ TEST_F(ActionsSuggestionsTest, DeduplicateConflictingActions) {
          /*reference_timezone=*/"Europe/Zurich",
          /*annotations=*/{annotation},
          /*locales=*/"en"}}});
-  EXPECT_EQ(response.actions.size(), 4 /* test_code + 3 smart replies */);
+  EXPECT_GE(response.actions.size(), 1);
   EXPECT_EQ(response.actions[0].type, "test_code");
 }
 #endif

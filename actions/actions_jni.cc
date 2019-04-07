@@ -321,8 +321,9 @@ TC3_JNI_METHOD(jlong, TC3_ACTIONS_CLASS_NAME, nativeNewActionsModel)
   }
 #ifdef TC3_UNILIB_JAVAICU
   return reinterpret_cast<jlong>(ActionsSuggestionsJniContext::Create(
-      jni_cache, ActionsSuggestions::FromFileDescriptor(
-                     fd, new UniLib(jni_cache), preconditions)));
+      jni_cache,
+      ActionsSuggestions::FromFileDescriptor(
+          fd, std::unique_ptr<UniLib>(new UniLib(jni_cache)), preconditions)));
 #else
   return reinterpret_cast<jlong>(ActionsSuggestionsJniContext::Create(
       jni_cache, ActionsSuggestions::FromFileDescriptor(fd, /*unilib=*/nullptr,
@@ -344,8 +345,9 @@ TC3_JNI_METHOD(jlong, TC3_ACTIONS_CLASS_NAME, nativeNewActionsModelFromPath)
   }
 #ifdef TC3_UNILIB_JAVAICU
   return reinterpret_cast<jlong>(ActionsSuggestionsJniContext::Create(
-      jni_cache, ActionsSuggestions::FromPath(path_str, new UniLib(jni_cache),
-                                              preconditions)));
+      jni_cache, ActionsSuggestions::FromPath(
+                     path_str, std::unique_ptr<UniLib>(new UniLib(jni_cache)),
+                     preconditions)));
 #else
   return reinterpret_cast<jlong>(ActionsSuggestionsJniContext::Create(
       jni_cache, ActionsSuggestions::FromPath(path_str, /*unilib=*/nullptr,
@@ -374,8 +376,7 @@ TC3_JNI_METHOD(jobjectArray, TC3_ACTIONS_CLASS_NAME, nativeSuggestActions)
       annotator ? annotator->entity_data_schema() : nullptr;
   return ActionSuggestionsToJObjectArray(
       env, context, app_context, anntotations_entity_data_schema,
-      response.actions, conversation,
-      /*device_locales=*/nullptr, generate_intents);
+      response.actions, conversation, device_locales, generate_intents);
 }
 
 TC3_JNI_METHOD(void, TC3_ACTIONS_CLASS_NAME, nativeCloseActionsModel)

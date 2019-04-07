@@ -189,6 +189,10 @@ table ClassificationModelOptions {
 namespace libtextclassifier3;
 table VerificationOptions {
   verify_luhn_checksum:bool = false;
+
+  // Lua verifier to use.
+  // Index of the lua verifier in the model.
+  lua_verifier:int = -1;
 }
 
 // Behaviour of capturing groups.
@@ -243,6 +247,17 @@ table RegexModel {
 
   // If true, will compile the regexes only on first use.
   lazy_regex_compilation:bool = true;
+
+  // Lua scripts for match verification.
+  // The verifier can access:
+  // * `context`: The context as a string.
+  // * `match`: The groups of the regex match as an array, each group gives
+  // * `begin`: span start
+  // * `end`: span end
+  // * `text`: the text
+  // The verifier is expected to return a boolean, indicating whether the
+  // verification succeeded or not.
+  lua_verifier:[string];
 }
 
 // List of regex patterns.
@@ -333,9 +348,14 @@ table ModelTriggeringOptions {
   // The modes for which to enable the models.
   enabled_modes:ModeFlag = ALL;
 
-  // Comma-separated list of locales that dictionary classification supports as
-  // BCP 47 tags.
+  // Comma-separated list of locales (BCP 47 tags) that dictionary
+  // classification supports.
   dictionary_locales:string;
+
+  // Comma-separated list of locales (BCP 47 tags) that the model supports, that
+  // are used to prevent  triggering on input in unsupported languages. If
+  // empty, the model will trigger on all inputs.
+  locales:string;
 }
 
 // Options controlling the output of the classifier.
@@ -350,6 +370,23 @@ table OutputOptions {
 
   filtered_collections_classification:[string];
   filtered_collections_selection:[string];
+}
+
+namespace libtextclassifier3.Model_;
+table EmbeddingPruningMask {
+  // If true, use pruning mask. In this case, we use mask
+  // pruning_mask to determine the mapping of hashed-charactergrams.
+  enabled:bool;
+
+  // Packing of the binary pruning mask into uint64 values.
+  pruning_mask:[ulong] (force_align: 16);
+
+  // Number of buckets before pruning.
+  full_num_buckets:int;
+
+  // Index of row of compressed embedding matrix to which all pruned buckets
+  // are mapped.
+  pruned_row_bucket_id:int;
 }
 
 namespace libtextclassifier3;
@@ -407,6 +444,13 @@ table Model {
 
   number_annotator_options:NumberAnnotatorOptions;
   duration_annotator_options:DurationAnnotatorOptions;
+
+  // Comma-separated list of locales (BCP 47 tags) that the model supports, that
+  // are used to prevent  triggering on input in unsupported languages. If
+  // empty, the model will trigger on all inputs.
+  triggering_locales:string;
+
+  embedding_pruning_mask:Model_.EmbeddingPruningMask;
 }
 
 // Method for selecting the center token.

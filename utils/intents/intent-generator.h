@@ -33,6 +33,11 @@ struct RemoteActionTemplate {
   // Description shown for the action (see: RemoteAction.getContentDescription).
   Optional<std::string> description;
 
+  // Description shown for the action (see: RemoteAction.getContentDescription)
+  // when app name is available. Caller is expected to replace the placeholder
+  // by the name of the app that is going to handle the action.
+  Optional<std::string> description_with_app_name;
+
   // The action to set on the Intent (see: Intent.setAction).
   Optional<std::string> action;
 

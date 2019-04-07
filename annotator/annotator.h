@@ -166,15 +166,27 @@ class Annotator {
   static std::unique_ptr<Annotator> FromScopedMmap(
       std::unique_ptr<ScopedMmap>* mmap, const UniLib* unilib = nullptr,
       const CalendarLib* calendarlib = nullptr);
+  static std::unique_ptr<Annotator> FromScopedMmap(
+      std::unique_ptr<ScopedMmap>* mmap, std::unique_ptr<UniLib> unilib,
+      std::unique_ptr<CalendarLib> calendarlib);
   static std::unique_ptr<Annotator> FromFileDescriptor(
       int fd, int offset, int size, const UniLib* unilib = nullptr,
       const CalendarLib* calendarlib = nullptr);
   static std::unique_ptr<Annotator> FromFileDescriptor(
+      int fd, int offset, int size, std::unique_ptr<UniLib> unilib,
+      std::unique_ptr<CalendarLib> calendarlib);
+  static std::unique_ptr<Annotator> FromFileDescriptor(
       int fd, const UniLib* unilib = nullptr,
       const CalendarLib* calendarlib = nullptr);
+  static std::unique_ptr<Annotator> FromFileDescriptor(
+      int fd, std::unique_ptr<UniLib> unilib,
+      std::unique_ptr<CalendarLib> calendarlib);
   static std::unique_ptr<Annotator> FromPath(
       const std::string& path, const UniLib* unilib = nullptr,
       const CalendarLib* calendarlib = nullptr);
+  static std::unique_ptr<Annotator> FromPath(
+      const std::string& path, std::unique_ptr<UniLib> unilib,
+      std::unique_ptr<CalendarLib> calendarlib);
 
   // Returns true if the model is ready for use.
   bool IsInitialized() { return initialized_; }
@@ -243,11 +255,14 @@ class Annotator {
   // Takes ownership of 'mmap', and thus owns the buffer that backs 'model'.
   Annotator(std::unique_ptr<ScopedMmap>* mmap, const Model* model,
             const UniLib* unilib, const CalendarLib* calendarlib);
+  Annotator(std::unique_ptr<ScopedMmap>* mmap, const Model* model,
+            std::unique_ptr<UniLib> unilib,
+            std::unique_ptr<CalendarLib> calendarlib);
 
   // Constructs, validates and initializes text classifier from given model.
   // Does not own the buffer that backs 'model'.
-  explicit Annotator(const Model* model, const UniLib* unilib,
-                     const CalendarLib* calendarlib);
+  Annotator(const Model* model, const UniLib* unilib,
+            const CalendarLib* calendarlib);
 
   // Checks that model contains all required fields, and initializes internal
   // datastructures.
@@ -283,11 +298,11 @@ class Annotator {
   // Gets selection candidates from the ML model.
   // Provides the tokens produced during tokenization of the context string for
   // reuse.
-  bool ModelSuggestSelection(const UnicodeText& context_unicode,
-                             CodepointSpan click_indices,
-                             InterpreterManager* interpreter_manager,
-                             std::vector<Token>* tokens,
-                             std::vector<AnnotatedSpan>* result) const;
+  bool ModelSuggestSelection(
+      const UnicodeText& context_unicode, CodepointSpan click_indices,
+      const std::vector<Locale>& detected_text_language_tags,
+      InterpreterManager* interpreter_manager, std::vector<Token>* tokens,
+      std::vector<AnnotatedSpan>* result) const;
 
   // Classifies the selected text given the context string with the
   // classification model.
@@ -410,6 +425,12 @@ class Annotator {
       const RegexModel_::Pattern* pattern, UniLib::RegexMatcher* matcher,
       std::string* serialized_entity_data) const;
 
+  // Verifies a regex match and returns true if verification was successful.
+  bool VerifyRegexMatchCandidate(
+      const std::string& context,
+      const VerificationOptions* verification_options, const std::string& match,
+      const UniLib::RegexMatcher* matcher) const;
+
   const Model* model_;
 
   std::unique_ptr<const ModelExecutor> selection_executor_;
@@ -457,8 +478,11 @@ class Annotator {
   const reflection::Schema* entity_data_schema_;
   std::unique_ptr<ReflectiveFlatbufferBuilder> entity_data_builder_;
 
-  // Locales supported by the model.
-  std::vector<Locale> model_locales_;
+  // Locales for which the entire model triggers.
+  std::vector<Locale> model_triggering_locales_;
+
+  // Locales for which the ML model triggers.
+  std::vector<Locale> ml_model_triggering_locales_;
 
   // Locales that the dictionary classification support.
   std::vector<Locale> dictionary_locales_;

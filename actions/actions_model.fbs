@@ -289,6 +289,22 @@ table AnnotationActionsSpec {
 
   // Annotation usecase to specify for text annotation.
   annotation_usecase:AnnotationUsecase = ANNOTATION_USECASE_SMART;
+
+  // Maximum number of recent messages to consider from any person.
+  // We consider at most `max_history_from_any_person` many recent messages if
+  // they were received from different users or at most the maximum of this and
+  // `max_history_from_last_person` if they are all from the same user.
+  max_history_from_any_person:int = 1;
+
+  // Maximum number of recent messages to consider from the last person.
+  max_history_from_last_person:int = 1;
+
+  // Whether to include messages from the local user.
+  include_local_user_messages:bool = false;
+
+  // Whether to only consider messages up to the last one sent by the local
+  // user.
+  only_until_last_sent:bool = true;
 }
 
 // Ranking options.
@@ -316,7 +332,7 @@ table RankingOptions {
 
 // Entity data to set from capturing groups.
 namespace libtextclassifier3.RulesModel_.Rule_.RuleActionSpec_;
-table CapturingGroup {
+table RuleCapturingGroup {
   // The id of group.
   group_id:int;
 
@@ -329,6 +345,10 @@ table CapturingGroup {
   annotation_type:string;
 
   annotation_name:string;
+
+  // If set, the capturing group text will be used to create a text
+  // reply.
+  text_reply:ActionSuggestionSpec;
 }
 
 // The actions to produce upon triggering.
@@ -337,7 +357,7 @@ table RuleActionSpec {
   // The action.
   action:ActionSuggestionSpec;
 
-  capturing_group:[RuleActionSpec_.CapturingGroup];
+  capturing_group:[RuleActionSpec_.RuleCapturingGroup];
 }
 
 // List of regular expression matchers.

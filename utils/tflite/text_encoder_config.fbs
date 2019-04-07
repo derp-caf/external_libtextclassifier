@@ -60,6 +60,6 @@ table TextEncoderConfig {
 
   // Serialized sentence pieces.
   pieces:string;
-  pieces_offsets:[int32];
+  pieces_offsets:[uint32];
   matcher_type: SentencePieceMatcherType = MAPPED_TRIE;
 }

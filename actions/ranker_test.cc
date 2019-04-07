@@ -35,6 +35,7 @@ MATCHER_P3(IsAction, type, response_text, score, "") {
 MATCHER_P(IsActionType, type, "") { return testing::Value(arg.type, type); }
 
 TEST(RankingTest, DeduplicationSmartReply) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"hello there", /*type=*/"text_reply",
@@ -49,13 +50,14 @@ TEST(RankingTest, DeduplicationSmartReply) {
       flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
       /*decompressor=*/nullptr, /*smart_reply_action_type=*/"text_reply");
 
-  ranker->RankActions(&response);
+  ranker->RankActions(conversation, &response);
   EXPECT_THAT(
       response.actions,
       testing::ElementsAreArray({IsAction("text_reply", "hello there", 1.0)}));
 }
 
 TEST(RankingTest, DeduplicationExtraData) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"hello there", /*type=*/"text_reply",
@@ -75,7 +77,7 @@ TEST(RankingTest, DeduplicationExtraData) {
       flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
       /*decompressor=*/nullptr, /*smart_reply_action_type=*/"text_reply");
 
-  ranker->RankActions(&response);
+  ranker->RankActions(conversation, &response);
   EXPECT_THAT(
       response.actions,
       testing::ElementsAreArray({IsAction("text_reply", "hello there", 1.0),
@@ -84,6 +86,8 @@ TEST(RankingTest, DeduplicationExtraData) {
 }
 
 TEST(RankingTest, DeduplicationAnnotations) {
+  const Conversation conversation = {
+      {{/*user_id=*/1, "742 Evergreen Terrace, the number is 1-800-TESTING"}}};
   ActionsSuggestionsResponse response;
   {
     ActionSuggestionAnnotation annotation;
@@ -109,7 +113,7 @@ TEST(RankingTest, DeduplicationAnnotations) {
   }
   {
     ActionSuggestionAnnotation annotation;
-    annotation.span = {/*message_index=*/0, /*span=*/{40, 53},
+    annotation.span = {/*message_index=*/0, /*span=*/{37, 50},
                        /*text=*/"1-800-TESTING"};
     annotation.entity = ClassificationResult("phone", 0.5);
     response.actions.push_back({/*response_text=*/"",
@@ -127,13 +131,15 @@ TEST(RankingTest, DeduplicationAnnotations) {
       flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
       /*decompressor=*/nullptr, /*smart_reply_action_type=*/"text_reply");
 
-  ranker->RankActions(&response);
+  ranker->RankActions(conversation, &response);
   EXPECT_THAT(response.actions,
               testing::ElementsAreArray({IsAction("view_map", "", 1.0),
                                          IsAction("call_phone", "", 0.5)}));
 }
 
 TEST(RankingTest, DeduplicationAnnotationsByPriorityScore) {
+  const Conversation conversation = {
+      {{/*user_id=*/1, "742 Evergreen Terrace, the number is 1-800-TESTING"}}};
   ActionsSuggestionsResponse response;
   {
     ActionSuggestionAnnotation annotation;
@@ -159,7 +165,7 @@ TEST(RankingTest, DeduplicationAnnotationsByPriorityScore) {
   }
   {
     ActionSuggestionAnnotation annotation;
-    annotation.span = {/*message_index=*/0, /*span=*/{40, 53},
+    annotation.span = {/*message_index=*/0, /*span=*/{37, 50},
                        /*text=*/"1-800-TESTING"};
     annotation.entity = ClassificationResult("phone", 0.5);
     response.actions.push_back({/*response_text=*/"",
@@ -177,7 +183,7 @@ TEST(RankingTest, DeduplicationAnnotationsByPriorityScore) {
       flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
       /*decompressor=*/nullptr, /*smart_reply_action_type=*/"text_reply");
 
-  ranker->RankActions(&response);
+  ranker->RankActions(conversation, &response);
   EXPECT_THAT(
       response.actions,
       testing::ElementsAreArray(
@@ -187,10 +193,11 @@ TEST(RankingTest, DeduplicationAnnotationsByPriorityScore) {
 }
 
 TEST(RankingTest, DeduplicatesConflictingActions) {
+  const Conversation conversation = {{{/*user_id=*/1, "code A-911"}}};
   ActionsSuggestionsResponse response;
   {
     ActionSuggestionAnnotation annotation;
-    annotation.span = {/*message_index=*/0, /*span=*/{6, 9},
+    annotation.span = {/*message_index=*/0, /*span=*/{7, 10},
                        /*text=*/"911"};
     annotation.entity = ClassificationResult("phone", 1.0);
     response.actions.push_back({/*response_text=*/"",
@@ -201,7 +208,7 @@ TEST(RankingTest, DeduplicatesConflictingActions) {
   }
   {
     ActionSuggestionAnnotation annotation;
-    annotation.span = {/*message_index=*/0, /*span=*/{4, 9},
+    annotation.span = {/*message_index=*/0, /*span=*/{5, 10},
                        /*text=*/"A-911"};
     annotation.entity = ClassificationResult("code", 1.0);
     response.actions.push_back({/*response_text=*/"",
@@ -218,12 +225,13 @@ TEST(RankingTest, DeduplicatesConflictingActions) {
       flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
       /*decompressor=*/nullptr, /*smart_reply_action_type=*/"text_reply");
 
-  ranker->RankActions(&response);
+  ranker->RankActions(conversation, &response);
   EXPECT_THAT(response.actions,
               testing::ElementsAreArray({IsAction("copy_code", "", 1.0)}));
 }
 
 TEST(RankingTest, HandlesCompressedLuaScript) {
+  const Conversation conversation = {{{/*user_id=*/1, "hello hello"}}};
   ActionsSuggestionsResponse response;
   response.actions = {
       {/*response_text=*/"hello there", /*type=*/"text_reply",
@@ -253,17 +261,18 @@ TEST(RankingTest, HandlesCompressedLuaScript) {
       flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
       decompressor.get(), /*smart_reply_action_type=*/"text_reply");
 
-  ranker->RankActions(&response);
+  ranker->RankActions(conversation, &response);
   EXPECT_THAT(response.actions,
               testing::ElementsAreArray({IsActionType("share_location"),
                                          IsActionType("add_to_collection")}));
 }
 
 TEST(RankingTest, SuppressSmartRepliesWithAction) {
+  const Conversation conversation = {{{/*user_id=*/1, "should i call 911"}}};
   ActionsSuggestionsResponse response;
   {
     ActionSuggestionAnnotation annotation;
-    annotation.span = {/*message_index=*/0, /*span=*/{6, 9},
+    annotation.span = {/*message_index=*/0, /*span=*/{5, 8},
                        /*text=*/"911"};
     annotation.entity = ClassificationResult("phone", 1.0);
     response.actions.push_back({/*response_text=*/"",
@@ -282,7 +291,7 @@ TEST(RankingTest, SuppressSmartRepliesWithAction) {
       flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
       /*decompressor=*/nullptr, /*smart_reply_action_type=*/"text_reply");
 
-  ranker->RankActions(&response);
+  ranker->RankActions(conversation, &response);
 
   EXPECT_THAT(response.actions,
               testing::ElementsAreArray({IsAction("call_phone", "", 1.0)}));

@@ -20,6 +20,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include "utils/base/integral_types.h"
 #include "utils/sentencepiece/encoder.h"
 #include "utils/sentencepiece/sorted_strings_table.h"
 
@@ -30,7 +31,7 @@ using testing::ElementsAre;
 
 TEST(EncoderTest, SimpleTokenization) {
   const char pieces[] = "hell\0hello\0o\0there\0";
-  const int offsets[] = {0, 5, 11, 13};
+  const uint32 offsets[] = {0, 5, 11, 13};
   float scores[] = {-0.5, -1.0, -10.0, -1.0};
   std::unique_ptr<SentencePieceMatcher> matcher(new SortedStringsTable(
       /*num_pieces=*/4, offsets, StringPiece(pieces, 18)));
@@ -55,7 +56,7 @@ TEST(EncoderTest, SimpleTokenization) {
 
 TEST(EncoderTest, HandlesEdgeCases) {
   const char pieces[] = "hell\0hello\0o\0there\0";
-  const int offsets[] = {0, 5, 11, 13};
+  const uint32 offsets[] = {0, 5, 11, 13};
   float scores[] = {-0.5, -1.0, -10.0, -1.0};
   std::unique_ptr<SentencePieceMatcher> matcher(new SortedStringsTable(
       /*num_pieces=*/4, offsets, StringPiece(pieces, 18)));
@@ -85,7 +86,7 @@ TEST(EncoderTest, HandlesEdgeCases) {
 
 TEST(EncoderTest, HandlesOutOfDictionary) {
   const char pieces[] = "hell\0hello\0o\0there\0";
-  const int offsets[] = {0, 5, 11, 13};
+  const uint32 offsets[] = {0, 5, 11, 13};
   float scores[] = {-0.5, -1.0, -10.0, -1.0};
   std::unique_ptr<SentencePieceMatcher> matcher(new SortedStringsTable(
       /*num_pieces=*/4, offsets, StringPiece(pieces, 18)));

@@ -28,6 +28,11 @@ table ContactInfo {
   score: float;
 }
 
+table Reminder {
+  title: string;
+  notes: [string];
+}
+
 table EntityData {
   an_int_field: int;
   a_long_field: int64;
@@ -36,6 +41,7 @@ table EntityData {
   a_double_field: double;
   flight_number: FlightNumberInfo;
   contact_info: ContactInfo;
+  reminders: [Reminder];
 }
 
 root_type libtextclassifier3.test.EntityData;

@@ -19,6 +19,8 @@
 #include <memory>
 
 #include "utils/base/logging.h"
+#include "utils/intents/zlib-utils.h"
+#include "utils/resources.h"
 #include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
@@ -63,6 +65,17 @@ bool CompressModel(ModelT* model) {
       extractor->pattern.clear();
     }
   }
+
+  // Compress resources.
+  if (model->resources != nullptr) {
+    CompressResources(model->resources.get());
+  }
+
+  // Compress intent generator.
+  if (model->intent_options != nullptr) {
+    CompressIntentModel(model->intent_options.get());
+  }
+
   return true;
 }
 

@@ -24,13 +24,15 @@
 #include "annotator/types.h"
 #include "utils/base/logging.h"
 #include "utils/utf8/unicodetext.h"
+#include "utils/utf8/unilib.h"
 
 namespace libtextclassifier3 {
 
 // A dummy implementation of the installed app engine.
 class InstalledAppEngine {
  public:
-  explicit InstalledAppEngine(const FeatureProcessor* feature_processor) {}
+  explicit InstalledAppEngine(const FeatureProcessor* feature_processor,
+                              const UniLib* unilib) {}
 
   bool Initialize(const std::string& serialized_config) {
     TC3_LOG(ERROR) << "No installed app engine to initialize.";

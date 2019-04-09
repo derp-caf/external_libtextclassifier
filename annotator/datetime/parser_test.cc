@@ -318,6 +318,13 @@ TEST_F(ParserTest, ParseWithRawUsecase) {
       /*annotation_usecase=*/AnnotationUsecase_ANNOTATION_USECASE_SMART));
 }
 
+TEST_F(ParserTest, ParsesNoonAndMidnightCorrectly) {
+  EXPECT_TRUE(ParsesCorrectly("{January 1, 1988 12:30am}", 567991800000,
+                              GRANULARITY_MINUTE));
+  EXPECT_TRUE(ParsesCorrectly("{January 1, 1988 12:30pm}", 568035000000,
+                              GRANULARITY_MINUTE));
+}
+
 TEST_F(ParserTest, ParseGerman) {
   EXPECT_TRUE(
       ParsesCorrectlyGerman("{Januar 1 2018}", 1514761200000, GRANULARITY_DAY));

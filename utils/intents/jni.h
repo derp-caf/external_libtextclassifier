@@ -23,8 +23,10 @@
 #include <string>
 #include <vector>
 
+#include "utils/flatbuffers.h"
 #include "utils/intents/intent-generator.h"
 #include "utils/java/jni-base.h"
+#include "utils/java/jni-cache.h"
 #include "utils/optional.h"
 #include "utils/variant.h"
 
@@ -48,15 +50,7 @@ namespace libtextclassifier3 {
 class RemoteActionTemplatesHandler {
  public:
   static std::unique_ptr<RemoteActionTemplatesHandler> Create(
-      JNIEnv* env, const std::shared_ptr<JniCache>& jni_cache);
-
-  explicit RemoteActionTemplatesHandler(
-      JNIEnv* env, const std::shared_ptr<JniCache>& jni_cache)
-      : env_(env),
-        jni_cache_(jni_cache),
-        integer_class_(nullptr, env),
-        remote_action_template_class_(nullptr, env),
-        named_variant_class_(nullptr, env) {}
+      const std::shared_ptr<JniCache>& jni_cache);
 
   jstring AsUTF8String(const Optional<std::string>& optional) const;
   jobject AsInteger(const Optional<int>& optional) const;
@@ -68,20 +62,30 @@ class RemoteActionTemplatesHandler {
   jobjectArray RemoteActionTemplatesToJObjectArray(
       const std::vector<RemoteActionTemplate>& remote_actions) const;
 
+  jobject EntityDataAsNamedVariantArray(
+      const reflection::Schema* entity_data_schema,
+      const std::string& serialized_entity_data) const;
+
  private:
-  JNIEnv* env_;
+  explicit RemoteActionTemplatesHandler(
+      const std::shared_ptr<JniCache>& jni_cache)
+      : jni_cache_(jni_cache),
+        integer_class_(nullptr, jni_cache->jvm),
+        remote_action_template_class_(nullptr, jni_cache->jvm),
+        named_variant_class_(nullptr, jni_cache->jvm) {}
+
   std::shared_ptr<JniCache> jni_cache_;
 
   // java.lang.Integer
-  ScopedLocalRef<jclass> integer_class_;
+  ScopedGlobalRef<jclass> integer_class_;
   jmethodID integer_init_ = nullptr;
 
   // RemoteActionTemplate
-  ScopedLocalRef<jclass> remote_action_template_class_;
+  ScopedGlobalRef<jclass> remote_action_template_class_;
   jmethodID remote_action_template_init_ = nullptr;
 
   // NamedVariant
-  ScopedLocalRef<jclass> named_variant_class_;
+  ScopedGlobalRef<jclass> named_variant_class_;
   jmethodID named_variant_from_int_ = nullptr;
   jmethodID named_variant_from_long_ = nullptr;
   jmethodID named_variant_from_float_ = nullptr;

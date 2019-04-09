@@ -27,11 +27,11 @@
 
 #include "annotator/cached-features.h"
 #include "annotator/model_generated.h"
-#include "annotator/token-feature-extractor.h"
-#include "annotator/tokenizer.h"
 #include "annotator/types.h"
 #include "utils/base/integral_types.h"
 #include "utils/base/logging.h"
+#include "utils/token-feature-extractor.h"
+#include "utils/tokenizer.h"
 #include "utils/utf8/unicodetext.h"
 #include "utils/utf8/unilib.h"
 
@@ -40,6 +40,9 @@ namespace libtextclassifier3 {
 constexpr int kInvalidLabel = -1;
 
 namespace internal {
+
+Tokenizer BuildTokenizer(const FeatureProcessorOptions* options,
+                         const UniLib* unilib);
 
 TokenFeatureExtractorOptions BuildTokenFeatureExtractorOptions(
     const FeatureProcessorOptions* options);
@@ -89,27 +92,15 @@ class FeatureProcessor {
   typedef std::map<CodepointSpan, std::vector<float>> EmbeddingCache;
 
   FeatureProcessor(const FeatureProcessorOptions* options, const UniLib* unilib)
-      : unilib_(unilib),
-        feature_extractor_(internal::BuildTokenFeatureExtractorOptions(options),
-                           *unilib_),
+      : feature_extractor_(internal::BuildTokenFeatureExtractorOptions(options),
+                           *unilib),
         options_(options),
-        tokenizer_(
-            options->tokenization_codepoint_config() != nullptr
-                ? Tokenizer({options->tokenization_codepoint_config()->begin(),
-                             options->tokenization_codepoint_config()->end()},
-                            options->tokenize_on_script_change())
-                : Tokenizer({}, /*split_on_script_change=*/false)) {
+        tokenizer_(internal::BuildTokenizer(options, unilib)) {
     MakeLabelMaps();
     if (options->supported_codepoint_ranges() != nullptr) {
-      PrepareCodepointRanges({options->supported_codepoint_ranges()->begin(),
-                              options->supported_codepoint_ranges()->end()},
-                             &supported_codepoint_ranges_);
-    }
-    if (options->internal_tokenizer_codepoint_ranges() != nullptr) {
-      PrepareCodepointRanges(
-          {options->internal_tokenizer_codepoint_ranges()->begin(),
-           options->internal_tokenizer_codepoint_ranges()->end()},
-          &internal_tokenizer_codepoint_ranges_);
+      SortCodepointRanges({options->supported_codepoint_ranges()->begin(),
+                           options->supported_codepoint_ranges()->end()},
+                          &supported_codepoint_ranges_);
     }
     PrepareIgnoredSpanBoundaryCodepoints();
   }
@@ -195,16 +186,13 @@ class FeatureProcessor {
       const UnicodeText::const_iterator& span_begin,
       const UnicodeText::const_iterator& span_end, CodepointSpan span) const;
 
+  // Same as above, but takes an optional buffer for saving the modified value.
+  // As an optimization, returns pointer to 'value' if nothing was stripped, or
+  // pointer to 'buffer' if something was stripped.
+  const std::string& StripBoundaryCodepoints(const std::string& value,
+                                             std::string* buffer) const;
+
  protected:
-  // Represents a codepoint range [start, end).
-  struct CodepointRange {
-    int32 start;
-    int32 end;
-
-    CodepointRange(int32 arg_start, int32 arg_end)
-        : start(arg_start), end(arg_end) {}
-  };
-
   // Returns the class id corresponding to the given string collection
   // identifier. There is a catch-all class id that the function returns for
   // unknown collections.
@@ -232,20 +220,10 @@ class FeatureProcessor {
   // Converts a token span to the corresponding label.
   int TokenSpanToLabel(const std::pair<TokenIndex, TokenIndex>& span) const;
 
-  void PrepareCodepointRanges(
-      const std::vector<const FeatureProcessorOptions_::CodepointRange*>&
-          codepoint_ranges,
-      std::vector<CodepointRange>* prepared_codepoint_ranges);
-
   // Returns the ratio of supported codepoints to total number of codepoints in
   // the given token span.
   float SupportedCodepointsRatio(const TokenSpan& token_span,
                                  const std::vector<Token>& tokens) const;
-
-  // Returns true if given codepoint is covered by the given sorted vector of
-  // codepoint ranges.
-  bool IsCodepointInRanges(
-      int codepoint, const std::vector<CodepointRange>& codepoint_ranges) const;
 
   void PrepareIgnoredSpanBoundaryCodepoints();
 
@@ -263,21 +241,6 @@ class FeatureProcessor {
   // in options_.
   int FindCenterToken(CodepointSpan span,
                       const std::vector<Token>& tokens) const;
-
-  // Tokenizes the input text using ICU tokenizer.
-  bool ICUTokenize(const UnicodeText& context_unicode,
-                   std::vector<Token>* result) const;
-
-  // Takes the result of ICU tokenization and retokenizes stretches of tokens
-  // made of a specific subset of characters using the internal tokenizer.
-  void InternalRetokenize(const UnicodeText& unicode_text,
-                          std::vector<Token>* tokens) const;
-
-  // Tokenizes a substring of the unicode string, appending the resulting tokens
-  // to the output vector. The resulting tokens have bounds relative to the full
-  // string. Does nothing if the start of the span is negative.
-  void TokenizeSubstring(const UnicodeText& unicode_text, CodepointSpan span,
-                         std::vector<Token>* result) const;
 
   // Removes all tokens from tokens that are not on a line (defined by calling
   // SplitContext on the context) to which span points.
@@ -298,21 +261,12 @@ class FeatureProcessor {
                                     EmbeddingCache* embedding_cache,
                                     std::vector<float>* output_features) const;
 
- private:
-  const UniLib* unilib_;
-
  protected:
   const TokenFeatureExtractor feature_extractor_;
 
   // Codepoint ranges that define what codepoints are supported by the model.
   // NOTE: Must be sorted.
-  std::vector<CodepointRange> supported_codepoint_ranges_;
-
-  // Codepoint ranges that define which tokens (consisting of which codepoints)
-  // should be re-tokenized with the internal tokenizer in the mixed
-  // tokenization mode.
-  // NOTE: Must be sorted.
-  std::vector<CodepointRange> internal_tokenizer_codepoint_ranges_;
+  std::vector<CodepointRangeStruct> supported_codepoint_ranges_;
 
  private:
   // Set of codepoints that will be stripped from beginning and end of

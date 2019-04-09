@@ -27,7 +27,6 @@ namespace libtextclassifier3 {
 namespace {
 
 using testing::ElementsAre;
-using testing::IsEmpty;
 
 TEST(EncoderTest, SimpleTokenization) {
   const char pieces[] = "hell\0hello\0o\0there\0";

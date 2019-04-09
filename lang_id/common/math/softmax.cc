@@ -16,7 +16,7 @@
 
 #include "lang_id/common/math/softmax.h"
 
-#include <limits>
+#include <algorithm>
 
 #include "lang_id/common/lite_base/logging.h"
 #include "lang_id/common/math/fastexp.h"
@@ -73,20 +73,21 @@ float ComputeSoftmaxProbability(const std::vector<float> &scores, int label) {
 std::vector<float> ComputeSoftmax(const std::vector<float> &scores,
                                   float alpha) {
   std::vector<float> softmax;
+  softmax.reserve(scores.size());
+  if (scores.empty()) {
+    return softmax;
+  }
+
   std::vector<float> exp_scores;
   exp_scores.reserve(scores.size());
-  softmax.reserve(scores.size());
 
   // Find max value in "scores" vector and rescale to avoid overflows.
-  float max = std::numeric_limits<float>::lowest();
-  for (const auto &score : scores) {
-    if (score > max) max = score;
-  }
+  const float max_score = *std::max_element(scores.begin(), scores.end());
   float denominator = 0;
-  for (auto &score : scores) {
+  for (const float score : scores) {
     // See comments above in ComputeSoftmaxProbability for the reasoning behind
     // this approximation.
-    const float delta_score = alpha * (score - max);
+    const float delta_score = alpha * (score - max_score);
     const float exp_score = delta_score < -16.0f ? 0 : VeryFastExp(delta_score);
     exp_scores.push_back(exp_score);
     denominator += exp_score;

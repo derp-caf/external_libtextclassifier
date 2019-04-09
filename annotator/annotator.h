@@ -26,15 +26,18 @@
 
 #include "annotator/contact/contact-engine.h"
 #include "annotator/datetime/parser.h"
+#include "annotator/duration/duration.h"
 #include "annotator/feature-processor.h"
 #include "annotator/installed_app/installed-app-engine.h"
 #include "annotator/knowledge/knowledge-engine.h"
 #include "annotator/model-executor.h"
 #include "annotator/model_generated.h"
+#include "annotator/number/number.h"
 #include "annotator/strip-unpaired-brackets.h"
 #include "annotator/types.h"
 #include "annotator/zlib-utils.h"
 #include "utils/flatbuffers.h"
+#include "utils/i18n/locale.h"
 #include "utils/memory/mmap.h"
 #include "utils/utf8/unilib.h"
 #include "utils/zlib/zlib.h"
@@ -52,12 +55,17 @@ struct SelectionOptions {
   // tags).
   std::string locales;
 
+  // Comma-separated list of BCP 47 language tags.
+  std::string detected_text_language_tags;
+
   // Tailors the output annotations according to the specified use-case.
   AnnotationUsecase annotation_usecase = ANNOTATION_USECASE_SMART;
 
   bool operator==(const SelectionOptions& other) const {
     return this->locales == other.locales &&
-           this->annotation_usecase == other.annotation_usecase;
+           this->annotation_usecase == other.annotation_usecase &&
+           this->detected_text_language_tags ==
+               other.detected_text_language_tags;
   }
 };
 
@@ -74,6 +82,9 @@ struct ClassificationOptions {
   // tags).
   std::string locales;
 
+  // Comma-separated list of language tags.
+  std::string detected_text_language_tags;
+
   // Tailors the output annotations according to the specified use-case.
   AnnotationUsecase annotation_usecase = ANNOTATION_USECASE_SMART;
 
@@ -81,6 +92,8 @@ struct ClassificationOptions {
     return this->reference_time_ms_utc == other.reference_time_ms_utc &&
            this->reference_timezone == other.reference_timezone &&
            this->locales == other.locales &&
+           this->detected_text_language_tags ==
+               other.detected_text_language_tags &&
            this->annotation_usecase == other.annotation_usecase;
   }
 };
@@ -98,6 +111,9 @@ struct AnnotationOptions {
   // tags).
   std::string locales;
 
+  // Comma-separated list of language tags.
+  std::string detected_text_language_tags;
+
   // Tailors the output annotations according to the specified use-case.
   AnnotationUsecase annotation_usecase = ANNOTATION_USECASE_SMART;
 
@@ -105,6 +121,8 @@ struct AnnotationOptions {
     return this->reference_time_ms_utc == other.reference_time_ms_utc &&
            this->reference_timezone == other.reference_timezone &&
            this->locales == other.locales &&
+           this->detected_text_language_tags ==
+               other.detected_text_language_tags &&
            this->annotation_usecase == other.annotation_usecase;
   }
 };
@@ -199,7 +217,7 @@ class Annotator {
   bool LookUpKnowledgeEntity(const std::string& id,
                              std::string* serialized_knowledge_result) const;
 
-  const Model* ViewModel() const;
+  const Model* model() const;
   const reflection::Schema* entity_data_schema() const;
 
   // Exposes the feature processor for tests and evaluations.
@@ -245,6 +263,8 @@ class Annotator {
   bool ResolveConflicts(const std::vector<AnnotatedSpan>& candidates,
                         const std::string& context,
                         const std::vector<Token>& cached_tokens,
+                        const std::vector<Locale>& detected_text_language_tags,
+                        AnnotationUsecase annotation_usecase,
                         InterpreterManager* interpreter_manager,
                         std::vector<int>* result) const;
 
@@ -254,7 +274,9 @@ class Annotator {
   bool ResolveConflict(const std::string& context,
                        const std::vector<Token>& cached_tokens,
                        const std::vector<AnnotatedSpan>& candidates,
+                       const std::vector<Locale>& detected_text_language_tags,
                        int start_index, int end_index,
+                       AnnotationUsecase annotation_usecase,
                        InterpreterManager* interpreter_manager,
                        std::vector<int>* chosen_indices) const;
 
@@ -272,13 +294,25 @@ class Annotator {
   // Returns true if no error occurred.
   bool ModelClassifyText(
       const std::string& context, const std::vector<Token>& cached_tokens,
+      const std::vector<Locale>& locales, CodepointSpan selection_indices,
+      InterpreterManager* interpreter_manager,
+      FeatureProcessor::EmbeddingCache* embedding_cache,
+      std::vector<ClassificationResult>* classification_results,
+      std::vector<Token>* tokens) const;
+
+  // Same as above but doesn't output tokens.
+  bool ModelClassifyText(
+      const std::string& context, const std::vector<Token>& cached_tokens,
+      const std::vector<Locale>& detected_text_language_tags,
       CodepointSpan selection_indices, InterpreterManager* interpreter_manager,
       FeatureProcessor::EmbeddingCache* embedding_cache,
       std::vector<ClassificationResult>* classification_results) const;
 
+  // Same as above but doesn't take cached tokens and doesn't output tokens.
   bool ModelClassifyText(
-      const std::string& context, CodepointSpan selection_indices,
-      InterpreterManager* interpreter_manager,
+      const std::string& context,
+      const std::vector<Locale>& detected_text_language_tags,
+      CodepointSpan selection_indices, InterpreterManager* interpreter_manager,
       FeatureProcessor::EmbeddingCache* embedding_cache,
       std::vector<ClassificationResult>* classification_results) const;
 
@@ -288,13 +322,13 @@ class Annotator {
   TokenSpan ClassifyTextUpperBoundNeededTokens() const;
 
   // Classifies the selected text with the regular expressions models.
-  // Returns true if any regular expression matched and the result was set.
-  bool RegexClassifyText(const std::string& context,
-                         CodepointSpan selection_indices,
-                         ClassificationResult* classification_result) const;
+  // Returns true if no error happened, false otherwise.
+  bool RegexClassifyText(
+      const std::string& context, CodepointSpan selection_indices,
+      std::vector<ClassificationResult>* classification_result) const;
 
   // Classifies the selected text with the date time model.
-  // Returns true if there was a match and the result was set.
+  // Returns true if no error happened, false otherwise.
   bool DatetimeClassifyText(
       const std::string& context, CodepointSpan selection_indices,
       const ClassificationOptions& options,
@@ -307,6 +341,7 @@ class Annotator {
   // Provides the tokens produced during tokenization of the context string for
   // reuse.
   bool ModelAnnotate(const std::string& context,
+                     const std::vector<Locale>& detected_text_language_tags,
                      InterpreterManager* interpreter_manager,
                      std::vector<Token>* tokens,
                      std::vector<AnnotatedSpan>* result) const;
@@ -415,10 +450,18 @@ class Annotator {
   std::unique_ptr<const KnowledgeEngine> knowledge_engine_;
   std::unique_ptr<const ContactEngine> contact_engine_;
   std::unique_ptr<const InstalledAppEngine> installed_app_engine_;
+  std::unique_ptr<const NumberAnnotator> number_annotator_;
+  std::unique_ptr<const DurationAnnotator> duration_annotator_;
 
   // Builder for creating extra data.
   const reflection::Schema* entity_data_schema_;
   std::unique_ptr<ReflectiveFlatbufferBuilder> entity_data_builder_;
+
+  // Locales supported by the model.
+  std::vector<Locale> model_locales_;
+
+  // Locales that the dictionary classification support.
+  std::vector<Locale> dictionary_locales_;
 };
 
 namespace internal {

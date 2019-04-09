@@ -15,12 +15,14 @@
  */
 
 #include <fstream>
+#include <map>
 #include <memory>
 #include <string>
 
 #include "utils/flatbuffers.h"
 #include "utils/flatbuffers_generated.h"
 #include "utils/flatbuffers_test_generated.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "flatbuffers/flatbuffers.h"
 #include "flatbuffers/reflection.h"
@@ -39,7 +41,7 @@ std::string LoadTestMetadata() {
                      (std::istreambuf_iterator<char>()));
 }
 
-TEST(FlatbuffersTest, ReflectionPrimitiveType) {
+TEST(FlatbuffersTest, PrimitiveFieldsAreCorrectlySet) {
   std::string metadata_buffer = LoadTestMetadata();
   ReflectiveFlatbufferBuilder reflective_builder(
       flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
@@ -65,7 +67,7 @@ TEST(FlatbuffersTest, ReflectionPrimitiveType) {
   EXPECT_NEAR(entity_data->a_double_field, 1.f, 1e-4);
 }
 
-TEST(FlatbuffersTest, ReflectionUnknownField) {
+TEST(FlatbuffersTest, HandlesUnknownFields) {
   std::string metadata_buffer = LoadTestMetadata();
   const reflection::Schema* schema =
       flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data());
@@ -90,7 +92,7 @@ TEST(FlatbuffersTest, ReflectionUnknownField) {
             "this is an unknown field.");
 }
 
-TEST(FlatbuffersTest, ReflectionNestedField) {
+TEST(FlatbuffersTest, HandlesNestedFields) {
   std::string metadata_buffer = LoadTestMetadata();
   const reflection::Schema* schema =
       flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data());
@@ -117,7 +119,7 @@ TEST(FlatbuffersTest, ReflectionNestedField) {
             buffer->Mutable("flight_number")->GetFieldOrNull("carrier_code"));
 }
 
-TEST(FlatbuffersTest, ReflectionRecursive) {
+TEST(FlatbuffersTest, HandlesMultipleNestedFields) {
   std::string metadata_buffer = LoadTestMetadata();
   ReflectiveFlatbufferBuilder reflective_builder(
       flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
@@ -147,7 +149,7 @@ TEST(FlatbuffersTest, ReflectionRecursive) {
   EXPECT_NEAR(entity_data->contact_info->score, 1.f, 1e-4);
 }
 
-TEST(FlatbuffersTest, ReflectionRecursivePath) {
+TEST(FlatbuffersTest, HandlesFieldsSetWithNamePath) {
   std::string metadata_buffer = LoadTestMetadata();
   ReflectiveFlatbufferBuilder reflective_builder(
       flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
@@ -178,7 +180,7 @@ TEST(FlatbuffersTest, ReflectionRecursivePath) {
   EXPECT_EQ(entity_data->flight_number->flight_code, 38);
 }
 
-TEST(FlatbuffersTest, ReflectionRecursivePathOffsets) {
+TEST(FlatbuffersTest, HandlesFieldsSetWithOffsetPath) {
   std::string metadata_buffer = LoadTestMetadata();
   ReflectiveFlatbufferBuilder reflective_builder(
       flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
@@ -209,7 +211,7 @@ TEST(FlatbuffersTest, ReflectionRecursivePathOffsets) {
   EXPECT_EQ(entity_data->flight_number->flight_code, 38);
 }
 
-TEST(FlatbuffersTest, ReflectionMerging) {
+TEST(FlatbuffersTest, PartialBuffersAreCorrectlyMerged) {
   std::string metadata_buffer = LoadTestMetadata();
   ReflectiveFlatbufferBuilder reflective_builder(
       flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
@@ -246,6 +248,63 @@ TEST(FlatbuffersTest, ReflectionMerging) {
   EXPECT_EQ(entity_data->flight_number->carrier_code, "LX");
   EXPECT_EQ(entity_data->flight_number->flight_code, 39);
   EXPECT_EQ(entity_data->contact_info->first_name, "Barack");
+}
+
+TEST(FlatbuffersTest, PrimitiveAndNestedFieldsAreCorrectlyFlattened) {
+  std::string metadata_buffer = LoadTestMetadata();
+  ReflectiveFlatbufferBuilder reflective_builder(
+      flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data()));
+  std::unique_ptr<ReflectiveFlatbuffer> buffer = reflective_builder.NewRoot();
+  buffer->Set("an_int_field", 42);
+  buffer->Set("a_long_field", 84ll);
+  ReflectiveFlatbuffer* flight_info = buffer->Mutable("flight_number");
+  flight_info->Set("carrier_code", "LX");
+  flight_info->Set("flight_code", 38);
+
+  std::map<std::string, Variant> entity_data_map = buffer->AsFlatMap();
+  EXPECT_EQ(4, entity_data_map.size());
+  EXPECT_EQ(42, entity_data_map["an_int_field"].IntValue());
+  EXPECT_EQ(84, entity_data_map["a_long_field"].Int64Value());
+  EXPECT_EQ("LX", entity_data_map["flight_number.carrier_code"].StringValue());
+  EXPECT_EQ(38, entity_data_map["flight_number.flight_code"].IntValue());
+}
+
+TEST(FlatbuffersTest, RepeatedFieldSetThroughReflectionCanBeRead) {
+  std::string metadata_buffer = LoadTestMetadata();
+  const reflection::Schema* schema =
+      flatbuffers::GetRoot<reflection::Schema>(metadata_buffer.data());
+  ReflectiveFlatbufferBuilder reflective_builder(schema);
+  std::unique_ptr<ReflectiveFlatbuffer> buffer = reflective_builder.NewRoot();
+
+  auto reminders = buffer->Repeated<ReflectiveFlatbuffer>("reminders");
+  {
+    auto reminder = reminders->Add();
+    reminder->Set("title", "test reminder");
+    auto notes = reminder->Repeated<std::string>("notes");
+    notes->Add("note A");
+    notes->Add("note B");
+  }
+  {
+    auto reminder = reminders->Add();
+    reminder->Set("title", "test reminder 2");
+    auto notes = reminder->Repeated<std::string>("notes");
+    notes->Add("note i");
+    notes->Add("note ii");
+    notes->Add("note iii");
+  }
+  const std::string serialized_entity_data = buffer->Serialize();
+
+  std::unique_ptr<test::EntityDataT> entity_data =
+      LoadAndVerifyMutableFlatbuffer<test::EntityData>(
+          serialized_entity_data.data(), serialized_entity_data.size());
+  EXPECT_TRUE(entity_data != nullptr);
+  EXPECT_EQ(2, entity_data->reminders.size());
+  EXPECT_EQ("test reminder", entity_data->reminders[0]->title);
+  EXPECT_THAT(entity_data->reminders[0]->notes,
+              testing::ElementsAreArray({"note A", "note B"}));
+  EXPECT_EQ("test reminder 2", entity_data->reminders[1]->title);
+  EXPECT_THAT(entity_data->reminders[1]->notes,
+              testing::ElementsAreArray({"note i", "note ii", "note iii"}));
 }
 
 }  // namespace

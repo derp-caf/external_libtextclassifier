@@ -47,6 +47,13 @@ class Locale {
   bool IsValid() const { return is_valid_; }
   bool IsUnknown() const;
 
+  // Returns whether any of the given locales is supported by any of the
+  // supported locales. Returns default value if the given locales list is empty
+  // or an unknown locale is found. Locale::FromBCP47("*") means any locale.
+  static bool IsAnyLocaleSupported(const std::vector<Locale>& locales,
+                                   const std::vector<Locale>& supported_locales,
+                                   bool default_value);
+
  private:
   Locale(const std::string& language, const std::string& script,
          const std::string& region)
@@ -54,6 +61,10 @@ class Locale {
         script_(script),
         region_(region),
         is_valid_(true) {}
+
+  static bool IsLocaleSupported(const Locale& locale,
+                                const std::vector<Locale>& supported_locales,
+                                bool default_value);
 
   std::string language_;
   std::string script_;

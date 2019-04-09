@@ -28,6 +28,29 @@ namespace libtextclassifier3 {
 
 namespace internal {
 
+Tokenizer BuildTokenizer(const FeatureProcessorOptions* options,
+                         const UniLib* unilib) {
+  std::vector<const TokenizationCodepointRange*> codepoint_config;
+  if (options->tokenization_codepoint_config() != nullptr) {
+    codepoint_config.insert(codepoint_config.end(),
+                            options->tokenization_codepoint_config()->begin(),
+                            options->tokenization_codepoint_config()->end());
+  }
+  std::vector<const CodepointRange*> internal_codepoint_config;
+  if (options->internal_tokenizer_codepoint_ranges() != nullptr) {
+    internal_codepoint_config.insert(
+        internal_codepoint_config.end(),
+        options->internal_tokenizer_codepoint_ranges()->begin(),
+        options->internal_tokenizer_codepoint_ranges()->end());
+  }
+  const bool tokenize_on_script_change =
+      options->tokenization_codepoint_config() != nullptr &&
+      options->tokenize_on_script_change();
+  return Tokenizer(options->tokenization_type(), unilib, codepoint_config,
+                   internal_codepoint_config, tokenize_on_script_change,
+                   options->icu_preserve_whitespace_tokens());
+}
+
 TokenFeatureExtractorOptions BuildTokenFeatureExtractorOptions(
     const FeatureProcessorOptions* const options) {
   TokenFeatureExtractorOptions extractor_options;
@@ -166,33 +189,12 @@ std::string FeatureProcessor::GetDefaultCollection() const {
 }
 
 std::vector<Token> FeatureProcessor::Tokenize(const std::string& text) const {
-  const UnicodeText text_unicode = UTF8ToUnicodeText(text, /*do_copy=*/false);
-  return Tokenize(text_unicode);
+  return tokenizer_.Tokenize(text);
 }
 
 std::vector<Token> FeatureProcessor::Tokenize(
     const UnicodeText& text_unicode) const {
-  if (options_->tokenization_type() ==
-      FeatureProcessorOptions_::TokenizationType_INTERNAL_TOKENIZER) {
-    return tokenizer_.Tokenize(text_unicode);
-  } else if (options_->tokenization_type() ==
-                 FeatureProcessorOptions_::TokenizationType_ICU ||
-             options_->tokenization_type() ==
-                 FeatureProcessorOptions_::TokenizationType_MIXED) {
-    std::vector<Token> result;
-    if (!ICUTokenize(text_unicode, &result)) {
-      return {};
-    }
-    if (options_->tokenization_type() ==
-        FeatureProcessorOptions_::TokenizationType_MIXED) {
-      InternalRetokenize(text_unicode, &result);
-    }
-    return result;
-  } else {
-    TC3_LOG(ERROR) << "Unknown tokenization type specified. Using "
-                      "internal.";
-    return tokenizer_.Tokenize(text_unicode);
-  }
+  return tokenizer_.Tokenize(text_unicode);
 }
 
 bool FeatureProcessor::LabelToSpan(
@@ -471,25 +473,6 @@ bool FeatureProcessor::SelectionLabelSpans(
   return true;
 }
 
-void FeatureProcessor::PrepareCodepointRanges(
-    const std::vector<const FeatureProcessorOptions_::CodepointRange*>&
-        codepoint_ranges,
-    std::vector<CodepointRange>* prepared_codepoint_ranges) {
-  prepared_codepoint_ranges->clear();
-  prepared_codepoint_ranges->reserve(codepoint_ranges.size());
-  for (const FeatureProcessorOptions_::CodepointRange* range :
-       codepoint_ranges) {
-    prepared_codepoint_ranges->push_back(
-        CodepointRange(range->start(), range->end()));
-  }
-
-  std::sort(prepared_codepoint_ranges->begin(),
-            prepared_codepoint_ranges->end(),
-            [](const CodepointRange& a, const CodepointRange& b) {
-              return a.start < b.start;
-            });
-}
-
 void FeatureProcessor::PrepareIgnoredSpanBoundaryCodepoints() {
   if (options_->ignored_span_boundary_codepoints() != nullptr) {
     for (const int codepoint : *options_->ignored_span_boundary_codepoints()) {
@@ -630,32 +613,21 @@ float FeatureProcessor::SupportedCodepointsRatio(
   return static_cast<float>(num_supported) / static_cast<float>(num_total);
 }
 
-bool FeatureProcessor::IsCodepointInRanges(
-    int codepoint, const std::vector<CodepointRange>& codepoint_ranges) const {
-  auto it = std::lower_bound(codepoint_ranges.begin(), codepoint_ranges.end(),
-                             codepoint,
-                             [](const CodepointRange& range, int codepoint) {
-                               // This function compares range with the
-                               // codepoint for the purpose of finding the first
-                               // greater or equal range. Because of the use of
-                               // std::lower_bound it needs to return true when
-                               // range < codepoint; the first time it will
-                               // return false the lower bound is found and
-                               // returned.
-                               //
-                               // It might seem weird that the condition is
-                               // range.end <= codepoint here but when codepoint
-                               // == range.end it means it's actually just
-                               // outside of the range, thus the range is less
-                               // than the codepoint.
-                               return range.end <= codepoint;
-                             });
-  if (it != codepoint_ranges.end() && it->start <= codepoint &&
-      it->end > codepoint) {
-    return true;
-  } else {
-    return false;
+const std::string& FeatureProcessor::StripBoundaryCodepoints(
+    const std::string& value, std::string* buffer) const {
+  const UnicodeText value_unicode = UTF8ToUnicodeText(value, /*do_copy=*/false);
+  const CodepointSpan initial_span{0, value_unicode.size_codepoints()};
+  const CodepointSpan stripped_span =
+      StripBoundaryCodepoints(value_unicode, initial_span);
+
+  if (initial_span != stripped_span) {
+    const UnicodeText stripped_token_value =
+        UnicodeText::Substring(value_unicode, stripped_span.first,
+                               stripped_span.second, /*do_copy=*/false);
+    *buffer = stripped_token_value.ToUTF8String();
+    return *buffer;
   }
+  return value;
 }
 
 int FeatureProcessor::CollectionToLabel(const std::string& collection) const {
@@ -821,113 +793,6 @@ bool FeatureProcessor::ExtractFeatures(
   }
 
   return true;
-}
-
-bool FeatureProcessor::ICUTokenize(const UnicodeText& context_unicode,
-                                   std::vector<Token>* result) const {
-  std::unique_ptr<UniLib::BreakIterator> break_iterator =
-      unilib_->CreateBreakIterator(context_unicode);
-  if (!break_iterator) {
-    return false;
-  }
-  int last_break_index = 0;
-  int break_index = 0;
-  int last_unicode_index = 0;
-  int unicode_index = 0;
-  auto token_begin_it = context_unicode.begin();
-  while ((break_index = break_iterator->Next()) !=
-         UniLib::BreakIterator::kDone) {
-    const int token_length = break_index - last_break_index;
-    unicode_index = last_unicode_index + token_length;
-
-    auto token_end_it = token_begin_it;
-    std::advance(token_end_it, token_length);
-
-    // Determine if the whole token is whitespace.
-    bool is_whitespace = true;
-    for (auto char_it = token_begin_it; char_it < token_end_it; ++char_it) {
-      if (!unilib_->IsWhitespace(*char_it)) {
-        is_whitespace = false;
-        break;
-      }
-    }
-
-    const std::string token =
-        context_unicode.UTF8Substring(token_begin_it, token_end_it);
-
-    if (!is_whitespace || options_->icu_preserve_whitespace_tokens()) {
-      result->push_back(Token(token, last_unicode_index, unicode_index));
-    }
-
-    last_break_index = break_index;
-    last_unicode_index = unicode_index;
-    token_begin_it = token_end_it;
-  }
-
-  return true;
-}
-
-void FeatureProcessor::InternalRetokenize(const UnicodeText& unicode_text,
-                                          std::vector<Token>* tokens) const {
-  std::vector<Token> result;
-  CodepointSpan span(-1, -1);
-  for (Token& token : *tokens) {
-    const UnicodeText unicode_token_value =
-        UTF8ToUnicodeText(token.value, /*do_copy=*/false);
-    bool should_retokenize = true;
-    for (const int codepoint : unicode_token_value) {
-      if (!IsCodepointInRanges(codepoint,
-                               internal_tokenizer_codepoint_ranges_)) {
-        should_retokenize = false;
-        break;
-      }
-    }
-
-    if (should_retokenize) {
-      if (span.first < 0) {
-        span.first = token.start;
-      }
-      span.second = token.end;
-    } else {
-      TokenizeSubstring(unicode_text, span, &result);
-      span.first = -1;
-      result.emplace_back(std::move(token));
-    }
-  }
-  TokenizeSubstring(unicode_text, span, &result);
-
-  *tokens = std::move(result);
-}
-
-void FeatureProcessor::TokenizeSubstring(const UnicodeText& unicode_text,
-                                         CodepointSpan span,
-                                         std::vector<Token>* result) const {
-  if (span.first < 0) {
-    // There is no span to tokenize.
-    return;
-  }
-
-  // Extract the substring.
-  UnicodeText::const_iterator it_begin = unicode_text.begin();
-  for (int i = 0; i < span.first; ++i) {
-    ++it_begin;
-  }
-  UnicodeText::const_iterator it_end = unicode_text.begin();
-  for (int i = 0; i < span.second; ++i) {
-    ++it_end;
-  }
-  const std::string text = unicode_text.UTF8Substring(it_begin, it_end);
-
-  // Run the tokenizer and update the token bounds to reflect the offset of the
-  // substring.
-  std::vector<Token> tokens = tokenizer_.Tokenize(text);
-  // Avoids progressive capacity increases in the for loop.
-  result->reserve(result->size() + tokens.size());
-  for (Token& token : tokens) {
-    token.start += span.first;
-    token.end += span.first;
-    result->emplace_back(std::move(token));
-  }
 }
 
 bool FeatureProcessor::AppendTokenFeaturesWithCache(

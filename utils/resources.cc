@@ -16,6 +16,8 @@
 
 #include "utils/resources.h"
 #include "utils/base/logging.h"
+#include "utils/zlib/buffer_generated.h"
+#include "utils/zlib/zlib.h"
 
 namespace libtextclassifier3 {
 namespace {
@@ -30,6 +32,7 @@ bool isExactMatch(const flatbuffers::String* left, const std::string& right) {
   }
   return left->str() == right;
 }
+
 }  // namespace
 
 int Resources::LocaleMatch(const Locale& locale,
@@ -71,42 +74,144 @@ const ResourceEntry* Resources::FindResource(
   return entry;
 }
 
-bool Resources::GetResourceContent(const Locale& locale,
+int Resources::BestResourceForLocales(
+    const ResourceEntry* resource, const std::vector<Locale>& locales) const {
+  // Find best match based on locale.
+  int resource_id = -1;
+  int locale_match = LOCALE_NO_MATCH;
+  const auto* resources = resource->resource();
+  for (int user_locale = 0; user_locale < locales.size(); user_locale++) {
+    if (!locales[user_locale].IsValid()) {
+      continue;
+    }
+    for (int i = 0; i < resources->size(); i++) {
+      for (const int locale_id : *resources->Get(i)->locale()) {
+        const int candidate_match = LocaleMatch(
+            locales[user_locale], resources_->locale()->Get(locale_id));
+
+        // Only consider if at least the language matches.
+        if ((candidate_match & LOCALE_LANGUAGE_MATCH) == 0 &&
+            (candidate_match & LOCALE_LANGUAGE_WILDCARD_MATCH) == 0) {
+          continue;
+        }
+
+        if (candidate_match > locale_match) {
+          locale_match = candidate_match;
+          resource_id = i;
+        }
+      }
+    }
+
+    // If the language matches exactly, we are already finished.
+    // We found an exact language match.
+    if (locale_match & LOCALE_LANGUAGE_MATCH) {
+      return resource_id;
+    }
+  }
+  return resource_id;
+}
+
+bool Resources::GetResourceContent(const std::vector<Locale>& locales,
                                    const StringPiece resource_name,
-                                   StringPiece* result) const {
+                                   std::string* result) const {
   const ResourceEntry* entry = FindResource(resource_name);
   if (entry == nullptr || entry->resource() == nullptr) {
     return false;
   }
 
-  // Find best match based on locale.
-  int best_matching_resource = -1;
-  int best_match = LOCALE_NO_MATCH;
-  const auto* entry_resources = entry->resource();
-  for (int i = 0; i < entry_resources->size(); i++) {
-    int candidate_match = LocaleMatch(
-        locale, resources_->locale()->Get(entry_resources->Get(i)->locale()));
-
-    // Only consider if at least the language matches.
-    if ((candidate_match & LOCALE_LANGUAGE_MATCH) == 0 &&
-        (candidate_match & LOCALE_LANGUAGE_WILDCARD_MATCH) == 0) {
-      continue;
-    }
-
-    if (candidate_match > best_match) {
-      best_match = candidate_match;
-      best_matching_resource = i;
-    }
-  }
-
-  if (best_matching_resource < 0) {
-    TC3_LOG(ERROR) << "Couldn't find locale matching resource.";
+  int resource_id = BestResourceForLocales(entry, locales);
+  if (resource_id < 0) {
     return false;
   }
+  const auto* resource = entry->resource()->Get(resource_id);
+  if (resource->content() != nullptr) {
+    *result = resource->content()->str();
+    return true;
+  } else if (resource->compressed_content() != nullptr) {
+    std::unique_ptr<ZlibDecompressor> decompressor = ZlibDecompressor::Instance(
+        resources_->compression_dictionary()->data(),
+        resources_->compression_dictionary()->size());
+    if (decompressor != nullptr &&
+        decompressor->MaybeDecompress(resource->compressed_content(), result)) {
+      return true;
+    }
+  }
+  return false;
+}
 
-  const auto* content = entry_resources->Get(best_matching_resource)->content();
-  *result = StringPiece(content->c_str(), content->Length());
+bool CompressResources(ResourcePoolT* resources,
+                       const bool build_compression_dictionary,
+                       const int dictionary_sample_every) {
+  std::vector<unsigned char> dictionary;
+  if (build_compression_dictionary) {
+    {
+      // Build up a compression dictionary.
+      std::unique_ptr<ZlibCompressor> compressor = ZlibCompressor::Instance();
+      int i = 0;
+      for (auto& entry : resources->resource_entry) {
+        for (auto& resource : entry->resource) {
+          if (resource->content.empty()) {
+            continue;
+          }
+          i++;
+
+          // Use a sample of the entries to build up a custom compression
+          // dictionary. Using all entries will generally not give a benefit
+          // for small data sizes, so we subsample here.
+          if (i % dictionary_sample_every != 0) {
+            continue;
+          }
+          CompressedBufferT compressed_content;
+          compressor->Compress(resource->content, &compressed_content);
+        }
+      }
+      compressor->GetDictionary(&dictionary);
+      resources->compression_dictionary.assign(
+          dictionary.data(), dictionary.data() + dictionary.size());
+    }
+  }
+
+  for (auto& entry : resources->resource_entry) {
+    for (auto& resource : entry->resource) {
+      if (resource->content.empty()) {
+        continue;
+      }
+      // Try compressing the data.
+      std::unique_ptr<ZlibCompressor> compressor =
+          build_compression_dictionary
+              ? ZlibCompressor::Instance(dictionary.data(), dictionary.size())
+              : ZlibCompressor::Instance();
+      if (!compressor) {
+        TC3_LOG(ERROR) << "Cannot create zlib compressor.";
+        return false;
+      }
+
+      CompressedBufferT compressed_content;
+      compressor->Compress(resource->content, &compressed_content);
+
+      // Only keep compressed version if smaller.
+      if (compressed_content.uncompressed_size >
+          compressed_content.buffer.size()) {
+        resource->content.clear();
+        resource->compressed_content.reset(new CompressedBufferT);
+        *resource->compressed_content = compressed_content;
+      }
+    }
+  }
   return true;
+}
+
+std::string CompressSerializedResources(const std::string& resources,
+                                        const int dictionary_sample_every) {
+  std::unique_ptr<ResourcePoolT> unpacked_resources(
+      flatbuffers::GetRoot<ResourcePool>(resources.data())->UnPack());
+  TC3_CHECK(unpacked_resources != nullptr);
+  TC3_CHECK(
+      CompressResources(unpacked_resources.get(), dictionary_sample_every));
+  flatbuffers::FlatBufferBuilder builder;
+  builder.Finish(ResourcePool::Pack(builder, unpacked_resources.get()));
+  return std::string(reinterpret_cast<const char*>(builder.GetBufferPointer()),
+                     builder.GetSize());
 }
 
 }  // namespace libtextclassifier3

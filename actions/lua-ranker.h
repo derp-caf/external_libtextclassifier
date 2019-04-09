@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 
+#include "actions/lua-utils.h"
 #include "actions/types.h"
 #include "utils/lua-utils.h"
 
@@ -29,40 +30,33 @@ namespace libtextclassifier3 {
 class ActionsSuggestionsLuaRanker : public LuaEnvironment {
  public:
   static std::unique_ptr<ActionsSuggestionsLuaRanker>
-  CreateActionsSuggestionsLuaRanker(const std::string& ranker_code,
-                                    ActionsSuggestionsResponse* response);
+  CreateActionsSuggestionsLuaRanker(
+      const std::string& ranker_code,
+      const reflection::Schema* entity_data_schema,
+      const reflection::Schema* annotations_entity_data_schema,
+      ActionsSuggestionsResponse* response);
 
   bool RankActions();
 
  private:
-  enum CallbackId {
-    CALLBACK_ID_ACTIONS = 0,
-    CALLBACK_ID_ACTIONS_ITER = 1,
-  };
+  explicit ActionsSuggestionsLuaRanker(
+      const std::string& ranker_code,
+      const reflection::Schema* entity_data_schema,
+      const reflection::Schema* annotations_entity_data_schema,
+      ActionsSuggestionsResponse* response)
+      : ranker_code_(ranker_code),
+        response_(response),
+        actions_iterator_(entity_data_schema, annotations_entity_data_schema,
+                          this) {}
 
-  explicit ActionsSuggestionsLuaRanker(const std::string& ranker_code,
-                                       ActionsSuggestionsResponse* response)
-      : ranker_code_(ranker_code), response_(response) {}
-
-  bool InitializeEnvironment();
-
-  // Callback handlers. The return value is the number of results pushed.
-  int HandleCallback(const int callback_id,
-                     const std::vector<void*>& args) override;
-  // Handles callbacks into the `actions` global provided in
-  // `InitializeEnvironment`. It handles index based lookups into the actions
-  // array, as well as iteration and length lookup.
-  int HandleActionsCallback();
-  int HandleActionsIterCallback(const std::vector<void*>& args);
-
-  // Pushes an annotation as table on the lua stack.
-  void PushAction(const int action_id);
+  bool Initialize();
 
   // Reads ranking results from the lua stack.
   int ReadActionsRanking();
 
   const std::string& ranker_code_;
   ActionsSuggestionsResponse* response_;
+  const ActionsIterator actions_iterator_;
 };
 
 }  // namespace libtextclassifier3

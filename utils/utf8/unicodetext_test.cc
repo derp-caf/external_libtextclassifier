@@ -49,6 +49,15 @@ TEST(UnicodeTextTest, Custom) {
   EXPECT_EQ(text.UTF8Substring(it_begin, it_end), "😋h");
 }
 
+TEST(UnicodeTextTest, Substring) {
+  UnicodeText text = UTF8ToUnicodeText("1234😋hello", /*do_copy=*/false);
+
+  EXPECT_EQ(UnicodeText::Substring(text, 4, 6, /*do_copy=*/true),
+            UTF8ToUnicodeText("😋h"));
+  EXPECT_EQ(UnicodeText::Substring(text, 4, 6, /*do_copy=*/false),
+            UTF8ToUnicodeText("😋h"));
+}
+
 TEST(UnicodeTextTest, Ownership) {
   const std::string src = "\u304A\u00B0\u106B";
 

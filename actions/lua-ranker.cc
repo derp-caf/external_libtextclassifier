@@ -28,34 +28,30 @@ extern "C" {
 #endif
 
 namespace libtextclassifier3 {
-namespace {
-
-static constexpr const char* kTypeKey = "type";
-static constexpr const char* kScoreKey = "score";
-static constexpr const char* kResponseTextKey = "response_text";
-
-}  // namespace
 
 std::unique_ptr<ActionsSuggestionsLuaRanker>
 ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-    const std::string& ranker_code, ActionsSuggestionsResponse* response) {
+    const std::string& ranker_code,
+    const reflection::Schema* entity_data_schema,
+    const reflection::Schema* annotations_entity_data_schema,
+    ActionsSuggestionsResponse* response) {
   auto ranker = std::unique_ptr<ActionsSuggestionsLuaRanker>(
-      new ActionsSuggestionsLuaRanker(ranker_code, response));
-  if (!ranker->InitializeEnvironment()) {
+      new ActionsSuggestionsLuaRanker(ranker_code, entity_data_schema,
+                                      annotations_entity_data_schema,
+                                      response));
+  if (!ranker->Initialize()) {
     TC3_LOG(ERROR) << "Could not initialize lua environment for ranker.";
     return nullptr;
   }
   return ranker;
 }
 
-bool ActionsSuggestionsLuaRanker::InitializeEnvironment() {
+bool ActionsSuggestionsLuaRanker::Initialize() {
   return RunProtected([this] {
            LoadDefaultLibraries();
-
-           // Setup callbacks.
-           SetupTableLookupCallback("actions", CALLBACK_ID_ACTIONS);
+           actions_iterator_.NewIterator("actions", &response_->actions,
+                                         state_);
            lua_setglobal(state_, "actions");
-
            return LUA_OK;
          }) == LUA_OK;
 }
@@ -86,87 +82,6 @@ int ActionsSuggestionsLuaRanker::ReadActionsRanking() {
   return LUA_OK;
 }
 
-void ActionsSuggestionsLuaRanker::PushAction(const int action_id) {
-  const ActionSuggestion action = response_->actions[action_id];
-  lua_newtable(state_);
-  PushString(action.type);
-  lua_setfield(state_, /*idx=*/-2, kTypeKey);
-  PushString(action.response_text);
-  lua_setfield(state_, /*idx=*/-2, kResponseTextKey);
-  lua_pushnumber(state_, action.score);
-  lua_setfield(state_, /*idx=*/-2, kScoreKey);
-}
-
-int ActionsSuggestionsLuaRanker::HandleActionsCallback() {
-  switch (lua_type(state_, -1)) {
-    case LUA_TNUMBER: {
-      // Lua is one based, so adjust the index here.
-      const int action_id =
-          static_cast<int>(lua_tonumber(state_, /*idx=*/-1)) - 1;
-      if (action_id < 0 || action_id >= response_->actions.size()) {
-        TC3_LOG(ERROR) << "Invalid action id: " << action_id;
-        lua_error(state_);
-        return 0;
-      }
-      PushAction(action_id);
-      return /*num_results=*/1;
-    }
-    case LUA_TSTRING: {
-      const StringPiece key = ReadString(/*index=*/-1);
-      if (key.Equals(kLengthKey)) {
-        lua_pushinteger(state_, response_->actions.size());
-        return /*num results=*/1;
-      } else if (key.Equals(kPairsKey)) {
-        PushCallback(CALLBACK_ID_ACTIONS_ITER, /*args=*/{/*iterator=*/nullptr});
-        return /*num_results=*/1;
-      } else {
-        TC3_LOG(ERROR) << "Undefined actions member access " << key.ToString();
-        lua_error(state_);
-        return 0;
-      }
-    }
-    default:
-      TC3_LOG(ERROR) << "Unexpected actions access type: "
-                     << lua_type(state_, -1);
-      lua_error(state_);
-      return 0;
-  }
-}
-
-int ActionsSuggestionsLuaRanker::HandleActionsIterCallback(
-    const std::vector<void*>& args) {
-  int64 it = reinterpret_cast<int64>(args[0]);
-  if (it >= response_->actions.size()) {
-    return 0;
-  }
-
-  // Update iterator value.
-  lua_pushlightuserdata(state_, reinterpret_cast<void*>(it + 1));
-  lua_replace(state_, GetArgIndex(0));
-
-  // Key.
-  lua_pushinteger(state_, it + 1);
-
-  // Value.
-  PushAction(it);
-
-  return /*num results=*/2;
-}
-
-int ActionsSuggestionsLuaRanker::HandleCallback(
-    const int callback_id, const std::vector<void*>& args) {
-  switch (callback_id) {
-    case CALLBACK_ID_ACTIONS:
-      return HandleActionsCallback();
-    case CALLBACK_ID_ACTIONS_ITER:
-      return HandleActionsIterCallback(args);
-    default:
-      TC3_LOG(ERROR) << "Unhandled callback: " << callback_id;
-      lua_error(state_);
-      return 0;
-  }
-}
-
 bool ActionsSuggestionsLuaRanker::RankActions() {
   if (response_->actions.empty()) {
     // Nothing to do.
@@ -179,7 +94,7 @@ bool ActionsSuggestionsLuaRanker::RankActions() {
     return false;
   }
 
-  if (lua_pcall(state_, /*nargs=*/0, /*nargs=*/1, /*errfunc=*/0) != LUA_OK) {
+  if (lua_pcall(state_, /*nargs=*/0, /*nresults=*/1, /*errfunc=*/0) != LUA_OK) {
     TC3_LOG(ERROR) << "Could not run ranking snippet.";
     return false;
   }

@@ -19,7 +19,8 @@
 #include <memory>
 
 #include "utils/base/logging.h"
-#include "utils/zlib/zlib.h"
+#include "utils/intents/zlib-utils.h"
+#include "utils/resources.h"
 
 namespace libtextclassifier3 {
 
@@ -39,6 +40,52 @@ bool CompressActionsModel(ActionsModelT* model) {
       zlib_compressor->Compress(rule->pattern, rule->compressed_pattern.get());
       rule->pattern.clear();
     }
+  }
+
+  if (model->preconditions != nullptr &&
+      model->preconditions->low_confidence_rules != nullptr) {
+    for (int i = 0; i < model->preconditions->low_confidence_rules->rule.size();
+         i++) {
+      RulesModel_::RuleT* rule =
+          model->preconditions->low_confidence_rules->rule[i].get();
+      if (!rule->pattern.empty()) {
+        rule->compressed_pattern.reset(new CompressedBufferT);
+        zlib_compressor->Compress(rule->pattern,
+                                  rule->compressed_pattern.get());
+        rule->pattern.clear();
+      }
+      if (!rule->output_pattern.empty()) {
+        rule->compressed_output_pattern.reset(new CompressedBufferT);
+        zlib_compressor->Compress(rule->pattern,
+                                  rule->compressed_output_pattern.get());
+        rule->output_pattern.clear();
+      }
+    }
+  }
+
+  if (!model->lua_actions_script.empty()) {
+    model->compressed_lua_actions_script.reset(new CompressedBufferT);
+    zlib_compressor->Compress(model->lua_actions_script,
+                              model->compressed_lua_actions_script.get());
+  }
+
+  if (model->ranking_options != nullptr &&
+      !model->ranking_options->lua_ranking_script.empty()) {
+    model->ranking_options->compressed_lua_ranking_script.reset(
+        new CompressedBufferT);
+    zlib_compressor->Compress(
+        model->ranking_options->lua_ranking_script,
+        model->ranking_options->compressed_lua_ranking_script.get());
+  }
+
+  // Compress resources.
+  if (model->resources != nullptr) {
+    CompressResources(model->resources.get());
+  }
+
+  // Compress intent generator.
+  if (model->android_intent_options != nullptr) {
+    CompressIntentModel(model->android_intent_options.get());
   }
 
   return true;
@@ -65,6 +112,43 @@ bool DecompressActionsModel(ActionsModelT* model) {
     }
   }
 
+  // Decompress low confidence rules.
+  if (model->preconditions != nullptr &&
+      model->preconditions->low_confidence_rules != nullptr) {
+    for (int i = 0; i < model->preconditions->low_confidence_rules->rule.size();
+         i++) {
+      RulesModel_::RuleT* rule =
+          model->preconditions->low_confidence_rules->rule[i].get();
+      if (!zlib_decompressor->MaybeDecompress(rule->compressed_pattern.get(),
+                                              &rule->pattern)) {
+        TC3_LOG(ERROR) << "Cannot decompress pattern: " << i;
+        return false;
+      }
+      if (!zlib_decompressor->MaybeDecompress(
+              rule->compressed_output_pattern.get(), &rule->output_pattern)) {
+        TC3_LOG(ERROR) << "Cannot decompress pattern: " << i;
+        return false;
+      }
+      rule->compressed_pattern.reset(nullptr);
+      rule->compressed_output_pattern.reset(nullptr);
+    }
+  }
+
+  if (!zlib_decompressor->MaybeDecompress(
+          model->compressed_lua_actions_script.get(),
+          &model->lua_actions_script)) {
+    TC3_LOG(ERROR) << "Cannot decompress actions script.";
+    return false;
+  }
+
+  if (model->ranking_options != nullptr &&
+      !zlib_decompressor->MaybeDecompress(
+          model->ranking_options->compressed_lua_ranking_script.get(),
+          &model->ranking_options->lua_ranking_script)) {
+    TC3_LOG(ERROR) << "Cannot decompress actions script.";
+    return false;
+  }
+
   return true;
 }
 
@@ -78,6 +162,18 @@ std::string CompressSerializedActionsModel(const std::string& model) {
                            ActionsModel::Pack(builder, unpacked_model.get()));
   return std::string(reinterpret_cast<const char*>(builder.GetBufferPointer()),
                      builder.GetSize());
+}
+
+bool GetUncompressedString(const flatbuffers::String* uncompressed_buffer,
+                           const CompressedBuffer* compressed_buffer,
+                           ZlibDecompressor* decompressor, std::string* out) {
+  if (uncompressed_buffer == nullptr && compressed_buffer == nullptr) {
+    out->clear();
+    return true;
+  }
+
+  return decompressor->MaybeDecompressOptionallyCompressedBuffer(
+      uncompressed_buffer, compressed_buffer, out);
 }
 
 }  // namespace libtextclassifier3

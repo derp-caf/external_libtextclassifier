@@ -41,15 +41,19 @@ void SortedStringsTable::GatherPrefixMatches(
     //     `lower_bound` to find the start of the range of matching pieces.
     //     `upper_bound` to find the non-inclusive end of the range.
     left = (std::lower_bound(
-                offsets_ + left, offsets_ + right, input[match_length],
-                [this, match_length](int piece_offset, int c) -> bool {
-                  return pieces_[piece_offset + match_length] < c;
+                offsets_ + left, offsets_ + right,
+                static_cast<unsigned char>(input[match_length]),
+                [this, match_length](uint32 piece_offset, uint32 c) -> bool {
+                  return static_cast<unsigned char>(
+                             pieces_[piece_offset + match_length]) < c;
                 }) -
             offsets_);
     right = (std::upper_bound(
-                 offsets_ + left, offsets_ + right, input[match_length],
-                 [this, match_length](int c, int piece_offset) -> bool {
-                   return c < pieces_[piece_offset + match_length];
+                 offsets_ + left, offsets_ + right,
+                 static_cast<unsigned char>(input[match_length]),
+                 [this, match_length](uint32 c, uint32 piece_offset) -> bool {
+                   return c < static_cast<unsigned char>(
+                                  pieces_[piece_offset + match_length]);
                  }) -
              offsets_);
     span_size = right - left;

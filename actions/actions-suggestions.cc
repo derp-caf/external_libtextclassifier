@@ -70,6 +70,15 @@ T ValueOrDefault(const flatbuffers::Table* values, const int32 field_offset,
   return values->GetField<T>(field_offset, default_value);
 }
 
+// Returns number of (tail) messages of a conversation to consider.
+int NumMessagesToConsider(const Conversation& conversation,
+                          const int max_conversation_history_length) {
+  return ((max_conversation_history_length < 0 ||
+           conversation.messages.size() < max_conversation_history_length)
+              ? conversation.messages.size()
+              : max_conversation_history_length);
+}
+
 }  // namespace
 
 std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromUnownedBuffer(
@@ -116,28 +125,77 @@ std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromScopedMmap(
   return actions;
 }
 
+std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromScopedMmap(
+    std::unique_ptr<libtextclassifier3::ScopedMmap> mmap,
+    std::unique_ptr<UniLib> unilib,
+    const std::string& triggering_preconditions_overlay) {
+  if (!mmap->handle().ok()) {
+    TC3_VLOG(1) << "Mmap failed.";
+    return nullptr;
+  }
+  const ActionsModel* model = LoadAndVerifyModel(
+      reinterpret_cast<const uint8_t*>(mmap->handle().start()),
+      mmap->handle().num_bytes());
+  if (!model) {
+    TC3_LOG(ERROR) << "Model verification failed.";
+    return nullptr;
+  }
+  auto actions = std::unique_ptr<ActionsSuggestions>(new ActionsSuggestions());
+  actions->model_ = model;
+  actions->mmap_ = std::move(mmap);
+  actions->owned_unilib_ = std::move(unilib);
+  actions->unilib_ = actions->owned_unilib_.get();
+  actions->triggering_preconditions_overlay_buffer_ =
+      triggering_preconditions_overlay;
+  if (!actions->ValidateAndInitialize()) {
+    return nullptr;
+  }
+  return actions;
+}
+
 std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromFileDescriptor(
     const int fd, const int offset, const int size, const UniLib* unilib,
-    const std::string& preconditions_overwrite) {
+    const std::string& triggering_preconditions_overlay) {
   std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
       new libtextclassifier3::ScopedMmap(fd, offset, size));
-  return FromScopedMmap(std::move(mmap), unilib, preconditions_overwrite);
+  return FromScopedMmap(std::move(mmap), unilib,
+                        triggering_preconditions_overlay);
 }
 
 std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromFileDescriptor(
     const int fd, const UniLib* unilib,
-    const std::string& preconditions_overwrite) {
+    const std::string& triggering_preconditions_overlay) {
   std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
       new libtextclassifier3::ScopedMmap(fd));
-  return FromScopedMmap(std::move(mmap), unilib, preconditions_overwrite);
+  return FromScopedMmap(std::move(mmap), unilib,
+                        triggering_preconditions_overlay);
+}
+
+std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromFileDescriptor(
+    const int fd, std::unique_ptr<UniLib> unilib,
+    const std::string& triggering_preconditions_overlay) {
+  std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
+      new libtextclassifier3::ScopedMmap(fd));
+  return FromScopedMmap(std::move(mmap), std::move(unilib),
+                        triggering_preconditions_overlay);
 }
 
 std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromPath(
     const std::string& path, const UniLib* unilib,
-    const std::string& preconditions_overwrite) {
+    const std::string& triggering_preconditions_overlay) {
   std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
       new libtextclassifier3::ScopedMmap(path));
-  return FromScopedMmap(std::move(mmap), unilib, preconditions_overwrite);
+  return FromScopedMmap(std::move(mmap), unilib,
+                        triggering_preconditions_overlay);
+}
+
+std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromPath(
+    const std::string& path, std::unique_ptr<UniLib> unilib,
+    const std::string& triggering_preconditions_overlay) {
+  std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
+      new libtextclassifier3::ScopedMmap(path));
+  return FromScopedMmap(std::move(mmap), std::move(unilib),
+                        triggering_preconditions_overlay);
 }
 
 void ActionsSuggestions::SetOrCreateUnilib(const UniLib* unilib) {
@@ -831,45 +889,81 @@ void ActionsSuggestions::SuggestActionsFromAnnotations(
     return;
   }
 
-  // Create actions based on the annotations present in the last message.
-  const ConversationMessage& message = conversation.messages.back();
-  std::vector<AnnotatedSpan> annotations = message.annotations;
+  // Create actions based on the annotations.
+  const int max_from_any_person =
+      model_->annotation_actions_spec()->max_history_from_any_person();
+  const int max_from_last_person =
+      model_->annotation_actions_spec()->max_history_from_last_person();
+  const int last_person = conversation.messages.back().user_id;
 
-  if (annotations.empty() && annotator != nullptr) {
-    annotations =
-        annotator->Annotate(message.text, AnnotationOptionsForMessage(message));
-  }
-  const int message_index = conversation.messages.size() - 1;
-  std::vector<ActionSuggestionAnnotation> action_annotations;
-  action_annotations.reserve(annotations.size());
-  for (const AnnotatedSpan& annotation : annotations) {
-    if (annotation.classification.empty()) {
-      continue;
+  int num_messages_last_person = 0;
+  int num_messages_any_person = 0;
+  bool all_from_last_person = true;
+  for (int message_index = conversation.messages.size() - 1; message_index >= 0;
+       message_index--) {
+    const ConversationMessage& message = conversation.messages[message_index];
+    std::vector<AnnotatedSpan> annotations = message.annotations;
+
+    // Update how many messages we have processed from the last person in the
+    // conversation and from any person in the conversation.
+    num_messages_any_person++;
+    if (all_from_last_person && message.user_id == last_person) {
+      num_messages_last_person++;
+    } else {
+      all_from_last_person = false;
     }
 
-    const ClassificationResult& classification_result =
-        annotation.classification[0];
-
-    ActionSuggestionAnnotation action_annotation;
-    action_annotation.span = {
-        message_index, annotation.span,
-        UTF8ToUnicodeText(message.text, /*do_copy=*/false)
-            .UTF8Substring(annotation.span.first, annotation.span.second)};
-    action_annotation.entity = classification_result;
-    action_annotation.name = classification_result.collection;
-    action_annotations.push_back(action_annotation);
-  }
-
-  if (model_->annotation_actions_spec()->deduplicate_annotations()) {
-    // Create actions only for deduplicated annotations.
-    for (const int annotation_id : DeduplicateAnnotations(action_annotations)) {
-      SuggestActionsFromAnnotation(message_index,
-                                   action_annotations[annotation_id], actions);
+    if (num_messages_any_person > max_from_any_person &&
+        (!all_from_last_person ||
+         num_messages_last_person > max_from_last_person)) {
+      break;
     }
-  } else {
-    // Create actions for all annotations.
-    for (const ActionSuggestionAnnotation& annotation : action_annotations) {
-      SuggestActionsFromAnnotation(message_index, annotation, actions);
+
+    if (message.user_id == kLocalUserId) {
+      if (model_->annotation_actions_spec()->only_until_last_sent()) {
+        break;
+      }
+      if (!model_->annotation_actions_spec()->include_local_user_messages()) {
+        continue;
+      }
+    }
+
+    if (annotations.empty() && annotator != nullptr) {
+      annotations = annotator->Annotate(message.text,
+                                        AnnotationOptionsForMessage(message));
+    }
+    std::vector<ActionSuggestionAnnotation> action_annotations;
+    action_annotations.reserve(annotations.size());
+    for (const AnnotatedSpan& annotation : annotations) {
+      if (annotation.classification.empty()) {
+        continue;
+      }
+
+      const ClassificationResult& classification_result =
+          annotation.classification[0];
+
+      ActionSuggestionAnnotation action_annotation;
+      action_annotation.span = {
+          message_index, annotation.span,
+          UTF8ToUnicodeText(message.text, /*do_copy=*/false)
+              .UTF8Substring(annotation.span.first, annotation.span.second)};
+      action_annotation.entity = classification_result;
+      action_annotation.name = classification_result.collection;
+      action_annotations.push_back(action_annotation);
+    }
+
+    if (model_->annotation_actions_spec()->deduplicate_annotations()) {
+      // Create actions only for deduplicated annotations.
+      for (const int annotation_id :
+           DeduplicateAnnotations(action_annotations)) {
+        SuggestActionsFromAnnotation(
+            message_index, action_annotations[annotation_id], actions);
+      }
+    } else {
+      // Create actions for all annotations.
+      for (const ActionSuggestionAnnotation& annotation : action_annotations) {
+        SuggestActionsFromAnnotation(message_index, annotation, actions);
+      }
     }
   }
 }
@@ -939,20 +1033,9 @@ std::vector<int> ActionsSuggestions::DeduplicateAnnotations(
   return result;
 }
 
-bool ActionsSuggestions::HasEntityData(const RulesModel_::Rule* rule) const {
-  for (const RulesModel_::Rule_::RuleActionSpec* rule_action :
-       *rule->actions()) {
-    if (rule_action->action()->serialized_entity_data() != nullptr ||
-        rule_action->capturing_group() != nullptr) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool ActionsSuggestions::FillAnnotationFromMatchGroup(
     const UniLib::RegexMatcher* matcher,
-    const RulesModel_::Rule_::RuleActionSpec_::CapturingGroup* group,
+    const RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroup* group,
     const int message_index, ActionSuggestionAnnotation* annotation) const {
   if (group->annotation_name() != nullptr ||
       group->annotation_type() != nullptr) {
@@ -995,55 +1078,78 @@ bool ActionsSuggestions::SuggestActionsFromRules(
     const std::unique_ptr<UniLib::RegexMatcher> matcher =
         rule.pattern->Matcher(message_unicode);
     int status = UniLib::RegexMatcher::kNoError;
-    const bool has_entity_data = HasEntityData(rule.rule);
     while (matcher->Find(&status) && status == UniLib::RegexMatcher::kNoError) {
       for (const RulesModel_::Rule_::RuleActionSpec* rule_action :
            *rule.rule->actions()) {
         const ActionSuggestionSpec* action = rule_action->action();
         std::vector<ActionSuggestionAnnotation> annotations;
 
-        std::string serialized_entity_data;
-        if (has_entity_data) {
-          TC3_CHECK(entity_data_builder_ != nullptr);
-          std::unique_ptr<ReflectiveFlatbuffer> entity_data =
-              entity_data_builder_->NewRoot();
+        bool sets_entity_data = false;
+        std::unique_ptr<ReflectiveFlatbuffer> entity_data =
+            entity_data_builder_ != nullptr ? entity_data_builder_->NewRoot()
+                                            : nullptr;
+
+        // Set static entity data.
+        if (action != nullptr && action->serialized_entity_data() != nullptr) {
           TC3_CHECK(entity_data != nullptr);
+          sets_entity_data = true;
+          entity_data->MergeFromSerializedFlatbuffer(
+              StringPiece(action->serialized_entity_data()->c_str(),
+                          action->serialized_entity_data()->size()));
+        }
 
-          // Set static entity data.
-          if (action->serialized_entity_data() != nullptr) {
-            entity_data->MergeFromSerializedFlatbuffer(
-                StringPiece(action->serialized_entity_data()->c_str(),
-                            action->serialized_entity_data()->size()));
-          }
-
-          // Add entity data from rule capturing groups.
-          if (rule_action->capturing_group() != nullptr) {
-            for (const RulesModel_::Rule_::RuleActionSpec_::CapturingGroup*
-                     group : *rule_action->capturing_group()) {
-              if (group->entity_field() != nullptr &&
-                  !SetFieldFromCapturingGroup(
+        // Add entity data from rule capturing groups.
+        if (rule_action->capturing_group() != nullptr) {
+          for (const RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroup*
+                   group : *rule_action->capturing_group()) {
+            if (group->entity_field() != nullptr) {
+              TC3_CHECK(entity_data != nullptr);
+              sets_entity_data = true;
+              if (!SetFieldFromCapturingGroup(
                       group->group_id(), group->entity_field(), matcher.get(),
                       entity_data.get())) {
                 TC3_LOG(ERROR)
                     << "Could not set entity data from rule capturing group.";
                 return false;
               }
+            }
 
-              // Create a text annotation for the group span.
-              ActionSuggestionAnnotation annotation;
-              if (FillAnnotationFromMatchGroup(matcher.get(), group,
-                                               message_index, &annotation)) {
-                annotations.push_back(annotation);
+            // Create a text annotation for the group span.
+            ActionSuggestionAnnotation annotation;
+            if (FillAnnotationFromMatchGroup(matcher.get(), group,
+                                             message_index, &annotation)) {
+              annotations.push_back(annotation);
+            }
+
+            // Create text reply.
+            if (group->text_reply() != nullptr) {
+              int status = UniLib::RegexMatcher::kNoError;
+              const std::string group_text =
+                  matcher->Group(group->group_id(), &status).ToUTF8String();
+              if (status != UniLib::RegexMatcher::kNoError) {
+                TC3_LOG(ERROR) << "Could get text from capturing group.";
+                return false;
               }
+              if (group_text.empty()) {
+                // The group was not part of the match, ignore and continue.
+                continue;
+              }
+              actions->push_back(SuggestionFromSpec(
+                  group->text_reply(),
+                  /*default_type=*/model_->smart_reply_action_type()->str(),
+                  /*default_response_text=*/group_text));
             }
           }
-
-          serialized_entity_data = entity_data->Serialize();
         }
-        ActionSuggestion suggestion = SuggestionFromSpec(action);
-        suggestion.annotations = annotations;
-        suggestion.serialized_entity_data = serialized_entity_data;
-        actions->push_back(suggestion);
+
+        if (action != nullptr) {
+          ActionSuggestion suggestion = SuggestionFromSpec(action);
+          suggestion.annotations = annotations;
+          if (sets_entity_data) {
+            suggestion.serialized_entity_data = entity_data->Serialize();
+          }
+          actions->push_back(suggestion);
+        }
       }
     }
   }
@@ -1077,14 +1183,8 @@ bool ActionsSuggestions::GatherActionsSuggestions(
     return true;
   }
 
-  const int conversation_history_length = conversation.messages.size();
-  const int max_conversation_history_length =
-      model_->max_conversation_history_length();
-  const int num_messages =
-      ((max_conversation_history_length < 0 ||
-        conversation_history_length < max_conversation_history_length)
-           ? conversation_history_length
-           : max_conversation_history_length);
+  const int num_messages = NumMessagesToConsider(
+      conversation, model_->max_conversation_history_length());
 
   if (num_messages <= 0) {
     TC3_LOG(INFO) << "No messages provided for actions suggestions.";
@@ -1177,7 +1277,7 @@ ActionsSuggestionsResponse ActionsSuggestions::SuggestActions(
   if (!GatherActionsSuggestions(conversation, annotator, options, &response)) {
     TC3_LOG(ERROR) << "Could not gather actions suggestions.";
     response.actions.clear();
-  } else if (!ranker_->RankActions(&response, entity_data_schema_,
+  } else if (!ranker_->RankActions(conversation, &response, entity_data_schema_,
                                    annotator != nullptr
                                        ? annotator->entity_data_schema()
                                        : nullptr)) {

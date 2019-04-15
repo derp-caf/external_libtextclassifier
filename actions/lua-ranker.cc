@@ -30,15 +30,15 @@ extern "C" {
 namespace libtextclassifier3 {
 
 std::unique_ptr<ActionsSuggestionsLuaRanker>
-ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-    const std::string& ranker_code,
+ActionsSuggestionsLuaRanker::Create(
+    const Conversation& conversation, const std::string& ranker_code,
     const reflection::Schema* entity_data_schema,
     const reflection::Schema* annotations_entity_data_schema,
     ActionsSuggestionsResponse* response) {
   auto ranker = std::unique_ptr<ActionsSuggestionsLuaRanker>(
-      new ActionsSuggestionsLuaRanker(ranker_code, entity_data_schema,
-                                      annotations_entity_data_schema,
-                                      response));
+      new ActionsSuggestionsLuaRanker(
+          conversation, ranker_code, entity_data_schema,
+          annotations_entity_data_schema, response));
   if (!ranker->Initialize()) {
     TC3_LOG(ERROR) << "Could not initialize lua environment for ranker.";
     return nullptr;
@@ -49,9 +49,16 @@ ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
 bool ActionsSuggestionsLuaRanker::Initialize() {
   return RunProtected([this] {
            LoadDefaultLibraries();
+
+           // Expose generated actions.
            actions_iterator_.NewIterator("actions", &response_->actions,
                                          state_);
            lua_setglobal(state_, "actions");
+
+           // Expose conversation message stream.
+           conversation_iterator_.NewIterator("messages",
+                                              &conversation_.messages, state_);
+           lua_setglobal(state_, "messages");
            return LUA_OK;
          }) == LUA_OK;
 }

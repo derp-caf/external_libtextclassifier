@@ -31,6 +31,13 @@ public final class RemoteActionTemplate {
   /** Description shown for the action (see: RemoteAction.getContentDescription). */
   public final String description;
 
+  /**
+   * Description shown for the action (see: RemoteAction.getContentDescription) when app name is
+   * available. Caller is expected to replace the placeholder by the name of the app that is going
+   * to handle the action.
+   */
+  public final String descriptionWithAppName;
+
   /** The action to set on the Intent (see: Intent.setAction). */
   public final String action;
 
@@ -59,6 +66,7 @@ public final class RemoteActionTemplate {
       String titleWithoutEntity,
       String titleWithEntity,
       String description,
+      String descriptionWithAppName,
       String action,
       String data,
       String type,
@@ -70,6 +78,7 @@ public final class RemoteActionTemplate {
     this.titleWithoutEntity = titleWithoutEntity;
     this.titleWithEntity = titleWithEntity;
     this.description = description;
+    this.descriptionWithAppName = descriptionWithAppName;
     this.action = action;
     this.data = data;
     this.type = type;

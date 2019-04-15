@@ -42,12 +42,9 @@ bool CompressActionsModel(ActionsModelT* model) {
     }
   }
 
-  if (model->preconditions != nullptr &&
-      model->preconditions->low_confidence_rules != nullptr) {
-    for (int i = 0; i < model->preconditions->low_confidence_rules->rule.size();
-         i++) {
-      RulesModel_::RuleT* rule =
-          model->preconditions->low_confidence_rules->rule[i].get();
+  if (model->low_confidence_rules != nullptr) {
+    for (int i = 0; i < model->low_confidence_rules->rule.size(); i++) {
+      RulesModel_::RuleT* rule = model->low_confidence_rules->rule[i].get();
       if (!rule->pattern.empty()) {
         rule->compressed_pattern.reset(new CompressedBufferT);
         zlib_compressor->Compress(rule->pattern,
@@ -113,12 +110,9 @@ bool DecompressActionsModel(ActionsModelT* model) {
   }
 
   // Decompress low confidence rules.
-  if (model->preconditions != nullptr &&
-      model->preconditions->low_confidence_rules != nullptr) {
-    for (int i = 0; i < model->preconditions->low_confidence_rules->rule.size();
-         i++) {
-      RulesModel_::RuleT* rule =
-          model->preconditions->low_confidence_rules->rule[i].get();
+  if (model->low_confidence_rules != nullptr) {
+    for (int i = 0; i < model->low_confidence_rules->rule.size(); i++) {
+      RulesModel_::RuleT* rule = model->low_confidence_rules->rule[i].get();
       if (!zlib_decompressor->MaybeDecompress(rule->compressed_pattern.get(),
                                               &rule->pattern)) {
         TC3_LOG(ERROR) << "Cannot decompress pattern: " << i;

@@ -27,6 +27,7 @@
 #include "utils/java/string_utils.h"
 #include "utils/lua-utils.h"
 #include "utils/strings/stringpiece.h"
+#include "utils/strings/substitute.h"
 #include "utils/utf8/unicodetext.h"
 #include "utils/variant.h"
 #include "utils/zlib/zlib.h"
@@ -51,6 +52,7 @@ static constexpr const char* kUrlHostKey = "url_host";
 static constexpr const char* kUrlEncodeKey = "urlencode";
 static constexpr const char* kPackageNameKey = "package_name";
 static constexpr const char* kDeviceLocaleKey = "device_locales";
+static constexpr const char* kFormatKey = "format";
 
 // An Android specific Lua environment with JNI backed callbacks.
 class JniLuaEnvironment : public LuaEnvironment {
@@ -74,6 +76,7 @@ class JniLuaEnvironment : public LuaEnvironment {
   int HandleUrlEncode();
   int HandleUrlSchema();
   int HandleHash();
+  int HandleFormat();
   int HandleAndroidStringResources();
   int HandleUrlHost();
 
@@ -189,6 +192,9 @@ int JniLuaEnvironment::HandleExternalCallback() {
   const StringPiece key = ReadString(/*index=*/-1);
   if (key.Equals(kHashKey)) {
     Bind<JniLuaEnvironment, &JniLuaEnvironment::HandleHash>();
+    return 1;
+  } else if (key.Equals(kFormatKey)) {
+    Bind<JniLuaEnvironment, &JniLuaEnvironment::HandleFormat>();
     return 1;
   } else {
     TC3_LOG(ERROR) << "Undefined external access " << key.ToString();
@@ -399,6 +405,16 @@ int JniLuaEnvironment::HandleHash() {
   return 1;
 }
 
+int JniLuaEnvironment::HandleFormat() {
+  const int num_args = lua_gettop(state_);
+  std::vector<StringPiece> args(num_args - 1);
+  for (int i = 0; i < num_args - 1; i++) {
+    args[i] = ReadString(/*index=*/i + 2);
+  }
+  PushString(strings::Substitute(ReadString(/*index=*/1), args));
+  return 1;
+}
+
 bool JniLuaEnvironment::LookupModelStringResource() {
   // Handle only lookup by name.
   if (lua_type(state_, 2) != LUA_TSTRING) {
@@ -532,6 +548,8 @@ RemoteActionTemplate JniLuaEnvironment::ReadRemoteActionTemplateResult() {
       result.title_with_entity = ReadString(/*index=*/-1).ToString();
     } else if (key.Equals("description")) {
       result.description = ReadString(/*index=*/-1).ToString();
+    } else if (key.Equals("description_with_app_name")) {
+      result.description_with_app_name = ReadString(/*index=*/-1).ToString();
     } else if (key.Equals("action")) {
       result.action = ReadString(/*index=*/-1).ToString();
     } else if (key.Equals("data")) {
@@ -827,8 +845,7 @@ bool IntentGenerator::GenerateIntents(
   // Retrieve generator for specified entity.
   auto it = generators_.find(classification.collection);
   if (it == generators_.end()) {
-    TC3_LOG(INFO) << "Unknown entity: " << classification.collection;
-    return false;
+    return true;
   }
 
   const std::string entity_text =
@@ -862,8 +879,7 @@ bool IntentGenerator::GenerateIntents(
   // Retrieve generator for specified action.
   auto it = generators_.find(action.type);
   if (it == generators_.end()) {
-    TC3_LOG(INFO) << "No generator for action type: " << action.type;
-    return false;
+    return true;
   }
 
   std::unique_ptr<ActionsJniLuaEnvironment> interpreter(

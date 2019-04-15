@@ -145,6 +145,22 @@ TEST_F(NumberAnnotatorTest, FindsNumberWithPunctuation) {
                           Field(&ClassificationResult::numeric_value, 9)))))));
 }
 
+TEST_F(NumberAnnotatorTest, HandlesNumbersAtBeginning) {
+  std::vector<AnnotatedSpan> result;
+  EXPECT_TRUE(number_annotator_.FindAll(
+      UTF8ToUnicodeText("-5"), AnnotationUsecase_ANNOTATION_USECASE_RAW,
+      &result));
+
+  EXPECT_THAT(
+      result,
+      ElementsAre(
+          AllOf(Field(&AnnotatedSpan::span, CodepointSpan(0, 2)),
+                Field(&AnnotatedSpan::classification,
+                      ElementsAre(AllOf(
+                          Field(&ClassificationResult::collection, "number"),
+                          Field(&ClassificationResult::numeric_value, -5)))))));
+}
+
 TEST_F(NumberAnnotatorTest, WhenLowestSupportedNumberParsesIt) {
   ClassificationResult classification_result;
   EXPECT_TRUE(number_annotator_.ClassifyText(

@@ -56,6 +56,10 @@ class ActionsSuggestions {
       std::unique_ptr<libtextclassifier3::ScopedMmap> mmap,
       const UniLib* unilib = nullptr,
       const std::string& triggering_preconditions_overlay = "");
+  static std::unique_ptr<ActionsSuggestions> FromScopedMmap(
+      std::unique_ptr<libtextclassifier3::ScopedMmap> mmap,
+      std::unique_ptr<UniLib> unilib,
+      const std::string& triggering_preconditions_overlay);
   static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
       const int fd, const int offset, const int size,
       const UniLib* unilib = nullptr,
@@ -63,9 +67,15 @@ class ActionsSuggestions {
   static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
       const int fd, const UniLib* unilib = nullptr,
       const std::string& triggering_preconditions_overlay = "");
+  static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
+      const int fd, std::unique_ptr<UniLib> unilib,
+      const std::string& triggering_preconditions_overlay);
   static std::unique_ptr<ActionsSuggestions> FromPath(
       const std::string& path, const UniLib* unilib = nullptr,
       const std::string& triggering_preconditions_overlay = "");
+  static std::unique_ptr<ActionsSuggestions> FromPath(
+      const std::string& path, std::unique_ptr<UniLib> unilib,
+      const std::string& triggering_preconditions_overlay);
 
   ActionsSuggestionsResponse SuggestActions(
       const Conversation& conversation,
@@ -77,6 +87,8 @@ class ActionsSuggestions {
 
   const ActionsModel* model() const;
   const reflection::Schema* entity_data_schema() const;
+
+  static const int kLocalUserId = 0;
 
   // Should be in sync with those defined in Android.
   // android/frameworks/base/core/java/android/view/textclassifier/ConversationActions.java
@@ -186,9 +198,6 @@ class ActionsSuggestions {
   bool FilterConfidenceOutput(const std::vector<int>& post_check_rules,
                               std::vector<ActionSuggestion>* actions) const;
 
-  // Returns whether a regex rule provides entity data from a match.
-  bool HasEntityData(const RulesModel_::Rule* rule) const;
-
   ActionSuggestion SuggestionFromSpec(
       const ActionSuggestionSpec* action, const std::string& default_type = "",
       const std::string& default_response_text = "",
@@ -198,7 +207,7 @@ class ActionsSuggestions {
 
   bool FillAnnotationFromMatchGroup(
       const UniLib::RegexMatcher* matcher,
-      const RulesModel_::Rule_::RuleActionSpec_::CapturingGroup* group,
+      const RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroup* group,
       const int message_index, ActionSuggestionAnnotation* annotation) const;
 
   const ActionsModel* model_;

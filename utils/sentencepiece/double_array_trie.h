@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "utils/base/endian.h"
+#include "utils/base/integral_types.h"
 #include "utils/sentencepiece/matcher.h"
 #include "utils/strings/stringpiece.h"
 
@@ -35,7 +36,7 @@ namespace libtextclassifier3 {
 // character during matching.
 // We account for endianness when using the node values, as they are serialized
 // (in little endian) as bytes in the flatbuffer model.
-typedef unsigned int TrieNode;
+typedef uint32 TrieNode;
 
 // A memory mappable trie, compatible with Darts::DoubleArray.
 class DoubleArrayTrie : public SentencePieceMatcher {
@@ -53,22 +54,22 @@ class DoubleArrayTrie : public SentencePieceMatcher {
 
  private:
   // Returns whether a node as a leaf as a child.
-  bool has_leaf(unsigned int i) const { return nodes_[i] & 0x100; }
+  bool has_leaf(uint32 i) const { return nodes_[i] & 0x100; }
 
   // Available when a node is a leaf.
-  int value(unsigned int i) const {
+  int value(uint32 i) const {
     return static_cast<int>(LittleEndian::ToHost32(nodes_[i]) & 0x7fffffff);
   }
 
   // Label associated with a node.
   // A leaf node will have the MSB set and thus return an invalid label.
-  unsigned int label(unsigned int i) const {
+  uint32 label(uint32 i) const {
     return LittleEndian::ToHost32(nodes_[i]) & 0x800000ff;
   }
 
   // Returns offset to children.
-  unsigned int offset(unsigned int i) const {
-    const unsigned int node = LittleEndian::ToHost32(nodes_[i]);
+  uint32 offset(uint32 i) const {
+    const uint32 node = LittleEndian::ToHost32(nodes_[i]);
     return (node >> 10) << ((node & 0x200) >> 6);
   }
 

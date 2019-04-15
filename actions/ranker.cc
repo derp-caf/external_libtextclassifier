@@ -154,7 +154,7 @@ bool ActionsSuggestionsRanker::InitializeAndValidate(
 }
 
 bool ActionsSuggestionsRanker::RankActions(
-    ActionsSuggestionsResponse* response,
+    const Conversation& conversation, ActionsSuggestionsResponse* response,
     const reflection::Schema* entity_data_schema,
     const reflection::Schema* annotations_entity_data_schema) const {
   if (options_->deduplicate_suggestions() ||
@@ -212,10 +212,9 @@ bool ActionsSuggestionsRanker::RankActions(
 
   // Run lua ranking snippet, if provided.
   if (!lua_bytecode_.empty()) {
-    auto lua_ranker =
-        ActionsSuggestionsLuaRanker::CreateActionsSuggestionsLuaRanker(
-            lua_bytecode_, entity_data_schema, annotations_entity_data_schema,
-            response);
+    auto lua_ranker = ActionsSuggestionsLuaRanker::Create(
+        conversation, lua_bytecode_, entity_data_schema,
+        annotations_entity_data_schema, response);
     if (lua_ranker == nullptr || !lua_ranker->RankActions()) {
       TC3_LOG(ERROR) << "Could not run lua ranking snippet.";
       return false;

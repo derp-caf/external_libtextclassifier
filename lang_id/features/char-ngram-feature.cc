@@ -123,6 +123,11 @@ int ContinuousBagOfNgramsFunction::ComputeNgramCounts(
 void ContinuousBagOfNgramsFunction::Evaluate(const WorkspaceSet &workspaces,
                                              const LightSentence &sentence,
                                              FeatureVector *result) const {
+  // NOTE: we use std::* constructs (instead of absl::Mutex & co) to simplify
+  // porting to Android and to avoid pulling in absl (which increases our code
+  // size).
+  std::lock_guard<std::mutex> mlock(state_mutex_);
+
   // Find the char ngram counts.
   int total_count = ComputeNgramCounts(sentence);
 

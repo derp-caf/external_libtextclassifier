@@ -53,7 +53,7 @@ struct LangIdResult {
 // Note: this class does not handle the details of loading the actual model.
 // Those details have been "outsourced" to the ModelProvider class.
 //
-// Note: this class is thread-unsafe.
+// This class is thread safe.
 class LangId {
  public:
   // Standard BCP-47 language code for Unknown/Undetermined language.

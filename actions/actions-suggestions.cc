@@ -296,10 +296,11 @@ bool ActionsSuggestions::ValidateAndInitialize() {
       return false;
     }
 
-    // Cache embedding of padding token.
-    if (!feature_processor_->AppendTokenFeatures(
-            Token(), embedding_executor_.get(), &embedded_padding_token_)) {
-      TC3_LOG(ERROR) << "Could not run token feature extractor.";
+    // Cache embedding of padding, start and end token.
+    if (!EmbedTokenId(options->padding_token_id(), &embedded_padding_token_) ||
+        !EmbedTokenId(options->start_token_id(), &embedded_start_token_) ||
+        !EmbedTokenId(options->end_token_id(), &embedded_end_token_)) {
+      TC3_LOG(ERROR) << "Could not precompute token embeddings.";
       return false;
     }
     token_embedding_size_ = feature_processor_->GetTokenEmbeddingSize();
@@ -381,6 +382,13 @@ bool ActionsSuggestions::InitializeTriggeringPreconditions() {
       defaults->min_reply_score_threshold());
 
   return true;
+}
+
+bool ActionsSuggestions::EmbedTokenId(const int32 token_id,
+                                      std::vector<float>* embedding) const {
+  return feature_processor_->AppendFeatures(
+      {token_id},
+      /*dense_features=*/{}, embedding_executor_.get(), embedding);
 }
 
 bool ActionsSuggestions::InitializeRules(ZlibDecompressor* decompressor) {
@@ -553,38 +561,38 @@ ActionSuggestion ActionsSuggestions::SuggestionFromSpec(
   return suggestion;
 }
 
-bool ActionsSuggestions::ExtractTokenFeatures(
-    const std::vector<std::string>& context, std::vector<float>* embeddings,
-    std::vector<int>* num_tokens_per_message,
-    int* max_num_tokens_per_message) const {
-  if (feature_processor_ == nullptr) {
-    TC3_LOG(ERROR) << "Missing token feature extractor.";
-    return false;
+std::vector<std::vector<Token>> ActionsSuggestions::Tokenize(
+    const std::vector<std::string>& context) const {
+  std::vector<std::vector<Token>> tokens;
+  tokens.reserve(context.size());
+  for (const std::string& message : context) {
+    tokens.push_back(feature_processor_->tokenizer()->Tokenize(message));
   }
+  return tokens;
+}
 
-  // Tokenize and extract features from the input text.
-  const int num_messages = context.size();
-  std::vector<std::vector<Token>> tokens(num_messages);
-  num_tokens_per_message->resize(num_messages);
+bool ActionsSuggestions::EmbedTokensPerMessage(
+    const std::vector<std::vector<Token>>& tokens,
+    std::vector<float>* embeddings, int* max_num_tokens_per_message) const {
+  const int num_messages = tokens.size();
   *max_num_tokens_per_message = 0;
   for (int i = 0; i < num_messages; i++) {
-    tokens[i] = feature_processor_->tokenizer()->Tokenize(context[i]);
     const int num_message_tokens = tokens[i].size();
-    (*num_tokens_per_message)[i] = num_message_tokens;
     if (num_message_tokens > *max_num_tokens_per_message) {
       *max_num_tokens_per_message = num_message_tokens;
     }
   }
 
-  // Overwrite the number of tokens if specified.
-  if (model_->feature_processor_options()->num_tokens_per_message() > 0) {
+  if (model_->feature_processor_options()->min_num_tokens_per_message() >
+      *max_num_tokens_per_message) {
     *max_num_tokens_per_message =
-        model_->feature_processor_options()->num_tokens_per_message();
+        model_->feature_processor_options()->min_num_tokens_per_message();
   }
-
-  if (*max_num_tokens_per_message <= 0) {
-    TC3_LOG(ERROR) << "Could not tokenize input.";
-    return false;
+  if (model_->feature_processor_options()->max_num_tokens_per_message() > 0 &&
+      *max_num_tokens_per_message >
+          model_->feature_processor_options()->max_num_tokens_per_message()) {
+    *max_num_tokens_per_message =
+        model_->feature_processor_options()->max_num_tokens_per_message();
   }
 
   // Embed all tokens and add paddings to pad tokens of each message to the
@@ -611,8 +619,76 @@ bool ActionsSuggestions::ExtractTokenFeatures(
   return true;
 }
 
+bool ActionsSuggestions::EmbedAndFlattenTokens(
+    const std::vector<std::vector<Token>> tokens,
+    std::vector<float>* embeddings, int* total_token_count) const {
+  const int num_messages = tokens.size();
+  int start_message = 0;
+  int message_token_offset = 0;
+
+  // If a maximum model input length is specified, we need to check how
+  // much we need to trim at the start.
+  const int max_num_total_tokens =
+      model_->feature_processor_options()->max_num_total_tokens();
+  if (max_num_total_tokens > 0) {
+    int total_tokens = 0;
+    start_message = num_messages - 1;
+    for (; start_message >= 0; start_message--) {
+      // Tokens of the message + start and end token.
+      const int num_message_tokens = tokens[start_message].size() + 2;
+      total_tokens += num_message_tokens;
+
+      // Check whether we exhausted the budget.
+      if (total_tokens >= max_num_total_tokens) {
+        message_token_offset = total_tokens - max_num_total_tokens;
+        break;
+      }
+    }
+  }
+
+  // Add embeddings.
+  *total_token_count = 0;
+  for (int i = start_message; i < num_messages; i++) {
+    if (message_token_offset == 0) {
+      ++(*total_token_count);
+      // Add `start message` token.
+      embeddings->insert(embeddings->end(), embedded_start_token_.begin(),
+                         embedded_start_token_.end());
+    }
+
+    for (int pos = std::max(0, message_token_offset - 1);
+         pos < tokens[i].size(); pos++) {
+      ++(*total_token_count);
+      if (!feature_processor_->AppendTokenFeatures(
+              tokens[i][pos], embedding_executor_.get(), embeddings)) {
+        TC3_LOG(ERROR) << "Could not run token feature extractor.";
+        return false;
+      }
+    }
+
+    // Add `end message` token.
+    ++(*total_token_count);
+    embeddings->insert(embeddings->end(), embedded_end_token_.begin(),
+                       embedded_end_token_.end());
+
+    // Reset for the subsequent messages.
+    message_token_offset = 0;
+  }
+
+  // Add optional padding.
+  const int min_num_total_tokens =
+      model_->feature_processor_options()->min_num_total_tokens();
+  for (; *total_token_count < min_num_total_tokens; ++(*total_token_count)) {
+    embeddings->insert(embeddings->end(), embedded_padding_token_.begin(),
+                       embedded_padding_token_.end());
+  }
+
+  return true;
+}
+
 bool ActionsSuggestions::AllocateInput(const int conversation_length,
                                        const int max_tokens,
+                                       const int total_token_count,
                                        tflite::Interpreter* interpreter) const {
   if (model_->tflite_model_spec()->resize_inputs()) {
     if (model_->tflite_model_spec()->input_context() >= 0) {
@@ -635,13 +711,19 @@ bool ActionsSuggestions::AllocateInput(const int conversation_length,
       interpreter->ResizeInputTensor(
           interpreter
               ->inputs()[model_->tflite_model_spec()->input_num_tokens()],
-          {conversation_length, max_tokens});
+          {conversation_length, 1});
     }
     if (model_->tflite_model_spec()->input_token_embeddings() >= 0) {
       interpreter->ResizeInputTensor(
           interpreter
               ->inputs()[model_->tflite_model_spec()->input_token_embeddings()],
           {conversation_length, max_tokens, token_embedding_size_});
+    }
+    if (model_->tflite_model_spec()->input_flattened_token_embeddings() >= 0) {
+      interpreter->ResizeInputTensor(
+          interpreter->inputs()[model_->tflite_model_spec()
+                                    ->input_flattened_token_embeddings()],
+          {1, total_token_count});
     }
   }
 
@@ -655,19 +737,38 @@ bool ActionsSuggestions::SetupModelInput(
     const float empirical_probability_factor,
     tflite::Interpreter* interpreter) const {
   // Compute token embeddings.
+  std::vector<std::vector<Token>> tokens;
   std::vector<float> token_embeddings;
-  std::vector<int> num_tokens_per_message;
+  std::vector<float> flattened_token_embeddings;
   int max_tokens = 0;
+  int total_token_count = 0;
   if (model_->tflite_model_spec()->input_num_tokens() >= 0 ||
-      model_->tflite_model_spec()->input_token_embeddings() >= 0) {
-    if (!ExtractTokenFeatures(context, &token_embeddings,
-                              &num_tokens_per_message, &max_tokens)) {
-      TC3_LOG(ERROR) << "Could not compute token hashes.";
+      model_->tflite_model_spec()->input_token_embeddings() >= 0 ||
+      model_->tflite_model_spec()->input_flattened_token_embeddings() >= 0) {
+    if (feature_processor_ == nullptr) {
+      TC3_LOG(ERROR) << "No feature processor specified.";
       return false;
+    }
+
+    // Tokenize the messages in the conversation.
+    tokens = Tokenize(context);
+    if (model_->tflite_model_spec()->input_token_embeddings() >= 0) {
+      if (!EmbedTokensPerMessage(tokens, &token_embeddings, &max_tokens)) {
+        TC3_LOG(ERROR) << "Could not extract token features.";
+        return false;
+      }
+    }
+    if (model_->tflite_model_spec()->input_flattened_token_embeddings() >= 0) {
+      if (!EmbedAndFlattenTokens(tokens, &flattened_token_embeddings,
+                                 &total_token_count)) {
+        TC3_LOG(ERROR) << "Could not extract token features.";
+        return false;
+      }
     }
   }
 
-  if (!AllocateInput(context.size(), max_tokens, interpreter)) {
+  if (!AllocateInput(context.size(), max_tokens, total_token_count,
+                     interpreter)) {
     TC3_LOG(ERROR) << "TensorFlow Lite model allocation failed.";
     return false;
   }
@@ -710,6 +811,10 @@ bool ActionsSuggestions::SetupModelInput(
         confidence_threshold, interpreter);
   }
   if (model_->tflite_model_spec()->input_num_tokens() >= 0) {
+    std::vector<int> num_tokens_per_message(tokens.size());
+    for (int i = 0; i < tokens.size(); i++) {
+      num_tokens_per_message[i] = tokens[i].size();
+    }
     model_executor_->SetInput<int>(
         model_->tflite_model_spec()->input_num_tokens(), num_tokens_per_message,
         interpreter);
@@ -718,6 +823,11 @@ bool ActionsSuggestions::SetupModelInput(
     model_executor_->SetInput<float>(
         model_->tflite_model_spec()->input_token_embeddings(), token_embeddings,
         interpreter);
+  }
+  if (model_->tflite_model_spec()->input_flattened_token_embeddings() >= 0) {
+    model_executor_->SetInput<float>(
+        model_->tflite_model_spec()->input_flattened_token_embeddings(),
+        flattened_token_embeddings, interpreter);
   }
   return true;
 }
@@ -828,6 +938,9 @@ bool ActionsSuggestions::SuggestActionsFromModel(
   std::vector<std::string> context;
   std::vector<int> user_ids;
   std::vector<float> time_diffs;
+  context.reserve(num_messages);
+  user_ids.reserve(num_messages);
+  time_diffs.reserve(num_messages);
 
   // Gather last `num_messages` messages from the conversation.
   int64 last_message_reference_time_ms_utc = 0;
@@ -877,6 +990,8 @@ AnnotationOptions ActionsSuggestions::AnnotationOptionsForMessage(
   options.reference_timezone = message.reference_timezone;
   options.annotation_usecase =
       model_->annotation_actions_spec()->annotation_usecase();
+  options.is_serialized_entity_data_enabled =
+      model_->annotation_actions_spec()->is_serialized_entity_data_enabled();
   return options;
 }
 

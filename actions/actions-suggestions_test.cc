@@ -27,6 +27,7 @@
 #include "annotator/types.h"
 #include "utils/flatbuffers.h"
 #include "utils/flatbuffers_generated.h"
+#include "utils/hash/farmhash.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "flatbuffers/flatbuffers.h"
@@ -182,7 +183,7 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsFromDuplicatedAnnotations) {
   ASSERT_GE(response.actions.size(), 2);
   EXPECT_EQ(response.actions[0].type, "track_flight");
   EXPECT_EQ(response.actions[0].score, 3.0);
-  EXPECT_EQ(response.actions[1].type, "add_contact");
+  EXPECT_EQ(response.actions[1].type, "send_email");
   EXPECT_EQ(response.actions[1].score, 2.0);
 }
 
@@ -225,7 +226,7 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsAnnotationsNoDeduplication) {
   EXPECT_EQ(response.actions[0].score, 3.0);
   EXPECT_EQ(response.actions[1].type, "track_flight");
   EXPECT_EQ(response.actions[1].score, 2.5);
-  EXPECT_EQ(response.actions[2].type, "add_contact");
+  EXPECT_EQ(response.actions[2].type, "send_email");
   EXPECT_EQ(response.actions[2].score, 2.0);
 }
 
@@ -317,7 +318,7 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsWithAnnotationsOnlyLastPerson) {
       &unilib_);
   EXPECT_EQ(response.actions.size(), 2);
   EXPECT_EQ(response.actions[0].type, "track_flight");
-  EXPECT_EQ(response.actions[1].type, "add_contact");
+  EXPECT_EQ(response.actions[1].type, "send_email");
 }
 
 TEST_F(ActionsSuggestionsTest, SuggestActionsWithAnnotationsFromAny) {
@@ -333,7 +334,7 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsWithAnnotationsFromAny) {
       &unilib_);
   EXPECT_EQ(response.actions.size(), 2);
   EXPECT_EQ(response.actions[0].type, "track_flight");
-  EXPECT_EQ(response.actions[1].type, "add_contact");
+  EXPECT_EQ(response.actions[1].type, "send_email");
 }
 
 TEST_F(ActionsSuggestionsTest,
@@ -350,8 +351,8 @@ TEST_F(ActionsSuggestionsTest,
       &unilib_);
   EXPECT_EQ(response.actions.size(), 3);
   EXPECT_EQ(response.actions[0].type, "track_flight");
-  EXPECT_EQ(response.actions[1].type, "add_contact");
-  EXPECT_EQ(response.actions[2].type, "add_contact");
+  EXPECT_EQ(response.actions[1].type, "send_email");
+  EXPECT_EQ(response.actions[2].type, "send_email");
 }
 
 TEST_F(ActionsSuggestionsTest,
@@ -368,8 +369,8 @@ TEST_F(ActionsSuggestionsTest,
       &unilib_);
   EXPECT_EQ(response.actions.size(), 3);
   EXPECT_EQ(response.actions[0].type, "track_flight");
-  EXPECT_EQ(response.actions[1].type, "add_contact");
-  EXPECT_EQ(response.actions[2].type, "add_contact");
+  EXPECT_EQ(response.actions[1].type, "send_email");
+  EXPECT_EQ(response.actions[2].type, "send_email");
 }
 
 TEST_F(ActionsSuggestionsTest,
@@ -386,9 +387,9 @@ TEST_F(ActionsSuggestionsTest,
       &unilib_);
   EXPECT_EQ(response.actions.size(), 4);
   EXPECT_EQ(response.actions[0].type, "track_flight");
-  EXPECT_EQ(response.actions[1].type, "add_contact");
-  EXPECT_EQ(response.actions[2].type, "add_contact");
-  EXPECT_EQ(response.actions[3].type, "add_contact");
+  EXPECT_EQ(response.actions[1].type, "send_email");
+  EXPECT_EQ(response.actions[2].type, "send_email");
+  EXPECT_EQ(response.actions[3].type, "send_email");
 }
 
 void TestSuggestActionsWithThreshold(
@@ -1018,6 +1019,313 @@ TEST_F(ActionsSuggestionsTest, SuggestActionsWithHashGramModel) {
         response.actions,
         ElementsAre(testing::Field(&ActionSuggestion::type, "share_contact")));
   }
+}
+
+// Test class to expose token embedding methods for testing.
+class TestingMessageEmbedder : private ActionsSuggestions {
+ public:
+  explicit TestingMessageEmbedder(const ActionsModel* model);
+
+  using ActionsSuggestions::EmbedAndFlattenTokens;
+  using ActionsSuggestions::EmbedTokensPerMessage;
+
+ protected:
+  // EmbeddingExecutor that always returns features based on
+  // the id of the sparse features.
+  class FakeEmbeddingExecutor : public EmbeddingExecutor {
+   public:
+    bool AddEmbedding(const TensorView<int>& sparse_features, float* dest,
+                      const int dest_size) const override {
+      TC3_CHECK_GE(dest_size, 1);
+      EXPECT_EQ(sparse_features.size(), 1);
+      dest[0] = sparse_features.data()[0];
+      return true;
+    }
+  };
+};
+
+TestingMessageEmbedder::TestingMessageEmbedder(const ActionsModel* model) {
+  model_ = model;
+  const ActionsTokenFeatureProcessorOptions* options =
+      model->feature_processor_options();
+  feature_processor_.reset(
+      new ActionsFeatureProcessor(options, /*unilib=*/nullptr));
+  embedding_executor_.reset(new FakeEmbeddingExecutor());
+  EXPECT_TRUE(
+      EmbedTokenId(options->padding_token_id(), &embedded_padding_token_));
+  EXPECT_TRUE(EmbedTokenId(options->start_token_id(), &embedded_start_token_));
+  EXPECT_TRUE(EmbedTokenId(options->end_token_id(), &embedded_end_token_));
+  token_embedding_size_ = feature_processor_->GetTokenEmbeddingSize();
+  EXPECT_EQ(token_embedding_size_, 1);
+}
+
+class EmbeddingTest : public testing::Test {
+ protected:
+  EmbeddingTest() {
+    model_.feature_processor_options.reset(
+        new ActionsTokenFeatureProcessorOptionsT);
+    options_ = model_.feature_processor_options.get();
+    options_->chargram_orders = {1};
+    options_->num_buckets = 1000;
+    options_->embedding_size = 1;
+    options_->start_token_id = 0;
+    options_->end_token_id = 1;
+    options_->padding_token_id = 2;
+    options_->tokenizer_options.reset(new ActionsTokenizerOptionsT);
+  }
+
+  TestingMessageEmbedder CreateTestingMessageEmbedder() {
+    flatbuffers::FlatBufferBuilder builder;
+    FinishActionsModelBuffer(builder, ActionsModel::Pack(builder, &model_));
+    buffer_ = builder.ReleaseBufferPointer();
+    return TestingMessageEmbedder(
+        flatbuffers::GetRoot<ActionsModel>(buffer_.data()));
+  }
+
+  flatbuffers::DetachedBuffer buffer_;
+  ActionsModelT model_;
+  ActionsTokenFeatureProcessorOptionsT* options_;
+};
+
+TEST_F(EmbeddingTest, EmbedsTokensPerMessageWithNoBounds) {
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)}};
+  std::vector<float> embeddings;
+  int max_num_tokens_per_message = 0;
+
+  EXPECT_TRUE(embedder.EmbedTokensPerMessage(tokens, &embeddings,
+                                             &max_num_tokens_per_message));
+
+  EXPECT_EQ(max_num_tokens_per_message, 3);
+  EXPECT_EQ(embeddings.size(), 3);
+  EXPECT_THAT(embeddings[0],
+              testing::FloatEq(tc3farmhash::Fingerprint64("a", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[1],
+              testing::FloatEq(tc3farmhash::Fingerprint64("b", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[2],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+}
+
+TEST_F(EmbeddingTest, EmbedsTokensPerMessageWithPadding) {
+  options_->min_num_tokens_per_message = 5;
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)}};
+  std::vector<float> embeddings;
+  int max_num_tokens_per_message = 0;
+
+  EXPECT_TRUE(embedder.EmbedTokensPerMessage(tokens, &embeddings,
+                                             &max_num_tokens_per_message));
+
+  EXPECT_EQ(max_num_tokens_per_message, 5);
+  EXPECT_EQ(embeddings.size(), 5);
+  EXPECT_THAT(embeddings[0],
+              testing::FloatEq(tc3farmhash::Fingerprint64("a", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[1],
+              testing::FloatEq(tc3farmhash::Fingerprint64("b", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[2],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[3], testing::FloatEq(options_->padding_token_id));
+  EXPECT_THAT(embeddings[4], testing::FloatEq(options_->padding_token_id));
+}
+
+TEST_F(EmbeddingTest, EmbedsTokensPerMessageDropsAtBeginning) {
+  options_->max_num_tokens_per_message = 2;
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)}};
+  std::vector<float> embeddings;
+  int max_num_tokens_per_message = 0;
+
+  EXPECT_TRUE(embedder.EmbedTokensPerMessage(tokens, &embeddings,
+                                             &max_num_tokens_per_message));
+
+  EXPECT_EQ(max_num_tokens_per_message, 2);
+  EXPECT_EQ(embeddings.size(), 2);
+  EXPECT_THAT(embeddings[0],
+              testing::FloatEq(tc3farmhash::Fingerprint64("b", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[1],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+}
+
+TEST_F(EmbeddingTest, EmbedsTokensPerMessageWithMultipleMessagesNoBounds) {
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)},
+      {Token("d", 0, 1), Token("e", 2, 3)}};
+  std::vector<float> embeddings;
+  int max_num_tokens_per_message = 0;
+
+  EXPECT_TRUE(embedder.EmbedTokensPerMessage(tokens, &embeddings,
+                                             &max_num_tokens_per_message));
+
+  EXPECT_EQ(max_num_tokens_per_message, 3);
+  EXPECT_THAT(embeddings[0],
+              testing::FloatEq(tc3farmhash::Fingerprint64("a", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[1],
+              testing::FloatEq(tc3farmhash::Fingerprint64("b", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[2],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[3],
+              testing::FloatEq(tc3farmhash::Fingerprint64("d", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[4],
+              testing::FloatEq(tc3farmhash::Fingerprint64("e", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[5], testing::FloatEq(options_->padding_token_id));
+}
+
+TEST_F(EmbeddingTest, EmbedsFlattenedTokensWithNoBounds) {
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)}};
+  std::vector<float> embeddings;
+  int total_token_count = 0;
+
+  EXPECT_TRUE(
+      embedder.EmbedAndFlattenTokens(tokens, &embeddings, &total_token_count));
+
+  EXPECT_EQ(total_token_count, 5);
+  EXPECT_EQ(embeddings.size(), 5);
+  EXPECT_THAT(embeddings[0], testing::FloatEq(options_->start_token_id));
+  EXPECT_THAT(embeddings[1],
+              testing::FloatEq(tc3farmhash::Fingerprint64("a", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[2],
+              testing::FloatEq(tc3farmhash::Fingerprint64("b", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[3],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[4], testing::FloatEq(options_->end_token_id));
+}
+
+TEST_F(EmbeddingTest, EmbedsFlattenedTokensWithPadding) {
+  options_->min_num_total_tokens = 7;
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)}};
+  std::vector<float> embeddings;
+  int total_token_count = 0;
+
+  EXPECT_TRUE(
+      embedder.EmbedAndFlattenTokens(tokens, &embeddings, &total_token_count));
+
+  EXPECT_EQ(total_token_count, 7);
+  EXPECT_EQ(embeddings.size(), 7);
+  EXPECT_THAT(embeddings[0], testing::FloatEq(options_->start_token_id));
+  EXPECT_THAT(embeddings[1],
+              testing::FloatEq(tc3farmhash::Fingerprint64("a", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[2],
+              testing::FloatEq(tc3farmhash::Fingerprint64("b", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[3],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[4], testing::FloatEq(options_->end_token_id));
+  EXPECT_THAT(embeddings[5], testing::FloatEq(options_->padding_token_id));
+  EXPECT_THAT(embeddings[6], testing::FloatEq(options_->padding_token_id));
+}
+
+TEST_F(EmbeddingTest, EmbedsFlattenedTokensDropsAtBeginning) {
+  options_->max_num_total_tokens = 3;
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)}};
+  std::vector<float> embeddings;
+  int total_token_count = 0;
+
+  EXPECT_TRUE(
+      embedder.EmbedAndFlattenTokens(tokens, &embeddings, &total_token_count));
+
+  EXPECT_EQ(total_token_count, 3);
+  EXPECT_EQ(embeddings.size(), 3);
+  EXPECT_THAT(embeddings[0],
+              testing::FloatEq(tc3farmhash::Fingerprint64("b", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[1],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[2], testing::FloatEq(options_->end_token_id));
+}
+
+TEST_F(EmbeddingTest, EmbedsFlattenedTokensWithMultipleMessagesNoBounds) {
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)},
+      {Token("d", 0, 1), Token("e", 2, 3)}};
+  std::vector<float> embeddings;
+  int total_token_count = 0;
+
+  EXPECT_TRUE(
+      embedder.EmbedAndFlattenTokens(tokens, &embeddings, &total_token_count));
+
+  EXPECT_EQ(total_token_count, 9);
+  EXPECT_EQ(embeddings.size(), 9);
+  EXPECT_THAT(embeddings[0], testing::FloatEq(options_->start_token_id));
+  EXPECT_THAT(embeddings[1],
+              testing::FloatEq(tc3farmhash::Fingerprint64("a", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[2],
+              testing::FloatEq(tc3farmhash::Fingerprint64("b", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[3],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[4], testing::FloatEq(options_->end_token_id));
+  EXPECT_THAT(embeddings[5], testing::FloatEq(options_->start_token_id));
+  EXPECT_THAT(embeddings[6],
+              testing::FloatEq(tc3farmhash::Fingerprint64("d", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[7],
+              testing::FloatEq(tc3farmhash::Fingerprint64("e", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[8], testing::FloatEq(options_->end_token_id));
+}
+
+TEST_F(EmbeddingTest,
+       EmbedsFlattenedTokensWithMultipleMessagesDropsAtBeginning) {
+  options_->max_num_total_tokens = 7;
+  const TestingMessageEmbedder embedder = CreateTestingMessageEmbedder();
+  std::vector<std::vector<Token>> tokens = {
+      {Token("a", 0, 1), Token("b", 2, 3), Token("c", 4, 5)},
+      {Token("d", 0, 1), Token("e", 2, 3), Token("f", 4, 5)}};
+  std::vector<float> embeddings;
+  int total_token_count = 0;
+
+  EXPECT_TRUE(
+      embedder.EmbedAndFlattenTokens(tokens, &embeddings, &total_token_count));
+
+  EXPECT_EQ(total_token_count, 7);
+  EXPECT_EQ(embeddings.size(), 7);
+  EXPECT_THAT(embeddings[0],
+              testing::FloatEq(tc3farmhash::Fingerprint64("c", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[1], testing::FloatEq(options_->end_token_id));
+  EXPECT_THAT(embeddings[2], testing::FloatEq(options_->start_token_id));
+  EXPECT_THAT(embeddings[3],
+              testing::FloatEq(tc3farmhash::Fingerprint64("d", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[4],
+              testing::FloatEq(tc3farmhash::Fingerprint64("e", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[5],
+              testing::FloatEq(tc3farmhash::Fingerprint64("f", 1) %
+                               options_->num_buckets));
+  EXPECT_THAT(embeddings[6], testing::FloatEq(options_->end_token_id));
 }
 
 }  // namespace

@@ -22,16 +22,17 @@
 #include <iterator>
 #include <numeric>
 #include <unordered_map>
-#include "annotator/model_generated.h"
-#include "annotator/types.h"
 
 #include "annotator/collections.h"
+#include "annotator/model_generated.h"
+#include "annotator/types.h"
 #include "utils/base/logging.h"
 #include "utils/checksum.h"
 #include "utils/math/softmax.h"
 #include "utils/regex-match.h"
 #include "utils/utf8/unicodetext.h"
 #include "utils/zlib/zlib_regex.h"
+
 
 namespace libtextclassifier3 {
 
@@ -720,14 +721,16 @@ CodepointSpan Annotator::SuggestSelection(
     TC3_LOG(ERROR) << "Model suggest selection failed.";
     return original_click_indices;
   }
-  if (!RegexChunk(context_unicode, selection_regex_patterns_, &candidates)) {
+  if (!RegexChunk(context_unicode, selection_regex_patterns_, &candidates,
+                  /*is_serialized_entity_data_enabled=*/false)) {
     TC3_LOG(ERROR) << "Regex suggest selection failed.";
     return original_click_indices;
   }
-  if (!DatetimeChunk(UTF8ToUnicodeText(context, /*do_copy=*/false),
-                     /*reference_time_ms_utc=*/0, /*reference_timezone=*/"",
-                     options.locales, ModeFlag_SELECTION,
-                     options.annotation_usecase, &candidates)) {
+  if (!DatetimeChunk(
+          UTF8ToUnicodeText(context, /*do_copy=*/false),
+          /*reference_time_ms_utc=*/0, /*reference_timezone=*/"",
+          options.locales, ModeFlag_SELECTION, options.annotation_usecase,
+          /*is_serialized_entity_data_enabled=*/false, &candidates)) {
     TC3_LOG(ERROR) << "Datetime suggest selection failed.";
     return original_click_indices;
   }
@@ -1410,6 +1413,21 @@ std::string PickCollectionForDatetime(
       return Collections::Date();
   }
 }
+
+std::string CreateDatetimeSerializedEntityData(
+    const DatetimeParseResult& parse_result) {
+  EntityDataT entity_data;
+  entity_data.datetime.reset(new EntityData_::DatetimeT());
+  entity_data.datetime->time_ms_utc = parse_result.time_ms_utc;
+  entity_data.datetime->granularity =
+      static_cast<EntityData_::Datetime_::Granularity>(
+          parse_result.granularity);
+
+  flatbuffers::FlatBufferBuilder builder;
+  FinishEntityDataBuffer(builder, EntityData::Pack(builder, &entity_data));
+  return std::string(reinterpret_cast<const char*>(builder.GetBufferPointer()),
+                     builder.GetSize());
+}
 }  // namespace
 
 bool Annotator::DatetimeClassifyText(
@@ -1444,6 +1462,8 @@ bool Annotator::DatetimeClassifyText(
             PickCollectionForDatetime(parse_result),
             datetime_span.target_classification_score);
         classification_results->back().datetime_parse_result = parse_result;
+        classification_results->back().serialized_entity_data =
+            CreateDatetimeSerializedEntityData(parse_result);
         classification_results->back().priority_score =
             datetime_span.priority_score;
       }
@@ -1729,6 +1749,29 @@ const DatetimeParser* Annotator::DatetimeParserForTests() const {
   return datetime_parser_.get();
 }
 
+void Annotator::RemoveNotEnabledEntityTypes(
+    const EnabledEntityTypes& is_entity_type_enabled,
+    std::vector<AnnotatedSpan>* annotated_spans) const {
+  for (AnnotatedSpan& annotated_span : *annotated_spans) {
+    std::vector<ClassificationResult>& classifications =
+        annotated_span.classification;
+    classifications.erase(
+        std::remove_if(classifications.begin(), classifications.end(),
+                       [&is_entity_type_enabled](
+                           const ClassificationResult& classification_result) {
+                         return !is_entity_type_enabled(
+                             classification_result.collection);
+                       }),
+        classifications.end());
+  }
+  annotated_spans->erase(
+      std::remove_if(annotated_spans->begin(), annotated_spans->end(),
+                     [](const AnnotatedSpan& annotated_span) {
+                       return annotated_span.classification.empty();
+                     }),
+      annotated_spans->end());
+}
+
 std::vector<AnnotatedSpan> Annotator::Annotate(
     const std::string& context, const AnnotationOptions& options) const {
   std::vector<AnnotatedSpan> candidates;
@@ -1769,16 +1812,21 @@ std::vector<AnnotatedSpan> Annotator::Annotate(
 
   // Annotate with the regular expression models.
   if (!RegexChunk(UTF8ToUnicodeText(context, /*do_copy=*/false),
-                  annotation_regex_patterns_, &candidates)) {
+                  annotation_regex_patterns_, &candidates,
+                  options.is_serialized_entity_data_enabled)) {
     TC3_LOG(ERROR) << "Couldn't run RegexChunk.";
     return {};
   }
 
   // Annotate with the datetime model.
-  if (!DatetimeChunk(UTF8ToUnicodeText(context, /*do_copy=*/false),
+  const EnabledEntityTypes is_entity_type_enabled(options.entity_types);
+  if ((is_entity_type_enabled(Collections::Date()) ||
+       is_entity_type_enabled(Collections::DateTime())) &&
+      !DatetimeChunk(UTF8ToUnicodeText(context, /*do_copy=*/false),
                      options.reference_time_ms_utc, options.reference_timezone,
                      options.locales, ModeFlag_ANNOTATION,
-                     options.annotation_usecase, &candidates)) {
+                     options.annotation_usecase,
+                     options.is_serialized_entity_data_enabled, &candidates)) {
     TC3_LOG(ERROR) << "Couldn't run RegexChunk.";
     return {};
   }
@@ -1812,7 +1860,8 @@ std::vector<AnnotatedSpan> Annotator::Annotate(
   }
 
   // Annotate with the duration annotator.
-  if (duration_annotator_ != nullptr &&
+  if (is_entity_type_enabled(Collections::Duration()) &&
+      duration_annotator_ != nullptr &&
       !duration_annotator_->FindAll(context_unicode, tokens,
                                     options.annotation_usecase, &candidates)) {
     TC3_LOG(ERROR) << "Couldn't run duration annotator FindAll.";
@@ -1858,6 +1907,13 @@ std::vector<AnnotatedSpan> Annotator::Annotate(
   if (!aggregated_span.classification.empty()) {
     result.push_back(std::move(aggregated_span));
   }
+
+  // We generate all candidates and remove them later (with the exception of
+  // date/time/duration entities) because there are complex interdependencies
+  // between the entity types. E.g., the TLD of an email can be interpreted as a
+  // URL, but most likely a user of the API does not want such annotations if
+  // "url" is enabled and "email" is not.
+  RemoveNotEnabledEntityTypes(is_entity_type_enabled, &result);
 
   for (AnnotatedSpan& annotated_span : result) {
     SortClassificationResults(&annotated_span.classification);
@@ -1969,7 +2025,8 @@ bool Annotator::SerializedEntityDataFromRegexMatch(
 
 bool Annotator::RegexChunk(const UnicodeText& context_unicode,
                            const std::vector<int>& rules,
-                           std::vector<AnnotatedSpan>* result) const {
+                           std::vector<AnnotatedSpan>* result,
+                           bool is_serialized_entity_data_enabled) const {
   for (int pattern_id : rules) {
     const CompiledRegexPattern& regex_pattern = regex_patterns_[pattern_id];
     const auto matcher = regex_pattern.pattern->Matcher(context_unicode);
@@ -1991,10 +2048,12 @@ bool Annotator::RegexChunk(const UnicodeText& context_unicode,
       }
 
       std::string serialized_entity_data;
-      if (!SerializedEntityDataFromRegexMatch(
-              regex_pattern.config, matcher.get(), &serialized_entity_data)) {
-        TC3_LOG(ERROR) << "Could not get entity data.";
-        return false;
+      if (is_serialized_entity_data_enabled) {
+        if (!SerializedEntityDataFromRegexMatch(
+                regex_pattern.config, matcher.get(), &serialized_entity_data)) {
+          TC3_LOG(ERROR) << "Could not get entity data.";
+          return false;
+        }
       }
 
       result->emplace_back();
@@ -2264,6 +2323,7 @@ bool Annotator::DatetimeChunk(const UnicodeText& context_unicode,
                               const std::string& reference_timezone,
                               const std::string& locales, ModeFlag mode,
                               AnnotationUsecase annotation_usecase,
+                              bool is_serialized_entity_data_enabled,
                               std::vector<AnnotatedSpan>* result) const {
   if (!datetime_parser_) {
     return true;
@@ -2285,6 +2345,10 @@ bool Annotator::DatetimeChunk(const UnicodeText& context_unicode,
           datetime_span.target_classification_score,
           datetime_span.priority_score);
       annotated_span.classification.back().datetime_parse_result = parse_result;
+      if (is_serialized_entity_data_enabled) {
+        annotated_span.classification.back().serialized_entity_data =
+            CreateDatetimeSerializedEntityData(parse_result);
+      }
     }
     annotated_span.source = AnnotatedSpan::Source::DATETIME;
     result->push_back(std::move(annotated_span));

@@ -17,6 +17,7 @@
 #ifndef NLP_SAFT_COMPONENTS_LANG_ID_MOBILE_FEATURES_CHAR_NGRAM_FEATURE_H_
 #define NLP_SAFT_COMPONENTS_LANG_ID_MOBILE_FEATURES_CHAR_NGRAM_FEATURE_H_
 
+#include <mutex>  // NOLINT: see comments for state_mutex_
 #include <string>
 
 #include "lang_id/common/fel/feature-extractor.h"
@@ -68,6 +69,11 @@ class ContinuousBagOfNgramsFunction : public LightSentenceFeature {
   // Auxiliary for Evaluate().  Fills counts_ and non_zero_count_indices_ (see
   // below), and returns the total ngram count.
   int ComputeNgramCounts(const LightSentence &sentence) const;
+
+  // Guards counts_ and non_zero_count_indices_.  NOTE: we use std::* constructs
+  // (instead of absl::Mutex & co) to simplify porting to Android and to avoid
+  // pulling in absl (which increases our code size).
+  mutable std::mutex state_mutex_;
 
   // counts_[i] is the count of all ngrams with id i.  Work data for Evaluate().
   // NOTE: we declare this vector as a field, such that its underlying capacity

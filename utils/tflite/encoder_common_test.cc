@@ -14,22 +14,21 @@
  * limitations under the License.
  */
 
-// An encoder that produces positional and attributes encodings for a
-// transformer style model based on sentence piece segmentation of text.
+#include "utils/tflite/encoder_common.h"
 
-#ifndef LIBTEXTCLASSIFIER_UTILS_TFLITE_TEXT_ENCODER_H_
-#define LIBTEXTCLASSIFIER_UTILS_TFLITE_TEXT_ENCODER_H_
+#include "gtest/gtest.h"
+#include "tensorflow/lite/model.h"
 
-#include "tensorflow/lite/context.h"
+namespace libtextclassifier3 {
+namespace {
 
-namespace tflite {
-namespace ops {
-namespace custom {
+TEST(EncoderUtilsTest, CreateIntArray) {
+  TfLiteIntArray* a = CreateIntArray({1, 2, 3});
+  EXPECT_EQ(a->data[0], 1);
+  EXPECT_EQ(a->data[1], 2);
+  EXPECT_EQ(a->data[2], 3);
+  TfLiteIntArrayFree(a);
+}
 
-TfLiteRegistration* Register_TEXT_ENCODER();
-
-}  // namespace custom
-}  // namespace ops
-}  // namespace tflite
-
-#endif  // LIBTEXTCLASSIFIER_UTILS_TFLITE_TEXT_ENCODER_H_
+}  // namespace
+}  // namespace libtextclassifier3

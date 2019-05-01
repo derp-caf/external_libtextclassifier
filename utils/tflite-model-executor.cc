@@ -56,6 +56,8 @@ TfLiteRegistration* Register_MEAN();
 #ifdef TC3_WITH_ACTIONS_OPS
 #include "utils/tflite/dist_diversification.h"
 #include "utils/tflite/text_encoder.h"
+#include "utils/tflite/token_encoder.h"
+
 void RegisterSelectedOps(tflite::MutableOpResolver* resolver) {
   resolver->AddBuiltin(tflite::BuiltinOperator_ADD,
                        tflite::ops::builtin::Register_ADD(),
@@ -167,6 +169,8 @@ inline std::unique_ptr<tflite::OpResolver> BuildOpResolver() {
                       tflite::ops::custom::Register_DISTANCE_DIVERSIFICATION());
   resolver->AddCustom("TextEncoder",
                       tflite::ops::custom::Register_TEXT_ENCODER());
+  resolver->AddCustom("TokenEncoder",
+                      tflite::ops::custom::Register_TOKEN_ENCODER());
 #endif  // TC3_WITH_ACTIONS_OPS
   return std::unique_ptr<tflite::OpResolver>(std::move(resolver));
 }

@@ -77,18 +77,11 @@ int ActionsFeatureProcessor::GetTokenEmbeddingSize() const {
          token_feature_extractor_.DenseFeaturesCount();
 }
 
-bool ActionsFeatureProcessor::AppendTokenFeatures(
-    const Token& token, const EmbeddingExecutor* embedding_executor,
+bool ActionsFeatureProcessor::AppendFeatures(
+    const std::vector<int>& sparse_features,
+    const std::vector<float>& dense_features,
+    const EmbeddingExecutor* embedding_executor,
     std::vector<float>* output_features) const {
-  // Extract the sparse and dense features.
-  std::vector<int> sparse_features;
-  std::vector<float> dense_features;
-  if (!token_feature_extractor_.Extract(token, /*(unused) is_in_span=*/false,
-                                        &sparse_features, &dense_features)) {
-    TC3_LOG(ERROR) << "Could not extract token's features.";
-    return false;
-  }
-
   // Embed the sparse features, appending them directly to the output.
   const int embedding_size = options_->embedding_size();
   output_features->resize(output_features->size() + embedding_size);
@@ -107,6 +100,21 @@ bool ActionsFeatureProcessor::AppendTokenFeatures(
   output_features->insert(output_features->end(), dense_features.begin(),
                           dense_features.end());
   return true;
+}
+
+bool ActionsFeatureProcessor::AppendTokenFeatures(
+    const Token& token, const EmbeddingExecutor* embedding_executor,
+    std::vector<float>* output_features) const {
+  // Extract the sparse and dense features.
+  std::vector<int> sparse_features;
+  std::vector<float> dense_features;
+  if (!token_feature_extractor_.Extract(token, /*(unused) is_in_span=*/false,
+                                        &sparse_features, &dense_features)) {
+    TC3_LOG(ERROR) << "Could not extract token's features.";
+    return false;
+  }
+  return AppendFeatures(sparse_features, dense_features, embedding_executor,
+                        output_features);
 }
 
 bool ActionsFeatureProcessor::AppendTokenFeatures(

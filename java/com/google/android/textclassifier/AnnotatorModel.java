@@ -16,6 +16,7 @@
 
 package com.google.android.textclassifier;
 
+import java.util.Collection;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -477,19 +478,25 @@ public final class AnnotatorModel implements AutoCloseable {
     private final String referenceTimezone;
     private final String locales;
     private final String detectedTextLanguageTags;
+    private final String[] entityTypes;
     private final int annotationUsecase;
+    private final boolean isSerializedEntityDataEnabled;
 
     public AnnotationOptions(
         long referenceTimeMsUtc,
         String referenceTimezone,
         String locales,
         String detectedTextLanguageTags,
-        int annotationUsecase) {
+        Collection<String> entityTypes,
+        int annotationUsecase,
+        boolean isSerializedEntityDataEnabled) {
       this.referenceTimeMsUtc = referenceTimeMsUtc;
       this.referenceTimezone = referenceTimezone;
       this.locales = locales;
       this.detectedTextLanguageTags = detectedTextLanguageTags;
+      this.entityTypes = entityTypes == null ? new String[0] : entityTypes.toArray(new String[0]);
       this.annotationUsecase = annotationUsecase;
+      this.isSerializedEntityDataEnabled = isSerializedEntityDataEnabled;
     }
 
     public AnnotationOptions(
@@ -502,7 +509,9 @@ public final class AnnotatorModel implements AutoCloseable {
           referenceTimezone,
           locales,
           detectedTextLanguageTags,
-          AnnotationUsecase.SMART.getValue());
+          null,
+          AnnotationUsecase.SMART.getValue(),
+          /* isSerializedEntityDataEnabled */ false);
     }
 
     public long getReferenceTimeMsUtc() {
@@ -522,8 +531,16 @@ public final class AnnotatorModel implements AutoCloseable {
       return detectedTextLanguageTags;
     }
 
+    public String[] getEntityTypes() {
+      return entityTypes;
+    }
+
     public int getAnnotationUsecase() {
       return annotationUsecase;
+    }
+
+    public boolean isSerializedEntityDataEnabled() {
+      return isSerializedEntityDataEnabled;
     }
   }
 

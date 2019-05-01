@@ -46,6 +46,10 @@ jint GetFdFromFileDescriptor(JNIEnv* env, jobject fd) {
   jfieldID fd_class_descriptor =
       env->GetFieldID(fd_class.get(), "descriptor", "I");
   if (fd_class_descriptor == nullptr) {
+    env->ExceptionClear();
+    fd_class_descriptor = env->GetFieldID(fd_class.get(), "fd", "I");
+  }
+  if (fd_class_descriptor == nullptr) {
     TC3_LOG(ERROR) << "Couldn't find descriptor.";
     return reinterpret_cast<jlong>(nullptr);
   }

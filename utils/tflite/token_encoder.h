@@ -15,10 +15,10 @@
  */
 
 // An encoder that produces positional and attributes encodings for a
-// transformer style model based on sentence piece segmentation of text.
+// transformer style model based on tokens (rather than sentence pieces).
 
-#ifndef LIBTEXTCLASSIFIER_UTILS_TFLITE_TEXT_ENCODER_H_
-#define LIBTEXTCLASSIFIER_UTILS_TFLITE_TEXT_ENCODER_H_
+#ifndef LIBTEXTCLASSIFIER_UTILS_TFLITE_TOKEN_ENCODER_H_
+#define LIBTEXTCLASSIFIER_UTILS_TFLITE_TOKEN_ENCODER_H_
 
 #include "tensorflow/lite/context.h"
 
@@ -26,10 +26,10 @@ namespace tflite {
 namespace ops {
 namespace custom {
 
-TfLiteRegistration* Register_TEXT_ENCODER();
+TfLiteRegistration* Register_TOKEN_ENCODER();
 
 }  // namespace custom
 }  // namespace ops
 }  // namespace tflite
 
-#endif  // LIBTEXTCLASSIFIER_UTILS_TFLITE_TEXT_ENCODER_H_
+#endif  // LIBTEXTCLASSIFIER_UTILS_TFLITE_TOKEN_ENCODER_H_

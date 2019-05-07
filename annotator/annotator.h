@@ -22,6 +22,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "annotator/contact/contact-engine.h"
@@ -114,6 +115,12 @@ struct AnnotationOptions {
   // Comma-separated list of language tags.
   std::string detected_text_language_tags;
 
+  // List of entity types that should be used for annotation.
+  std::unordered_set<std::string> entity_types;
+
+  // If true, serialized_entity_data in the results is populated."
+  bool is_serialized_entity_data_enabled = false;
+
   // Tailors the output annotations according to the specified use-case.
   AnnotationUsecase annotation_usecase = ANNOTATION_USECASE_SMART;
 
@@ -123,7 +130,9 @@ struct AnnotationOptions {
            this->locales == other.locales &&
            this->detected_text_language_tags ==
                other.detected_text_language_tags &&
-           this->annotation_usecase == other.annotation_usecase;
+           this->annotation_usecase == other.annotation_usecase &&
+           this->is_serialized_entity_data_enabled ==
+               other.is_serialized_entity_data_enabled;
   }
 };
 
@@ -152,6 +161,23 @@ class InterpreterManager {
 
   std::unique_ptr<tflite::Interpreter> selection_interpreter_;
   std::unique_ptr<tflite::Interpreter> classification_interpreter_;
+};
+
+// Stores entity types enabled for annotation, and provides operator() for
+// checking whether a given entity type is enabled.
+class EnabledEntityTypes {
+ public:
+  explicit EnabledEntityTypes(
+      const std::unordered_set<std::string>& entity_types)
+      : entity_types_(entity_types) {}
+
+  bool operator()(const std::string& entity_type) const {
+    return entity_types_.empty() ||
+           entity_types_.find(entity_type) != entity_types_.cend();
+  }
+
+ private:
+  const std::unordered_set<std::string>& entity_types_;
 };
 
 // A text processing model that provides text classification, annotation,
@@ -396,7 +422,8 @@ class Annotator {
   // Produces chunks isolated by a set of regular expressions.
   bool RegexChunk(const UnicodeText& context_unicode,
                   const std::vector<int>& rules,
-                  std::vector<AnnotatedSpan>* result) const;
+                  std::vector<AnnotatedSpan>* result,
+                  bool is_serialized_entity_data_enabled) const;
 
   // Produces chunks from the datetime parser.
   bool DatetimeChunk(const UnicodeText& context_unicode,
@@ -404,6 +431,7 @@ class Annotator {
                      const std::string& reference_timezone,
                      const std::string& locales, ModeFlag mode,
                      AnnotationUsecase annotation_usecase,
+                     bool is_serialized_entity_data_enabled,
                      std::vector<AnnotatedSpan>* result) const;
 
   // Returns whether a classification should be filtered.
@@ -447,6 +475,12 @@ class Annotator {
     const RegexModel_::Pattern* config;
     std::unique_ptr<UniLib::RegexPattern> pattern;
   };
+
+  // Removes annotations the entity type of which is not in the set of enabled
+  // entity types.
+  void RemoveNotEnabledEntityTypes(
+      const EnabledEntityTypes& is_entity_type_enabled,
+      std::vector<AnnotatedSpan>* annotated_spans) const;
 
   std::unique_ptr<ScopedMmap> mmap_;
   bool initialized_ = false;

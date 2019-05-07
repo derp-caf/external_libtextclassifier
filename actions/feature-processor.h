@@ -39,6 +39,12 @@ class ActionsFeatureProcessor {
   ActionsFeatureProcessor(const ActionsTokenFeatureProcessorOptions* options,
                           const UniLib* unilib);
 
+  // Embeds and appends features to the output vector.
+  bool AppendFeatures(const std::vector<int>& sparse_features,
+                      const std::vector<float>& dense_features,
+                      const EmbeddingExecutor* embedding_executor,
+                      std::vector<float>* output_features) const;
+
   // Extracts the features of a token and appends them to the output vector.
   bool AppendTokenFeatures(const Token& token,
                            const EmbeddingExecutor* embedding_executor,

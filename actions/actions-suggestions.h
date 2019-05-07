@@ -101,6 +101,37 @@ class ActionsSuggestions {
   static const std::string& kSendEmailType;
   static const std::string& kShareLocation;
 
+ protected:
+  // Exposed for testing.
+  bool EmbedTokenId(const int32 token_id, std::vector<float>* embedding) const;
+
+  // Embeds the tokens per message separately. Each message is padded to the
+  // maximum length with the padding token.
+  bool EmbedTokensPerMessage(const std::vector<std::vector<Token>>& tokens,
+                             std::vector<float>* embeddings,
+                             int* max_num_tokens_per_message) const;
+
+  // Concatenates the embedded message tokens - separated by start and end
+  // token between messages.
+  // If the total token count is greater than the maximum length, tokens at the
+  // start are dropped to fit into the limit.
+  // If the total token count is smaller than the minimum length, padding tokens
+  // are added to the end.
+  // Messages are assumed to be ordered by recency - most recent is last.
+  bool EmbedAndFlattenTokens(const std::vector<std::vector<Token>> tokens,
+                             std::vector<float>* embeddings,
+                             int* total_token_count) const;
+
+  const ActionsModel* model_;
+
+  // Feature extractor and options.
+  std::unique_ptr<const ActionsFeatureProcessor> feature_processor_;
+  std::unique_ptr<const EmbeddingExecutor> embedding_executor_;
+  std::vector<float> embedded_padding_token_;
+  std::vector<float> embedded_start_token_;
+  std::vector<float> embedded_end_token_;
+  int token_embedding_size_;
+
  private:
   struct CompiledRule {
     const RulesModel_::Rule* rule;
@@ -130,13 +161,12 @@ class ActionsSuggestions {
   // values for parameters that are not explicitly provided.
   bool InitializeTriggeringPreconditions();
 
-  // Extracts input token features.
-  bool ExtractTokenFeatures(const std::vector<std::string>& context,
-                            std::vector<float>* embeddings,
-                            std::vector<int>* num_tokens_per_message,
-                            int* max_num_tokens_per_message) const;
+  // Tokenizes a conversation and produces the tokens per message.
+  std::vector<std::vector<Token>> Tokenize(
+      const std::vector<std::string>& context) const;
 
   bool AllocateInput(const int conversation_length, const int max_tokens,
+                     const int total_token_count,
                      tflite::Interpreter* interpreter) const;
 
   bool SetupModelInput(const std::vector<std::string>& context,
@@ -210,7 +240,6 @@ class ActionsSuggestions {
       const RulesModel_::Rule_::RuleActionSpec_::RuleCapturingGroup* group,
       const int message_index, ActionSuggestionAnnotation* annotation) const;
 
-  const ActionsModel* model_;
   std::unique_ptr<libtextclassifier3::ScopedMmap> mmap_;
 
   // Tensorflow Lite models.
@@ -237,12 +266,6 @@ class ActionsSuggestions {
   TriggeringPreconditionsT preconditions_;
   std::string triggering_preconditions_overlay_buffer_;
   const TriggeringPreconditions* triggering_preconditions_overlay_;
-
-  // Feature extractor and options.
-  std::unique_ptr<const ActionsFeatureProcessor> feature_processor_;
-  std::unique_ptr<const EmbeddingExecutor> embedding_executor_;
-  std::vector<float> embedded_padding_token_;
-  int token_embedding_size_;
 
   // Low confidence input ngram classifier.
   std::unique_ptr<const NGramModel> ngram_model_;

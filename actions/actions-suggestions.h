@@ -20,6 +20,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "actions/actions_model_generated.h"
@@ -48,31 +49,50 @@ struct ActionSuggestionOptions {
 // Class for predicting actions following a conversation.
 class ActionsSuggestions {
  public:
+  // Creates ActionsSuggestions from given data buffer with model.
   static std::unique_ptr<ActionsSuggestions> FromUnownedBuffer(
       const uint8_t* buffer, const int size, const UniLib* unilib = nullptr,
       const std::string& triggering_preconditions_overlay = "");
-  // Takes ownership of the mmap.
+
+  // Creates ActionsSuggestions from model in the ScopedMmap object and takes
+  // ownership of it.
   static std::unique_ptr<ActionsSuggestions> FromScopedMmap(
       std::unique_ptr<libtextclassifier3::ScopedMmap> mmap,
       const UniLib* unilib = nullptr,
       const std::string& triggering_preconditions_overlay = "");
+  // Same as above, but also takes ownership of the unilib.
   static std::unique_ptr<ActionsSuggestions> FromScopedMmap(
       std::unique_ptr<libtextclassifier3::ScopedMmap> mmap,
       std::unique_ptr<UniLib> unilib,
       const std::string& triggering_preconditions_overlay);
+
+  // Creates ActionsSuggestions from model given as a file descriptor, offset
+  // and size in it. If offset and size are less than 0, will ignore them and
+  // will just use the fd.
   static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
       const int fd, const int offset, const int size,
       const UniLib* unilib = nullptr,
       const std::string& triggering_preconditions_overlay = "");
+  // Same as above, but also takes ownership of the unilib.
+  static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
+      const int fd, const int offset, const int size,
+      std::unique_ptr<UniLib> unilib,
+      const std::string& triggering_preconditions_overlay = "");
+
+  // Creates ActionsSuggestions from model given as a file descriptor.
   static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
       const int fd, const UniLib* unilib = nullptr,
       const std::string& triggering_preconditions_overlay = "");
+  // Same as above, but also takes ownership of the unilib.
   static std::unique_ptr<ActionsSuggestions> FromFileDescriptor(
       const int fd, std::unique_ptr<UniLib> unilib,
       const std::string& triggering_preconditions_overlay);
+
+  // Creates ActionsSuggestions from model given as a POSIX path.
   static std::unique_ptr<ActionsSuggestions> FromPath(
       const std::string& path, const UniLib* unilib = nullptr,
       const std::string& triggering_preconditions_overlay = "");
+  // Same as above, but also takes ownership of unilib.
   static std::unique_ptr<ActionsSuggestions> FromPath(
       const std::string& path, std::unique_ptr<UniLib> unilib,
       const std::string& triggering_preconditions_overlay);
@@ -253,6 +273,9 @@ class ActionsSuggestions {
 
   // Locales supported by the model.
   std::vector<Locale> locales_;
+
+  // Annotation entities used by the model.
+  std::unordered_set<std::string> annotation_entity_types_;
 
   // Builder for creating extra data.
   const reflection::Schema* entity_data_schema_;

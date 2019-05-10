@@ -156,9 +156,27 @@ std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromScopedMmap(
 std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromFileDescriptor(
     const int fd, const int offset, const int size, const UniLib* unilib,
     const std::string& triggering_preconditions_overlay) {
-  std::unique_ptr<libtextclassifier3::ScopedMmap> mmap(
-      new libtextclassifier3::ScopedMmap(fd, offset, size));
+  std::unique_ptr<libtextclassifier3::ScopedMmap> mmap;
+  if (offset >= 0 && size >= 0) {
+    mmap.reset(new libtextclassifier3::ScopedMmap(fd, offset, size));
+  } else {
+    mmap.reset(new libtextclassifier3::ScopedMmap(fd));
+  }
   return FromScopedMmap(std::move(mmap), unilib,
+                        triggering_preconditions_overlay);
+}
+
+std::unique_ptr<ActionsSuggestions> ActionsSuggestions::FromFileDescriptor(
+    const int fd, const int offset, const int size,
+    std::unique_ptr<UniLib> unilib,
+    const std::string& triggering_preconditions_overlay) {
+  std::unique_ptr<libtextclassifier3::ScopedMmap> mmap;
+  if (offset >= 0 && size >= 0) {
+    mmap.reset(new libtextclassifier3::ScopedMmap(fd, offset, size));
+  } else {
+    mmap.reset(new libtextclassifier3::ScopedMmap(fd));
+  }
+  return FromScopedMmap(std::move(mmap), std::move(unilib),
                         triggering_preconditions_overlay);
 }
 
@@ -229,12 +247,20 @@ bool ActionsSuggestions::ValidateAndInitialize() {
     return false;
   }
 
-  if (model_->tflite_model_spec()) {
+  if (model_->tflite_model_spec() != nullptr) {
     model_executor_ = TfLiteModelExecutor::FromBuffer(
         model_->tflite_model_spec()->tflite_model());
     if (!model_executor_) {
       TC3_LOG(ERROR) << "Could not initialize model executor.";
       return false;
+    }
+  }
+
+  if (model_->annotation_actions_spec() != nullptr &&
+      model_->annotation_actions_spec()->annotation_mapping() != nullptr) {
+    for (const AnnotationActionsSpec_::AnnotationMapping* mapping :
+         *model_->annotation_actions_spec()->annotation_mapping()) {
+      annotation_entity_types_.insert(mapping->annotation_collection()->str());
     }
   }
 
@@ -244,7 +270,7 @@ bool ActionsSuggestions::ValidateAndInitialize() {
     return false;
   }
 
-  if (model_->actions_entity_data_schema()) {
+  if (model_->actions_entity_data_schema() != nullptr) {
     entity_data_schema_ = LoadAndVerifyFlatbuffer<reflection::Schema>(
         model_->actions_entity_data_schema()->Data(),
         model_->actions_entity_data_schema()->size());
@@ -992,6 +1018,7 @@ AnnotationOptions ActionsSuggestions::AnnotationOptionsForMessage(
       model_->annotation_actions_spec()->annotation_usecase();
   options.is_serialized_entity_data_enabled =
       model_->annotation_actions_spec()->is_serialized_entity_data_enabled();
+  options.entity_types = annotation_entity_types_;
   return options;
 }
 

@@ -1317,44 +1317,42 @@ bool Annotator::ModelClassifyText(
   const std::vector<float> scores =
       ComputeSoftmax(logits.data(), logits.dim(1));
 
-  classification_results->resize(scores.size());
-  for (int i = 0; i < scores.size(); i++) {
-    (*classification_results)[i] = {
-        classification_feature_processor_->LabelToCollection(i), scores[i]};
+  if (scores.empty()) {
+    *classification_results = {{Collections::Other(), 1.0}};
+    return true;
   }
-  SortClassificationResults(classification_results);
 
-  // Phone class sanity check.
-  if (!classification_results->empty() &&
-      classification_results->begin()->collection == Collections::Phone()) {
+  const int best_score_index =
+      std::max_element(scores.begin(), scores.end()) - scores.begin();
+  const std::string top_collection =
+      classification_feature_processor_->LabelToCollection(best_score_index);
+
+  // Sanity checks.
+  if (top_collection == Collections::Phone()) {
     const int digit_count = CountDigits(context, selection_indices);
     if (digit_count <
             model_->classification_options()->phone_min_num_digits() ||
         digit_count >
             model_->classification_options()->phone_max_num_digits()) {
       *classification_results = {{Collections::Other(), 1.0}};
+      return true;
     }
-  }
-
-  // Address class sanity check.
-  if (!classification_results->empty() &&
-      classification_results->begin()->collection == Collections::Address()) {
+  } else if (top_collection == Collections::Address()) {
     if (selection_num_tokens <
         model_->classification_options()->address_min_num_tokens()) {
       *classification_results = {{Collections::Other(), 1.0}};
+      return true;
     }
-  }
-
-  // Dictionary class sanity check.
-  if (!classification_results->empty() &&
-      classification_results->begin()->collection ==
-          Collections::Dictionary()) {
+  } else if (top_collection == Collections::Dictionary()) {
     if (!Locale::IsAnyLocaleSupported(detected_text_language_tags,
                                       dictionary_locales_,
                                       /*default_value=*/false)) {
       *classification_results = {{Collections::Other(), 1.0}};
+      return true;
     }
   }
+
+  *classification_results = {{top_collection, 1.0, scores[best_score_index]}};
   return true;
 }
 
@@ -1627,9 +1625,8 @@ std::vector<ClassificationResult> Annotator::ClassifyText(
             });
 
   if (results.empty()) {
-    TC3_LOG(WARNING) << "No classification found.";
+    results = {{Collections::Other(), 1.0}};
   }
-
   return results;
 }
 

@@ -359,6 +359,9 @@ table RankingOptions {
 
   // If true, suppresses smart replies if other smart actions are suggested.
   suppress_smart_replies_with_actions:bool = false;
+
+  // If true, keep actions from the same entities together for ranking.
+  group_by_annotations:bool = true;
 }
 
 // Entity data to set from capturing groups.

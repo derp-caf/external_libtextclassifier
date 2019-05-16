@@ -16,7 +16,9 @@
 
 #include "actions/ranker.h"
 
+#include <functional>
 #include <set>
+#include <vector>
 
 #include "actions/lua-ranker.h"
 #include "actions/zlib-utils.h"
@@ -27,9 +29,46 @@
 namespace libtextclassifier3 {
 namespace {
 
-// Checks whether two spans are the same.
+void SortByScoreAndType(std::vector<ActionSuggestion>* actions) {
+  std::sort(actions->begin(), actions->end(),
+            [](const ActionSuggestion& a, const ActionSuggestion& b) {
+              return a.score > b.score ||
+                     (a.score >= b.score && a.type < b.type);
+            });
+}
+
+template <typename T>
+int Compare(const T& left, const T& right) {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+}
+
+template <>
+int Compare(const std::string& left, const std::string& right) {
+  return left.compare(right);
+}
+
+template <>
+int Compare(const MessageTextSpan& span, const MessageTextSpan& other) {
+  if (const int value = Compare(span.message_index, other.message_index)) {
+    return value;
+  }
+  if (const int value = Compare(span.span.first, other.span.first)) {
+    return value;
+  }
+  if (const int value = Compare(span.span.second, other.span.second)) {
+    return value;
+  }
+  return 0;
+}
+
 bool IsSameSpan(const MessageTextSpan& span, const MessageTextSpan& other) {
-  return span.message_index == other.message_index && span.span == other.span;
+  return Compare(span, other) == 0;
 }
 
 bool TextSpansIntersect(const MessageTextSpan& span,
@@ -38,32 +77,69 @@ bool TextSpansIntersect(const MessageTextSpan& span,
          SpansOverlap(span.span, other.span);
 }
 
+template <>
+int Compare(const ActionSuggestionAnnotation& annotation,
+            const ActionSuggestionAnnotation& other) {
+  if (const int value = Compare(annotation.span, other.span)) {
+    return value;
+  }
+  if (const int value = Compare(annotation.name, other.name)) {
+    return value;
+  }
+  if (const int value =
+          Compare(annotation.entity.collection, other.entity.collection)) {
+    return value;
+  }
+  return 0;
+}
+
 // Checks whether two annotations can be considered equivalent.
 bool IsEquivalentActionAnnotation(const ActionSuggestionAnnotation& annotation,
                                   const ActionSuggestionAnnotation& other) {
-  return IsSameSpan(annotation.span, other.span) &&
-         annotation.name == other.name &&
-         annotation.entity.collection == other.entity.collection;
+  return Compare(annotation, other) == 0;
+}
+
+// Compares actions based on annotations.
+int CompareAnnotationsOnly(const ActionSuggestion& action,
+                           const ActionSuggestion& other) {
+  if (const int value =
+          Compare(action.annotations.size(), other.annotations.size())) {
+    return value;
+  }
+  for (int i = 0; i < action.annotations.size(); i++) {
+    if (const int value =
+            Compare(action.annotations[i], other.annotations[i])) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+// Checks whether two actions have the same annotations.
+bool HaveEquivalentAnnotations(const ActionSuggestion& action,
+                               const ActionSuggestion& other) {
+  return CompareAnnotationsOnly(action, other) == 0;
+}
+
+template <>
+int Compare(const ActionSuggestion& action, const ActionSuggestion& other) {
+  if (const int value = Compare(action.type, other.type)) {
+    return value;
+  }
+  if (const int value = Compare(action.response_text, other.response_text)) {
+    return value;
+  }
+  if (const int value = Compare(action.serialized_entity_data,
+                                other.serialized_entity_data)) {
+    return value;
+  }
+  return CompareAnnotationsOnly(action, other);
 }
 
 // Checks whether two action suggestions can be considered equivalent.
 bool IsEquivalentActionSuggestion(const ActionSuggestion& action,
                                   const ActionSuggestion& other) {
-  if (action.type != other.type ||
-      action.response_text != other.response_text ||
-      action.annotations.size() != other.annotations.size() ||
-      action.serialized_entity_data != other.serialized_entity_data) {
-    return false;
-  }
-
-  // Check whether annotations are the same.
-  for (int i = 0; i < action.annotations.size(); i++) {
-    if (!IsEquivalentActionAnnotation(action.annotations[i],
-                                      other.annotations[i])) {
-      return false;
-    }
-  }
-  return true;
+  return Compare(action, other) == 0;
 }
 
 // Checks whether any action is equivalent to the given one.
@@ -193,12 +269,6 @@ bool ActionsSuggestionsRanker::RankActions(
     }
   }
 
-  // Order suggestions by score.
-  std::sort(response->actions.begin(), response->actions.end(),
-            [](const ActionSuggestion& a, const ActionSuggestion& b) {
-              return a.score > b.score;
-            });
-
   // Suppress smart replies if actions are present.
   if (options_->suppress_smart_replies_with_actions()) {
     std::vector<ActionSuggestion> non_smart_reply_actions;
@@ -208,6 +278,62 @@ bool ActionsSuggestionsRanker::RankActions(
       }
     }
     response->actions = std::move(non_smart_reply_actions);
+  }
+
+  // Group by annotation if specified.
+  if (options_->group_by_annotations()) {
+    auto group_id = std::map<
+        ActionSuggestion, int,
+        std::function<bool(const ActionSuggestion&, const ActionSuggestion&)>>{
+        [](const ActionSuggestion& action, const ActionSuggestion& other) {
+          return (CompareAnnotationsOnly(action, other) < 0);
+        }};
+    typedef std::vector<ActionSuggestion> ActionSuggestionGroup;
+    std::vector<ActionSuggestionGroup> groups;
+
+    // Group actions by the annotation set they are based of.
+    for (const ActionSuggestion& action : response->actions) {
+      // Treat actions with no annotations idependently.
+      if (action.annotations.empty()) {
+        groups.emplace_back(1, action);
+        continue;
+      }
+
+      auto it = group_id.find(action);
+      if (it != group_id.end()) {
+        groups[it->second].push_back(action);
+      } else {
+        group_id[action] = groups.size();
+        groups.emplace_back(1, action);
+      }
+    }
+
+    // Sort within each group by score.
+    for (std::vector<ActionSuggestion>& group : groups) {
+      SortByScoreAndType(&group);
+    }
+
+    // Sort groups by maximum score.
+    std::sort(groups.begin(), groups.end(),
+              [](const std::vector<ActionSuggestion>& a,
+                 const std::vector<ActionSuggestion>& b) {
+                return a.begin()->score > b.begin()->score ||
+                       (a.begin()->score >= b.begin()->score &&
+                        a.begin()->type < b.begin()->type);
+              });
+
+    // Flatten result.
+    const size_t num_actions = response->actions.size();
+    response->actions.clear();
+    response->actions.reserve(num_actions);
+    for (const std::vector<ActionSuggestion>& actions : groups) {
+      response->actions.insert(response->actions.end(), actions.begin(),
+                               actions.end());
+    }
+
+  } else {
+    // Order suggestions independently by score.
+    SortByScoreAndType(&response->actions);
   }
 
   // Run lua ranking snippet, if provided.

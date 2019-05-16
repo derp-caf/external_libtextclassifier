@@ -297,5 +297,86 @@ TEST(RankingTest, SuppressSmartRepliesWithAction) {
               testing::ElementsAreArray({IsAction("call_phone", "", 1.0)}));
 }
 
+TEST(RankingTest, GroupsActionsByAnnotations) {
+  const Conversation conversation = {{{/*user_id=*/1, "should i call 911"}}};
+  ActionsSuggestionsResponse response;
+  {
+    ActionSuggestionAnnotation annotation;
+    annotation.span = {/*message_index=*/0, /*span=*/{5, 8},
+                       /*text=*/"911"};
+    annotation.entity = ClassificationResult("phone", 1.0);
+    response.actions.push_back({/*response_text=*/"",
+                                /*type=*/"call_phone",
+                                /*score=*/1.0,
+                                /*priority_score=*/1.0,
+                                /*annotations=*/{annotation}});
+    response.actions.push_back({/*response_text=*/"",
+                                /*type=*/"add_contact",
+                                /*score=*/0.0,
+                                /*priority_score=*/0.0,
+                                /*annotations=*/{annotation}});
+  }
+  response.actions.push_back({/*response_text=*/"How are you?",
+                              /*type=*/"text_reply",
+                              /*score=*/0.5});
+  RankingOptionsT options;
+  options.group_by_annotations = true;
+  flatbuffers::FlatBufferBuilder builder;
+  builder.Finish(RankingOptions::Pack(builder, &options));
+  auto ranker = ActionsSuggestionsRanker::CreateActionsSuggestionsRanker(
+      flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
+      /*decompressor=*/nullptr, /*smart_reply_action_type=*/"text_reply");
+
+  ranker->RankActions(conversation, &response);
+
+  // The text reply should be last, even though it has a higher score than the
+  // `add_contact` action.
+  EXPECT_THAT(
+      response.actions,
+      testing::ElementsAreArray({IsAction("call_phone", "", 1.0),
+                                 IsAction("add_contact", "", 0.0),
+                                 IsAction("text_reply", "How are you?", 0.5)}));
+}
+
+TEST(RankingTest, SortsActionsByScore) {
+  const Conversation conversation = {{{/*user_id=*/1, "should i call 911"}}};
+  ActionsSuggestionsResponse response;
+  {
+    ActionSuggestionAnnotation annotation;
+    annotation.span = {/*message_index=*/0, /*span=*/{5, 8},
+                       /*text=*/"911"};
+    annotation.entity = ClassificationResult("phone", 1.0);
+    response.actions.push_back({/*response_text=*/"",
+                                /*type=*/"call_phone",
+                                /*score=*/1.0,
+                                /*priority_score=*/1.0,
+                                /*annotations=*/{annotation}});
+    response.actions.push_back({/*response_text=*/"",
+                                /*type=*/"add_contact",
+                                /*score=*/0.0,
+                                /*priority_score=*/0.0,
+                                /*annotations=*/{annotation}});
+  }
+  response.actions.push_back({/*response_text=*/"How are you?",
+                              /*type=*/"text_reply",
+                              /*score=*/0.5});
+  RankingOptionsT options;
+  // Don't group by annotation.
+  options.group_by_annotations = false;
+  flatbuffers::FlatBufferBuilder builder;
+  builder.Finish(RankingOptions::Pack(builder, &options));
+  auto ranker = ActionsSuggestionsRanker::CreateActionsSuggestionsRanker(
+      flatbuffers::GetRoot<RankingOptions>(builder.GetBufferPointer()),
+      /*decompressor=*/nullptr, /*smart_reply_action_type=*/"text_reply");
+
+  ranker->RankActions(conversation, &response);
+
+  EXPECT_THAT(
+      response.actions,
+      testing::ElementsAreArray({IsAction("call_phone", "", 1.0),
+                                 IsAction("text_reply", "How are you?", 0.5),
+                                 IsAction("add_contact", "", 0.0)}));
+}
+
 }  // namespace
 }  // namespace libtextclassifier3
